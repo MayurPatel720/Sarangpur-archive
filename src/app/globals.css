@@ -1,0 +1,121 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens for the Archive Tracker.
+ *
+ * These are the values from the design canvas, declared once here so that every
+ * component references a token rather than a hex code. Tailwind v4 turns each entry
+ * into a utility automatically: --color-rail becomes `bg-rail`, `text-rail`, etc.
+ */
+@theme {
+  /* The graphite rail */
+  --color-rail: #0f1319;
+  --color-rail-raised: #161b23;
+  --color-rail-line: #1e242e;
+  --color-rail-active: #1e2634;
+  --color-rail-control: #262e3a;
+  --color-rail-text: #9ba3b0;
+  --color-rail-text-strong: #c4cad4;
+  --color-rail-muted: #7d8698;
+
+  /* The light workspace */
+  --color-canvas: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f9fafb;
+  --color-surface-sunken: #f5f7f9;
+
+  --color-line: #e3e6eb;
+  --color-line-strong: #d2d7de;
+  --color-line-soft: #eef0f3;
+  --color-line-row: #f3f5f7;
+
+  --color-ink: #12151a;
+  --color-ink-2: #4a5261;
+  --color-ink-3: #68707f;
+  --color-ink-4: #8a919e;
+
+  /* Accent — one, used sparingly */
+  --color-accent: #2d4ea2;
+  --color-accent-hover: #223c80;
+  --color-accent-soft: #edf1fa;
+  --color-accent-bright: #4d74d8;
+  --color-accent-tint: #7fa0ee;
+  --color-accent-track: #e5eaf4;
+
+  /* Status. Reserved — never reused as a categorical series colour. */
+  --color-good: #1a5b3c;
+  --color-good-mark: #2e7d55;
+  --color-good-bg: #e6f2eb;
+  --color-good-line: #c2dccd;
+
+  --color-warn: #7a5211;
+  --color-warn-mark: #c08a2a;
+  --color-warn-bg: #fcf3e2;
+  --color-warn-line: #eddcb6;
+
+  --color-danger: #8c2626;
+  --color-danger-mark: #b03030;
+  --color-danger-bg: #fae9e9;
+  --color-danger-line: #efcbcb;
+
+  --color-info: #22407f;
+  --color-info-mark: #2d4ea2;
+  --color-info-bg: #e9effb;
+  --color-info-line: #c9d8f2;
+
+  --color-neutral: #4a5261;
+  --color-neutral-mark: #9aa2ae;
+  --color-neutral-bg: #f1f3f6;
+  --color-neutral-line: #dde1e7;
+
+  --font-sans: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --radius-panel: 8px;
+  --radius-control: 6px;
+  --radius-chip: 4px;
+
+  --shadow-panel: 0 1px 2px rgba(17, 21, 28, 0.04);
+  --shadow-control: 0 1px 2px rgba(17, 21, 28, 0.03);
+  --shadow-accent: 0 1px 2px rgba(45, 78, 162, 0.24);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers that sit in columns must align; standalone display figures must not. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus ring — visible, and the same everywhere. */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@keyframes shimmer {
+  0% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.55;
+  }
+}
+.skeleton {
+  animation: shimmer 1.4s ease-in-out infinite;
+}

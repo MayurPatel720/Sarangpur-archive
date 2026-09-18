@@ -1,0 +1,35 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: archive-tracker-mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: archive
+      MONGO_INITDB_ROOT_PASSWORD: archive_dev_password
+      MONGO_INITDB_DATABASE: archive_tracker
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: a browser UI for inspecting the collections during development.
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: archive-tracker-mongo-express
+    restart: unless-stopped
+    ports:
+      - '8081:8081'
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://archive:archive_dev_password@mongo:27017/
+      ME_CONFIG_BASICAUTH: 'false'
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+volumes:
+  mongo_data:
