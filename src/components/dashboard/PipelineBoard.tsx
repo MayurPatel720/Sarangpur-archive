@@ -46,7 +46,7 @@ export function PipelineBoard() {
         </span>
       </PanelHeader>
 
-      <div className="p-4 grid grid-cols-8 gap-2.5">
+      <div className="p-3 sm:p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         {isPending
           ? Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="flex flex-col gap-2.5">

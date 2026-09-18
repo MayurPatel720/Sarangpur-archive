@@ -28,7 +28,7 @@ export function PanelHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="h-12 flex-shrink-0 border-b border-line-soft px-4 flex items-center gap-2.5">
+    <div className="h-12 flex-shrink-0 border-b border-line-soft px-3 md:px-4 flex items-center gap-2.5">
       <h2 className="m-0 text-[13.5px] font-semibold tracking-[-0.005em] text-ink">{title}</h2>
       {children}
     </div>
@@ -108,7 +108,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="p-6 flex flex-col items-start gap-3">
+    <div className="p-4 md:p-6 flex flex-col items-start gap-3">
       <div className="flex items-start gap-3">
         <span className="w-8 h-8 flex-shrink-0 rounded-[6px] bg-danger-bg flex items-center justify-center">
           <span className="w-[6px] h-[6px] rounded-full bg-danger-mark" />

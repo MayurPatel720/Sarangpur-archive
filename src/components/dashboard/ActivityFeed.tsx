@@ -17,7 +17,7 @@ export function ActivityFeed() {
   if (error) {
     const e = error as ApiRequestError;
     return (
-      <Panel className="flex-1 basis-0 flex flex-col overflow-hidden">
+      <Panel className="lg:flex-1 lg:basis-0 flex flex-col overflow-hidden">
         <PanelHeader title="Recent activity" />
         <ErrorState message={e.message} hint={e.hint} onRetry={() => void refetch()} />
       </Panel>
@@ -25,7 +25,7 @@ export function ActivityFeed() {
   }
 
   return (
-    <Panel className="flex-1 basis-0 flex flex-col overflow-hidden">
+      <Panel className="lg:flex-1 lg:basis-0 flex flex-col overflow-hidden">
       <PanelHeader title="Recent activity">
         <span
           className="ml-auto text-[12.5px] font-semibold text-ink-4"

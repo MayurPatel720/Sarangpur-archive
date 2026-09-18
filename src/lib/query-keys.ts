@@ -10,4 +10,8 @@ export const queryKeys = {
     alerts: () => [...queryKeys.dashboard.all, 'alerts'] as const,
     activity: (limit: number) => [...queryKeys.dashboard.all, 'activity', limit] as const,
   },
+  health: {
+    all: ['health'] as const,
+    server: () => [...queryKeys.health.all, 'server'] as const,
+  },
 } as const;

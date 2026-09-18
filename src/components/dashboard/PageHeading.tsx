@@ -13,13 +13,13 @@ export function PageHeading() {
   });
 
   return (
-    <div className="flex items-end gap-4">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="m-0 text-[22px] font-semibold tracking-[-0.022em] text-ink">
+    <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
+      <div className="flex flex-col gap-1.5 min-w-0">
+        <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">
           Archive operations
         </h1>
         {!data ? (
-          <Skeleton className="h-3 w-96" />
+          <Skeleton className="h-3 w-96 max-w-full" />
         ) : (
           <p className="m-0 text-[12.5px] text-ink-3">
             {longDate(data.generatedAt)} · {num(data.activeLotCount)} lots in the pipeline ·{' '}
@@ -28,7 +28,7 @@ export function PageHeading() {
         )}
       </div>
 
-      <div className="flex gap-2.5 ml-auto">
+      <div className="flex gap-2.5 sm:ml-auto">
         <select
           aria-label="Reporting period"
           defaultValue="30"

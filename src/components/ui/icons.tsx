@@ -166,3 +166,86 @@ export const IconRefresh = (p: IconProps) => (
     <path d="M20.5 4.5V10h-5.5" />
   </Icon>
 );
+
+export const IconMenu = (p: IconProps) => (
+  <Icon strokeWidth={2} {...p}>
+    <path d="M4 7h16" />
+    <path d="M4 12h16" />
+    <path d="M4 17h16" />
+  </Icon>
+);
+
+export const IconInbox = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 11l2-7h14l2 7" />
+    <path d="M3 11h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7z" />
+    <path d="M9.5 21v-5h5v5" />
+  </Icon>
+);
+
+export const IconClipboardList = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="5" y="2.5" width="14" height="19" rx="2" />
+    <path d="M9 2.5V5h6V2.5" />
+    <path d="M9 10h6" />
+    <path d="M9 14h4" />
+  </Icon>
+);
+
+export const IconBox = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 8l9-4.5L21 8v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z" />
+    <path d="M12 3.5V21" />
+  </Icon>
+);
+
+export const IconFileImage = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="2.5" width="18" height="19" rx="2" />
+    <circle cx="9" cy="9.5" r="2" />
+    <path d="M21 17l-5-5-8 8" />
+  </Icon>
+);
+
+export const IconFileVideo = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="2.5" width="18" height="19" rx="2" />
+    <path d="M10 9l5 3-5 3V9z" />
+  </Icon>
+);
+
+export const IconFileAudio = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="2.5" width="18" height="19" rx="2" />
+    <path d="M12 8v8" />
+    <path d="M9 10.5a3 3 0 0 1 6 0" />
+    <path d="M9 15.5a3 3 0 0 0 6 0" />
+  </Icon>
+);
+
+export const IconDatabase = (p: IconProps) => (
+  <Icon {...p}>
+    <ellipse cx="12" cy="5" rx="8" ry="3" />
+    <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+    <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+  </Icon>
+);
+
+export const IconSettings = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="3" />
+    <path d="M12 1.5v3M12 19.5v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1.5 12h3M19.5 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" />
+  </Icon>
+);
+
+export const IconChevronLeft = (p: IconProps) => (
+  <Icon strokeWidth={2} {...p}>
+    <path d="M15 6l-6 6 6 6" />
+  </Icon>
+);
+
+export const IconChevronRight = (p: IconProps) => (
+  <Icon strokeWidth={2} {...p}>
+    <path d="M9 6l6 6-6 6" />
+  </Icon>
+);

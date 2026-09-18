@@ -9,6 +9,7 @@ import {
   type PipelineResponse,
   type SummaryResponse,
 } from '@/types/dashboard';
+import { serverHealthResponseSchema, type ServerHealthResponse } from '@/types/health';
 
 /**
  * Thrown when a route returns a non-2xx. Carries the server's own message so the UI
@@ -53,4 +54,8 @@ export const dashboardApi = {
   alerts: () => getJson<AlertsResponse>('/api/dashboard/alerts', alertsResponseSchema),
   activity: (limit = 8) =>
     getJson<ActivityResponse>(`/api/dashboard/activity?limit=${limit}`, activityResponseSchema),
+};
+
+export const healthApi = {
+  status: () => getJson<ServerHealthResponse>('/api/health', serverHealthResponseSchema),
 };

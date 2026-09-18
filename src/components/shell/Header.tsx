@@ -3,18 +3,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { dashboardApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { IconBell, IconChevronDown, IconPlus, IconRefresh, IconSearch } from '@/components/ui/icons';
+import {
+  IconBell,
+  IconChevronDown,
+  IconMenu,
+  IconPlus,
+  IconRefresh,
+  IconSearch,
+} from '@/components/ui/icons';
+import { useDrawer } from '@/components/shell/drawer-context';
 
-/**
- * The application header. Sits to the right of the full-height rail, so it carries the
- * page locator rather than the brand.
- *
- * The signed-in user is hardcoded for this slice — authentication is the next one.
- */
 const CURRENT_USER = { name: 'M. Patel', role: 'Volunteer', initials: 'MP' };
 
 export function Header({ section, page }: { section: string; page: string }) {
   const queryClient = useQueryClient();
+  const { toggle } = useDrawer();
 
   const alerts = useQuery({
     queryKey: queryKeys.dashboard.alerts(),
@@ -27,17 +30,31 @@ export function Header({ section, page }: { section: string; page: string }) {
     queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
 
   return (
-    <header className="h-[60px] flex-shrink-0 bg-surface border-b border-line flex items-center gap-4 px-5">
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[9.5px] font-semibold tracking-[0.12em] uppercase text-ink-4">
-          {section}
-        </span>
-        <span className="text-[13.5px] font-semibold tracking-[-0.005em] text-ink">{page}</span>
-      </div>
-
+    <header className="h-[60px] flex-shrink-0 bg-surface border-b border-line flex items-center gap-2.5 px-3 md:gap-4 md:px-5">
+      {/* Hamburger — visible only on mobile */}
       <button
         type="button"
-        className="ml-2.5 w-[392px] h-10 bg-surface-sunken border border-line rounded-[6px] pl-3 pr-2.5 flex items-center gap-2.5 cursor-pointer"
+        onClick={toggle}
+        className="xl:hidden w-10 h-10 flex items-center justify-center rounded-[6px] text-ink-2 cursor-pointer"
+        aria-label="Open navigation"
+      >
+        <IconMenu size={20} />
+      </button>
+
+      {/* Page locator */}
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <span className="text-[9.5px] font-semibold tracking-[0.12em] uppercase text-ink-4 hidden sm:block">
+          {section}
+        </span>
+        <span className="text-[13.5px] font-semibold tracking-[-0.005em] text-ink truncate">
+          {page}
+        </span>
+      </div>
+
+      {/* Search bar — full on lg+, icon-only on md, hidden on < md */}
+      <button
+        type="button"
+        className="ml-2 hidden lg:flex w-[392px] h-10 bg-surface-sunken border border-line rounded-[6px] pl-3 pr-2.5 items-center gap-2.5 cursor-pointer"
         title="Command palette — not wired up in this slice"
       >
         <IconSearch size={15} className="flex-shrink-0 text-ink-4" />
@@ -50,17 +67,27 @@ export function Header({ section, page }: { section: string; page: string }) {
         </span>
       </button>
 
-      <div className="flex items-center gap-2.5 ml-auto">
+      {/* Compact search — md only */}
+      <button
+        type="button"
+        className="hidden md:flex lg:hidden w-10 h-10 bg-surface-sunken border border-line rounded-[6px] items-center justify-center cursor-pointer ml-auto"
+        title="Search"
+      >
+        <IconSearch size={16} className="text-ink-4" />
+      </button>
+
+      <div className="flex items-center gap-2 md:gap-2.5 ml-auto md:ml-2">
+        {/* New intake — full on md+, icon-only on sm, hidden on < sm */}
         <button
           type="button"
-          className="h-10 px-[15px] bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold flex items-center gap-2 cursor-pointer"
+          className="hidden sm:inline-flex h-10 px-[15px] bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold items-center gap-2 cursor-pointer"
           title="Intake form arrives in the next slice"
         >
           <IconPlus size={15} />
-          New intake
+          <span className="hidden md:inline">New intake</span>
         </button>
 
-        <span className="w-px h-[26px] bg-line" />
+        <span className="hidden sm:block w-px h-[26px] bg-line" />
 
         <button
           type="button"
@@ -85,6 +112,7 @@ export function Header({ section, page }: { section: string; page: string }) {
           )}
         </button>
 
+        {/* User button — initials on sm, full on md+ */}
         <button
           type="button"
           className="h-11 pl-1.5 pr-2.5 bg-surface border border-line rounded-[7px] shadow-control flex items-center gap-2.5 cursor-pointer"
@@ -92,13 +120,13 @@ export function Header({ section, page }: { section: string; page: string }) {
           <span className="w-[30px] h-[30px] rounded-[6px] bg-[#1C2431] text-white text-[11.5px] font-semibold flex items-center justify-center">
             {CURRENT_USER.initials}
           </span>
-          <span className="flex flex-col gap-px text-left">
+          <span className="hidden md:flex flex-col gap-px text-left">
             <span className="text-[12.5px] font-semibold text-ink leading-[1.15]">
               {CURRENT_USER.name}
             </span>
             <span className="text-[10px] text-ink-4 leading-[1.15]">{CURRENT_USER.role}</span>
           </span>
-          <IconChevronDown size={13} className="text-ink-4" />
+          <IconChevronDown size={13} className="hidden md:block text-ink-4" />
         </button>
       </div>
     </header>

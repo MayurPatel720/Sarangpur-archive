@@ -34,7 +34,7 @@ export function AlertsPanel() {
   if (error) {
     const e = error as ApiRequestError;
     return (
-      <Panel className="flex-[1.15] basis-0 flex flex-col overflow-hidden">
+      <Panel className="lg:flex-[1.15] lg:basis-0 flex flex-col overflow-hidden">
         <PanelHeader title="Alerts & escalations" />
         <ErrorState message={e.message} hint={e.hint} onRetry={() => void refetch()} />
       </Panel>
@@ -42,7 +42,7 @@ export function AlertsPanel() {
   }
 
   return (
-    <Panel className="flex-[1.15] basis-0 flex flex-col overflow-hidden">
+    <Panel className="lg:flex-[1.15] lg:basis-0 flex flex-col overflow-hidden">
       <PanelHeader title="Alerts & escalations">
         {!isPending && data.totalOpen > 0 && (
           <Badge severity="critical">{num(data.totalOpen)} open</Badge>

@@ -1,0 +1,14 @@
+---
+description: Archive Tracker project rules
+alwaysApply: true
+---
+
+Follow @AGENTS.md exactly. It is the contract for this repository.
+
+Reference detail:
+- @docs/SPEC.md — file tree, build order, specs for reconciliation, audit and codes
+- @docs/DATA-MODEL.md — collections, fields, indexes
+- @docs/API.md — endpoint contracts
+
+Before writing code, check whether the pattern already exists in
+src/server/dashboard/, src/models/ArchiveLot.ts or src/components/dashboard/ and copy it.
