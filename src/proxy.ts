@@ -19,7 +19,14 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC.some((re) => re.test(pathname))) return NextResponse.next();
 
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+  // getToken() defaults to the NON-secure cookie name (`authjs.session-token`)
+  // unless `secureCookie` is passed — but Auth.js sets `__Secure-…` on HTTPS.
+  // Localhost (HTTP) uses the plain name, Vercel (HTTPS) the secure one, so try
+  // secure first and fall back. (Without this, production logins succeed and then
+  // bounce to /login forever while localhost works fine.)
+  const token =
+    (await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: true })) ??
+    (await getToken({ req, secret: process.env.AUTH_SECRET, secureCookie: false }));
   if (token) return NextResponse.next();
 
   if (pathname.startsWith('/api/')) {
