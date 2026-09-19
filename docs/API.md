@@ -43,7 +43,7 @@ aggregation — eleven sub-pipelines over a single pass.
 
 ## 3. Lots
 
-### `GET /api/lots` — TODO — the intake register
+### `GET /api/lots` — DONE — the intake register
 
 Server-side pagination. Never return the whole collection.
 
@@ -67,7 +67,7 @@ type LotListResponse = {
 `receiverName` is resolved with one batched `User` lookup **after** the aggregation, not a
 `$lookup` inside it.
 
-### `POST /api/lots` — TODO — create an intake
+### `POST /api/lots` — DONE — create an intake
 
 Role: `volunteer`+. Runs in **one transaction** (`SPEC.md` §4.4): allocate `lotReference`,
 insert the lot, generate `quantity` × `LotItem`, write the `intake_created` audit entry.
@@ -75,27 +75,30 @@ insert the lot, generate `quantity` × `LotItem`, write the `intake_created` aud
 Body mirrors the intake form; `quantityToDigitize ≤ quantity` and `conditionPhotoUrl` are
 required. → `201 { id, lotReference, itemsCreated }`
 
-### `GET /api/lots/[lotId]` — TODO
+### `GET /api/lots/[lotId]` — DONE
 Full record for the detail screen: lot, resolved user names, attachment list, item-profile
 counts by state. Item rows themselves come from the paginated items endpoint.
 
-### `PATCH /api/lots/[lotId]` — TODO
+### `PATCH /api/lots/[lotId]` — DONE
 Partial update of intake fields. Body must carry `version` (the document's `__v`) →
 `409` on mismatch, so two volunteers cannot silently overwrite each other.
 
 ---
 
-## 4. Workflow transitions
+## 4. Workflow transitions — DONE (live-verified)
 
-All `POST`/`PATCH`, all through `withAudit()`, all role-gated.
+All `POST`/`PATCH`, all through `withAudit()`, all role-gated. Deviations from the
+original sketch: `POST …/submit` moves intake → decision (no route existed for it);
+reconcile runs **inline** returning `200` with counts (no BullMQ yet, so no fake `202`).
 
 | Method | Path | Role | Effect |
 |---|---|---|---|
+| POST | `/api/lots/[lotId]/submit` | `lot:edit` | `intake → decision` + `submitted_for_decision` audit |
 | POST | `/api/lots/[lotId]/decision` | reviewer+ | Records the checklist. Sets `decision.*`, allocates `namingCode` on archive, moves stage to `metadata` / `returned` / `discarded` |
 | POST | `/api/lots/[lotId]/override` | reviewer+ | `overrideStatus = 'requested'` + justification |
 | PATCH | `/api/lots/[lotId]/override` | lead_reviewer, admin | `approved` or `rejected` |
 | PATCH | `/api/lots/[lotId]/scan` | volunteer+ | `scanStatus`, `scannedBy`, `scanDate`, `folderPath` |
-| POST | `/api/lots/[lotId]/reconcile` | volunteer+ | Enqueues a reconciliation job → `202 { jobId }` |
+| POST | `/api/lots/[lotId]/reconcile` | volunteer+ | Inline diff vs `FileIndex` → `200 { expected, found, missing[], unexpected[] }`; success advances `scanning → mls_tag` |
 | PATCH | `/api/lots/[lotId]/mls` | reviewer+ | `recordId`, `taggedCount`, `dataListAttached` |
 | PATCH | `/api/lots/[lotId]/mls/duplicate` | lead_reviewer, admin | `duplicateAction` — remove/merge need this role |
 | PATCH | `/api/lots/[lotId]/return` | volunteer+ | Return status, method, tracking |
@@ -121,8 +124,11 @@ existsInMls && !newCopyIsBetter        → return_or_discard
 significanceFlags.some(Boolean)        → archive
 otherwise                              → return_or_discard (override available)
 ```
-The same rule is already implemented in the design prototype; port it to
-`src/server/lots/decision-rule.ts` as a pure function and unit-test it. This is the one
+The same rule is implemented as a pure function in
+`src/server/lots/decision-rule.ts` (`computeVerdict`) and unit-tested by
+`scripts/verify-decision-rule.ts` (7 hand-computed cases, wired into `npm run verify`).
+Verdict granularity is `archive | return_or_discard`; return-vs-discard is a reviewer
+`disposition` validated against the verdict. This is the one
 piece of logic where a bug has consequences that cannot be undone.
 
 ---
@@ -131,16 +137,18 @@ piece of logic where a bug has consequences that cannot be undone.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/lots/[lotId]/items` | Paginated. Filters: `groupNo`, `digitized`, `taggedInMls`, `mlsDuplicate` |
-| GET | `/api/lots/[lotId]/activity` | Paginated audit trail, newest first |
-| GET | `/api/lots/[lotId]/attachments` | |
-| POST | `/api/lots/[lotId]/attachments` | Multipart. Validate type and size; store the key, never the bytes |
+| GET | `/api/lots/[lotId]/items` | DONE — Paginated. Filters: `groupNo`, `digitized`, `taggedInMls`, `mlsDuplicate` |
+| GET | `/api/lots/[lotId]/activity` | DONE — Paginated audit trail, newest first |
+| GET | `/api/lots/[lotId]/attachments` | TODO |
+| POST | `/api/lots/[lotId]/attachments` | TODO — Multipart. Validate type and size; store the key, never the bytes |
 
 ---
 
-## 6. Queues — TODO
+## 6. Queues — DONE (live-verified)
 
-Five screens, one shared shape. Build `src/server/queues/` once and parameterise by stage.
+Five screens, one shared shape. `src/server/queues/` is parameterised by stage (returns
+by `return.status`). Rows reuse the lot-list shape; `daysInStage` / `overdue` /
+`progress` / `counts` from the original sketch are not yet computed.
 
 | Path | Stage filter |
 |---|---|

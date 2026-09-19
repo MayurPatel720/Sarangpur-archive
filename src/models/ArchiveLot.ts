@@ -91,6 +91,8 @@ const archiveLotSchema = new Schema(
 
     decision: {
       status: { type: String, required: true, enum: DECISIONS, default: 'pending', index: true },
+      /** Server-computed verdict (decision-rule.ts). Stored so the UI can show it. */
+      verdict: { type: String, enum: ['archive', 'return_or_discard'], default: null },
       decidedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       decidedAt: { type: Date, default: null },
       existsInMls: { type: Boolean, default: null },
@@ -158,7 +160,15 @@ const archiveLotSchema = new Schema(
       notes: { type: String, trim: true },
     },
   },
-  { timestamps: true, collection: 'archivelots' },
+  {
+    timestamps: true,
+    collection: 'archivelots',
+    // Every lot mutation flows through withAudit() with a caller-supplied __v, and
+    // this makes the check airtight: save() itself compares __v and throws
+    // VersionError on a race, and bumps __v on every successful write (without
+    // this, scalar-only edits would leave __v frozen at 0 forever).
+    optimisticConcurrency: true,
+  },
 );
 
 // Compound indexes, each one backing a query the dashboard actually issues.

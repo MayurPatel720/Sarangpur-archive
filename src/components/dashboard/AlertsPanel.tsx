@@ -1,8 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { ALERT_HREF } from '@/lib/dashboard-links';
 import { num, severityChip, severityText } from '@/lib/format';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { IconAlertTriangle, IconClock, IconCopy, IconReturn, IconStar } from '@/components/ui/icons';
@@ -47,6 +49,12 @@ export function AlertsPanel() {
         {!isPending && data.totalOpen > 0 && (
           <Badge severity="critical">{num(data.totalOpen)} open</Badge>
         )}
+        <Link
+          href="/alerts"
+          className="ml-auto text-[12.5px] font-semibold text-ink-4 no-underline hover:text-ink"
+        >
+          View all
+        </Link>
       </PanelHeader>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
@@ -64,9 +72,10 @@ export function AlertsPanel() {
           : data.alerts.map((alert, i) => {
               const Icon = ALERT_ICON[alert.key] ?? IconAlertTriangle;
               return (
-                <div
+                <Link
                   key={alert.key}
-                  className={`flex items-center gap-3 px-4 py-3 ${
+                  href={ALERT_HREF[alert.key] ?? '/alerts'}
+                  className={`flex items-center gap-3 px-4 py-3 no-underline ${
                     i < data.alerts.length - 1 ? 'border-b border-line-row' : ''
                   }`}
                 >
@@ -86,7 +95,7 @@ export function AlertsPanel() {
                   >
                     {num(alert.count)}
                   </span>
-                </div>
+                </Link>
               );
             })}
 

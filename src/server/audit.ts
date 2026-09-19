@@ -90,7 +90,19 @@ export async function withAudit<T>(opts: {
       }
       // Capture BEFORE save: save() clears modifiedPaths(), which would leave changes[] empty.
       const modifiedPaths = lot.modifiedPaths();
-      await lot.save({ session });
+      try {
+        await lot.save({ session });
+      } catch (error) {
+        // Lost an optimistic-concurrency race inside the transaction window:
+        // someone else's write landed between our read and our save.
+        if (error instanceof Error && error.name === 'VersionError') {
+          throw new HttpError(
+            409,
+            'This record changed since you opened it. Reload and try again.',
+          );
+        }
+        throw error;
+      }
 
       await ActivityLog.create(
         [

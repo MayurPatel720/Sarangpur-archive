@@ -45,102 +45,101 @@ archive-tracker/
 └── src/
     ├── app/
     │   ├── layout.tsx  globals.css  providers.tsx  page.tsx        DONE
-    │   ├── login/page.tsx                                          TODO
+    │   ├── login/page.tsx                                          DONE
     │   ├── (app)/
     │   │   ├── layout.tsx                                          DONE
     │   │   ├── dashboard/page.tsx                                  DONE
-    │   │   ├── register/
-    │   │   │   ├── page.tsx                                        TODO  intake register
-    │   │   │   ├── new/page.tsx                                    TODO  intake form
-    │   │   │   └── [lotId]/page.tsx                                TODO  record detail
-    │   │   ├── decision/
-    │   │   │   ├── page.tsx                                        TODO  queue
-    │   │   │   └── [lotId]/page.tsx                                TODO  checklist
-    │   │   ├── digitize/page.tsx                                   TODO
-    │   │   ├── mls/page.tsx                                        TODO
-    │   │   ├── returns/page.tsx                                    TODO
-    │   │   ├── discards/page.tsx                                   TODO
+    │   │   ├── register/                                           DONE (actual path; tree said intake/)
+    │   │   │   ├── page.tsx                                        DONE  intake register
+    │   │   │   ├── new/page.tsx                                    DONE  intake form
+    │   │   │   └── [lotId]/page.tsx                                DONE  record detail
+    │   │   ├── queues/                                             DONE (actual path; tree said decision/ etc.)
+    │   │   │   ├── decision/page.tsx                               DONE  queue
+    │   │   │   ├── digitize/page.tsx                               DONE
+    │   │   │   ├── mls/page.tsx                                    DONE
+    │   │   │   ├── returns/page.tsx                                DONE
+    │   │   │   └── discards/page.tsx                               DONE
+    │   │   ├── alerts/page.tsx                                     DONE (drill-down target)
     │   │   └── admin/
-    │   │       ├── users/page.tsx                                  TODO
+    │   │       ├── users/page.tsx                                  DONE (Module 1)
     │   │       ├── alert-rules/page.tsx                            TODO
     │   │       ├── naming-codes/page.tsx                           TODO
     │   │       ├── storage/page.tsx                                TODO
     │   │       └── audit/page.tsx                                  TODO
     │   └── api/                                                    see docs/API.md
-    │       ├── auth/[...nextauth]/route.ts                         TODO
+    │       ├── auth/[...nextauth]/route.ts                         DONE
     │       ├── dashboard/{summary,pipeline,alerts,activity}/route.ts  DONE
-    │       ├── lots/route.ts                                       TODO  GET list · POST create
-    │       ├── lots/[lotId]/route.ts                               TODO  GET · PATCH
-    │       ├── lots/[lotId]/decision/route.ts                      TODO
-    │       ├── lots/[lotId]/override/route.ts                      TODO
-    │       ├── lots/[lotId]/scan/route.ts                          TODO
-    │       ├── lots/[lotId]/reconcile/route.ts                     TODO
-    │       ├── lots/[lotId]/mls/route.ts                           TODO
-    │       ├── lots/[lotId]/return/route.ts                        TODO
-    │       ├── lots/[lotId]/discard/route.ts                       TODO
-    │       ├── lots/[lotId]/items/route.ts                         TODO
-    │       ├── lots/[lotId]/activity/route.ts                      TODO
+    │       ├── lots/route.ts                                       DONE  GET list · POST create
+    │       ├── lots/[lotId]/route.ts                               DONE  GET · PATCH
+    │       ├── lots/[lotId]/decision/route.ts                      DONE
+    │       ├── lots/[lotId]/override/route.ts                      DONE
+    │       ├── lots/[lotId]/scan/route.ts                          DONE
+    │       ├── lots/[lotId]/reconcile/route.ts                     DONE
+    │       ├── lots/[lotId]/mls/route.ts                           DONE
+    │       ├── lots/[lotId]/return/route.ts                        DONE
+    │       ├── lots/[lotId]/discard/route.ts                       DONE
+    │       ├── lots/[lotId]/items/route.ts                         DONE
+    │       ├── lots/[lotId]/activity/route.ts                      DONE
     │       ├── lots/[lotId]/attachments/route.ts                   TODO
-    │       ├── queues/{decision,digitize,mls,returns,discards}/route.ts  TODO
-    │       ├── users/route.ts · users/[userId]/route.ts            TODO
-    │       └── admin/{settings,naming-codes,storage,audit}/route.ts TODO
+    │       ├── lots/[lotId]/submit/route.ts                        DONE (intake → decision)
+    │       ├── queues/{decision,digitize,mls,returns,discards}/route.ts  DONE
+    │       ├── users/route.ts · users/[userId]/route.ts            DONE (Module 1)
+    │       └── admin/{settings,naming-codes,storage,audit}/route.ts DONE settings only (Module 1)
     │
     ├── components/
     │   ├── ui/
     │   │   ├── icons.tsx  primitives.tsx                           DONE
-    │   │   ├── DataTable.tsx                                       TODO  server-paginated
-    │   │   ├── FilterBar.tsx                                       TODO
-    │   │   ├── Form.tsx                                            TODO  Field/Select/Radio
+    │   │   ├── DataTable.tsx                                       DONE  server-paginated
+    │   │   ├── FilterBar.tsx                                       DONE (as lots/RegisterFilters.tsx)
+    │   │   ├── Form.tsx                                            DONE  Field/Select/Radio (+Textarea)
     │   │   ├── FileDrop.tsx                                        TODO
-    │   │   ├── Dialog.tsx                                          TODO  confirm modal
+    │   │   ├── Dialog.tsx                                          DONE  confirm modal
     │   │   └── Toast.tsx                                           TODO
     │   ├── shell/
     │   │   ├── Sidebar.tsx  Header.tsx                             DONE
     │   ├── dashboard/                                              DONE (5 files)
-    │   ├── intake/
-    │   │   ├── IntakeForm.tsx                                      TODO
-    │   │   ├── ContactFields.tsx                                   TODO  repeater
-    │   │   ├── MediaFields.tsx                                     TODO  cascading sub-type
-    │   │   └── NamingCodePreview.tsx                               TODO
-    │   ├── decision/
-    │   │   ├── DecisionChecklist.tsx                               TODO  state machine
-    │   │   ├── VerdictPanel.tsx                                    TODO
-    │   │   └── OverrideRequest.tsx                                 TODO
+    │   ├── lots/  (actual path; tree said intake/ + decision/ + record/)
+    │   │   ├── IntakeForm.tsx · lot-form-fields.tsx                 DONE
+    │   │   ├── RegisterManager.tsx · RegisterFilters.tsx            DONE
+    │   │   ├── LotDetail.tsx                                        DONE
+    │   │   ├── DecisionSection.tsx                                  DONE  checklist + override
+    │   │   ├── ScanSection.tsx · MlsSection.tsx                     DONE
+    │   │   ├── ReturnSection.tsx · DiscardSection.tsx               DONE
+    │   │   ├── ItemsPanel.tsx · ActivityPanel.tsx                   DONE
+    │   │   ├── DecisionQueueManager.tsx                             DONE
+    │   │   ├── QueueTable.tsx                                       DONE  shared by 5 queues
+    │   │   └── NamingCodePreview.tsx                                TODO
     │   ├── record/
-    │   │   ├── LotHeader.tsx  LotSummary.tsx                       TODO
-    │   │   ├── ItemProfileTable.tsx                                TODO
-    │   │   ├── AuditTimeline.tsx                                   TODO
     │   │   └── AttachmentList.tsx                                  TODO
-    │   └── queues/
-    │       ├── QueueTable.tsx                                      TODO  shared by 5 queues
-    │       └── ReconciliationPanel.tsx                             TODO
+    │   └── queues/  (thin managers: Digitize/Mls/Returns/Discards)  DONE
     │
     ├── lib/
     │   ├── domain.ts  mongo.ts  api.ts  api-client.ts              DONE
-    │   ├── format.ts  query-keys.ts                                DONE
-    │   ├── auth.ts                                                 TODO  Auth.js config
+    │   ├── format.ts  query-keys.ts  dashboard-links.ts            DONE
+    │   ├── auth.ts                                                 DONE  Auth.js config
     │   └── upload.ts                                               TODO  attachment storage
     │
     ├── models/
     │   ├── User.ts  ArchiveLot.ts  LotItem.ts  ActivityLog.ts      DONE
     │   ├── index.ts                                                DONE  ⚠ update on add
-    │   ├── FileIndex.ts                                            TODO  reconciliation
-    │   ├── Attachment.ts                                           TODO
-    │   ├── Setting.ts                                              TODO  alert thresholds
-    │   └── MlsOutbox.ts                                            TODO
+    │   ├── FileIndex.ts                                            DONE  reconciliation
+    │   ├── Attachment.ts                                           DONE
+    │   ├── Setting.ts                                              DONE  alert thresholds
+    │   ├── ReferenceList.ts  Role.ts                               DONE (Module 0)
+    │   └── MlsOutbox.ts                                            DONE
     │
     ├── server/
     │   ├── dashboard/pipelines.ts · queries.ts                     DONE  ← copy this pattern
-    │   ├── audit.ts                                                TODO  withAudit()
-    │   ├── permissions.ts                                          TODO  can()
-    │   ├── codes.ts                                                TODO  naming-code generator
-    │   ├── lots/{pipelines,queries,mutations}.ts                   TODO
-    │   ├── queues/{pipelines,queries}.ts                           TODO
-    │   └── reconcile/{parse,diff}.ts                               TODO  pure, unit-tested
+    │   ├── audit.ts                                                DONE  withAudit()
+    │   ├── permissions.ts                                          DONE  can()
+    │   ├── codes.ts                                                DONE  reference + naming codes
+    │   ├── lots/{queries,mutations,operations,decision-rule}.ts    DONE
+    │   ├── queues/queues.ts                                        DONE
+    │   └── reconcile/{parse,diff}.ts                               DONE  pure, unit-tested
     │
     ├── types/
-    │   ├── dashboard.ts                                            DONE
-    │   ├── lot.ts  queue.ts  admin.ts                              TODO
+    │   ├── dashboard.ts  lot.ts  ops.ts  admin.ts                  DONE
+    │   └── queue.ts                                                TODO (queues reuse lot-list shape)
     │
     └── proxy.ts                                                    DONE  auth gate (Next 16 renamed middleware → proxy)
 ```

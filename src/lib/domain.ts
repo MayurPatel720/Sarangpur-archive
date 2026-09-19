@@ -112,9 +112,12 @@ export const NOT_DIGITIZED_REASON_LABELS: Record<NotDigitizedReason, string> = {
 /** Activity log event kinds. `severity` decides the dot colour in the feed. */
 export const ACTIVITY_KINDS = [
   'intake_created',
+  'intake_updated',
+  'submitted_for_decision',
   'decision_recorded',
   'override_requested',
   'override_approved',
+  'override_rejected',
   'code_issued',
   'scan_started',
   'scan_completed',
@@ -123,7 +126,10 @@ export const ACTIVITY_KINDS = [
   'mls_tagged',
   'return_recorded',
   'return_completed',
+  'reconciliation_mismatch',
+  'duplicate_resolved',
   'discard_confirmed',
+  'discard_reversed',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -131,9 +137,12 @@ export type Severity = 'neutral' | 'info' | 'good' | 'warning' | 'critical';
 
 export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   intake_created: 'neutral',
+  intake_updated: 'neutral',
+  submitted_for_decision: 'info',
   decision_recorded: 'good',
   override_requested: 'warning',
   override_approved: 'good',
+  override_rejected: 'neutral',
   code_issued: 'info',
   scan_started: 'neutral',
   scan_completed: 'good',
@@ -142,7 +151,10 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   mls_tagged: 'good',
   return_recorded: 'neutral',
   return_completed: 'good',
+  reconciliation_mismatch: 'warning',
+  duplicate_resolved: 'info',
   discard_confirmed: 'critical',
+  discard_reversed: 'warning',
 };
 
 /**

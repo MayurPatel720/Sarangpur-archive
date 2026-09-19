@@ -29,4 +29,25 @@ export const queryKeys = {
     all: ['session'] as const,
     me: () => [...queryKeys.session.all, 'me'] as const,
   },
+  lots: {
+    all: ['lots'] as const,
+    list: (params: string) => [...queryKeys.lots.all, 'list', params] as const,
+    detail: (id: string) => [...queryKeys.lots.all, 'detail', id] as const,
+    items: (id: string, params: string) => [...queryKeys.lots.all, 'items', id, params] as const,
+    activity: (id: string, page: number, pageSize: number) =>
+      [...queryKeys.lots.all, 'activity', id, page, pageSize] as const,
+  },
+  queues: {
+    all: ['queues'] as const,
+    decision: (page: number, pageSize: number) =>
+      [...queryKeys.queues.all, 'decision', page, pageSize] as const,
+    digitize: (page: number, pageSize: number) =>
+      [...queryKeys.queues.all, 'digitize', page, pageSize] as const,
+    mls: (page: number, pageSize: number) =>
+      [...queryKeys.queues.all, 'mls', page, pageSize] as const,
+    returns: (page: number, pageSize: number) =>
+      [...queryKeys.queues.all, 'returns', page, pageSize] as const,
+    discards: (page: number, pageSize: number) =>
+      [...queryKeys.queues.all, 'discards', page, pageSize] as const,
+  },
 } as const;

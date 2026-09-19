@@ -1,8 +1,10 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { KPI_HREF } from '@/lib/dashboard-links';
 import { num, severityText } from '@/lib/format';
 import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
 
@@ -39,7 +41,10 @@ export function KpiRow() {
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 md:gap-3.5">
       {data.kpis.map((kpi) => (
         <Panel key={kpi.key} className="px-4 pt-[15px] pb-4">
-          <div className="flex flex-col gap-2">
+          <Link
+            href={KPI_HREF[kpi.key] ?? '/register'}
+            className="flex flex-col gap-2 no-underline"
+          >
             <span className="text-[11.5px] font-medium text-ink-3">{kpi.label}</span>
             <span className="text-[24px] md:text-[32px] font-semibold leading-none tracking-[-0.028em] text-ink">
               {num(kpi.value)}
@@ -47,7 +52,7 @@ export function KpiRow() {
             <span className={`text-[11.5px] font-medium ${severityText[kpi.noteSeverity]}`}>
               {kpi.note}
             </span>
-          </div>
+          </Link>
         </Panel>
       ))}
     </div>

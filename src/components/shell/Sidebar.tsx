@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useDrawer } from '@/components/shell/drawer-context';
 import { useCanAny } from '@/hooks/useCan';
 import { healthApi } from '@/lib/api-client';
+import { formatBytes } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import {
   IconAlertTriangle,
@@ -16,11 +17,15 @@ import {
   IconClock,
   IconDashboard,
   IconDatabase,
+  IconDecision,
   IconFileAudio,
   IconFileImage,
   IconFileVideo,
   IconInbox,
+  IconReturn,
+  IconScan,
   IconSettings,
+  IconTag,
   IconUsers,
   IconShield,
   IconDiscard,
@@ -28,7 +33,7 @@ import {
 
 const NAV_ITEMS = [
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard' },
-  { icon: IconInbox, label: 'Intake', href: '/intake' },
+  { icon: IconInbox, label: 'Intake', href: '/register/new' },
   { icon: IconClipboardList, label: 'Register', href: '/register' },
   { icon: IconAlertTriangle, label: 'Alerts', href: '/alerts' },
   { icon: IconFileImage, label: 'Photos', href: '/photos' },
@@ -51,11 +56,17 @@ export function Sidebar() {
   // Hover preview: when the rail is collapsed on desktop, hovering it
   // temporarily shows full labels; leaving restores the rail.
   const [hoverExpand, setHoverExpand] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   // Mobile drawer (open) always shows full labels; desktop follows the
   // pinned collapsed state unless hover-previewing.
   const showFull = open || !collapsed || hoverExpand;
   // Hidden until /api/users/me resolves — no flash for non-admins.
   const showAdmin = useCanAny(['user:manage', 'roles:manage', 'lists:manage', 'settings:manage']);
+  const showDecisionQueue = useCanAny(['decision:view']);
+  const showDigitizeQueue = useCanAny(['digitize:view']);
+  const showMlsQueue = useCanAny(['mls:view']);
+  const showReturnsQueue = useCanAny(['returns:view']);
+  const showDiscards = useCanAny(['discards:view']);
 
   const health = useQuery({
     queryKey: queryKeys.health.server(),
@@ -105,9 +116,15 @@ export function Sidebar() {
     >
       {/* Workspace switcher */}
       <div
-        className={`flex flex-col border-b border-rail-line ${showFull ? 'px-4 py-4 gap-2.5' : 'items-center px-0 py-4'}`}
+        className={`flex flex-col border-b border-rail-line ${showFull ? 'px-4 py-2 gap-1' : 'items-center px-0 py-4'}`}
       >
-        <div className={`flex items-center ${showFull ? 'gap-2.5' : ''}`}>
+        <button
+          type="button"
+          onClick={() => setStorageOpen((v) => !v)}
+          aria-expanded={storageOpen}
+          title={storageOpen ? 'Hide storage details' : 'Show storage details'}
+          className={`flex items-center text-left rounded-md ${showFull ? 'gap-2.5 w-full' : ''}`}
+        >
           <div className="w-8 h-8 rounded-md bg-accent flex items-center justify-center flex-shrink-0">
             <span className="text-[11px] font-semibold text-white tracking-[0.03em]">SA</span>
           </div>
@@ -116,45 +133,104 @@ export function Sidebar() {
               <span className="sidebar-label-in flex-1 text-[12.5px] font-semibold text-rail-text-strong leading-tight truncate">
                 Sarangpur Archive
               </span>
-              <span className="text-rail-muted text-[10px]">▾</span>
+              <span className="text-rail-muted text-[10px]">{storageOpen ? '▴' : '▾'}</span>
             </>
           )}
-        </div>
+        </button>
 
-        {/* Server status */}
+        {/* Storage identity — label/root/used from Settings (admin-maintained
+            showcase until the storage-inventory job exists); the dot still
+            reflects the live database ping. */}
         {!showFull ? (
           <span
-            title={`${statusLabel}${health.data ? ` · ${health.data.server} (${health.data.latencyMs}ms)` : ''}`}
+            title={`${statusLabel}${health.data ? ` · ${health.data.storage.label} ${health.data.storage.root} (${health.data.storage.usedTb}/${health.data.storage.capacityTb} TB)` : ''}`}
             className={`mt-2 w-[7px] h-[7px] rounded-full flex-shrink-0 ${statusColor}`}
           />
-        ) : (
-          <div className="sidebar-label-in flex items-center gap-2 pl-[42px]">
-            <span className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${statusColor}`} />
-            <span className="text-[10.5px] text-rail-muted truncate">
-              {health.data
-                ? `${health.data.server}`
-                : statusLabel}
-            </span>
-            {health.data?.latencyMs !== undefined && (
-              <span className="text-[9.5px] text-rail-muted/60 tabular-nums ml-auto">
-                {health.data.latencyMs}ms
+        ) : storageOpen ? (
+          <div className="sidebar-label-in flex flex-col gap-1 pl-[42px] pr-1">
+            <div className="flex items-center gap-2">
+              <span className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${statusColor}`} />
+              <span className="text-[10.5px] text-rail-muted truncate">
+                {health.data ? health.data.storage.label : statusLabel}
               </span>
+              <span className="text-[9.5px] text-rail-muted/60 tabular-nums ml-auto">
+                {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            {health.data && (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[10.5px] font-medium text-rail-text-strong">Archive storage</span>
+                  <span className="text-[9.5px] text-rail-muted tabular-nums ml-auto">
+                    {health.data.storage.usedTb} / {health.data.storage.capacityTb} TB
+                  </span>
+                </div>
+                <div className="h-[4px] rounded-full bg-rail-line overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-accent"
+                    style={{
+                      width: `${health.data.storage.capacityTb > 0 ? Math.min(100, (health.data.storage.usedTb / health.data.storage.capacityTb) * 100) : 0}%`,
+                    }}
+                  />
+                </div>
+                <div
+                  className="text-[9px] text-rail-muted/60 tabular-nums truncate"
+                  title={`${health.data.storage.root} · Indexed ${formatBytes(health.data.storage.indexedBytes)} · ${health.data.storage.indexedFiles} files`}
+                >
+                  {health.data.storage.root} · {health.data.storage.indexedFiles} files
+                </div>
+              </>
             )}
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Primary nav — scrolls internally on short viewports so the
           last tiles (Admin) are never clipped behind the footer. */}
       <div
-        className={`flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5 px-2.5 pt-3 pb-3 ${
+        className={`flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5 px-2.5 pt-2 pb-3 ${
           showFull ? 'scrollbar-thin' : 'scrollbar-none'
         }`}
       >
-        <SectionLabel collapsed={!showFull}>Workflow</SectionLabel>
+        <SectionLabel collapsed={!showFull} first>Workflow</SectionLabel>
         {NAV_ITEMS.map((item) => (
           <NavRow key={item.href} item={item} active={pathname === item.href} collapsed={!showFull} />
         ))}
+        {showDecisionQueue && (
+          <NavRow
+            item={{ icon: IconDecision, label: 'Decision queue', href: '/queues/decision' }}
+            active={pathname.startsWith('/queues/decision')}
+            collapsed={!showFull}
+          />
+        )}
+        {showDigitizeQueue && (
+          <NavRow
+            item={{ icon: IconScan, label: 'Digitization queue', href: '/queues/digitize' }}
+            active={pathname.startsWith('/queues/digitize')}
+            collapsed={!showFull}
+          />
+        )}
+        {showMlsQueue && (
+          <NavRow
+            item={{ icon: IconTag, label: 'MLS tagging queue', href: '/queues/mls' }}
+            active={pathname.startsWith('/queues/mls')}
+            collapsed={!showFull}
+          />
+        )}
+        {showReturnsQueue && (
+          <NavRow
+            item={{ icon: IconReturn, label: 'Returns queue', href: '/queues/returns' }}
+            active={pathname.startsWith('/queues/returns')}
+            collapsed={!showFull}
+          />
+        )}
+        {showDiscards && (
+          <NavRow
+            item={{ icon: IconDiscard, label: 'Discards', href: '/queues/discards' }}
+            active={pathname.startsWith('/queues/discards')}
+            collapsed={!showFull}
+          />
+        )}
 
         <SectionLabel collapsed={!showFull}>Manage</SectionLabel>
         {SECONDARY_ITEMS.map((item) => (
@@ -193,10 +269,10 @@ export function Sidebar() {
   );
 }
 
-function SectionLabel({ children, collapsed }: { children: React.ReactNode; collapsed: boolean }) {
+function SectionLabel({ children, collapsed, first }: { children: React.ReactNode; collapsed: boolean; first?: boolean }) {
   if (collapsed) return null;
   return (
-    <span className="sidebar-label-in px-2 pt-5 pb-1 text-[9.5px] font-semibold tracking-[0.12em] uppercase text-rail-muted">
+    <span className={`sidebar-label-in px-2 ${first ? 'pt-0' : 'pt-5'} pb-1 text-[9.5px] font-semibold tracking-[0.12em] uppercase text-rail-muted`}>
       {children}
     </span>
   );

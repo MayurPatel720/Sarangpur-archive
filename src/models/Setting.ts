@@ -14,6 +14,11 @@ const settingSchema = new Schema(
     scanStuckDays: { type: Number, required: true, default: 7, min: 1 },
     returnGraceDays: { type: Number, required: true, default: 3, min: 0 },
     storageCapacityTb: { type: Number, required: true, default: 50, min: 1 },
+    // Storage identity shown in the sidebar tile. usedTb is a manually maintained
+    // figure until the storage-inventory job exists; the tile labels it honestly.
+    storageLabel: { type: String, required: true, default: 'MLS reachable' },
+    storageRoot: { type: String, required: true, default: '192.168.0.84/MLS/dev/' },
+    storageUsedTb: { type: Number, required: true, default: 0, min: 0 },
     notifyEmailEnabled: { type: Boolean, required: true, default: false },
     notifySmsEnabled: { type: Boolean, required: true, default: false },
     revision: { type: Number, required: true, default: 1 },

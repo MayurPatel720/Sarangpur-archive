@@ -39,6 +39,48 @@ import {
   type UserResponse,
   type UsersResponse,
 } from '@/types/admin';
+import {
+  decisionResponseSchema,
+  lotCreateResponseSchema,
+  lotDetailResponseSchema,
+  lotListResponseSchema,
+  lotPatchResponseSchema,
+  overrideResponseSchema,
+  submitResponseSchema,
+  type DecisionBody,
+  type DecisionResponse,
+  type LotCreateBody,
+  type LotDetailResponse,
+  type LotListResponse,
+  type LotPatchBody,
+  type OverrideDecideBody,
+  type OverrideRequestBody,
+  type OverrideResponse,
+  type SubmitResponse,
+} from '@/types/lot';
+import {
+  activityResponseSchema as lotActivityResponseSchema,
+  discardResponseSchema,
+  duplicateResponseSchema,
+  itemsResponseSchema,
+  mlsResponseSchema,
+  reconcileResponseSchema,
+  returnResponseSchema,
+  scanResponseSchema,
+  type ActivityResponse as LotActivityResponse,
+  type DiscardBody,
+  type DiscardResponse,
+  type DuplicateBody,
+  type DuplicateResponse,
+  type ItemsResponse,
+  type MlsBody,
+  type MlsResponse,
+  type ReconcileResponse,
+  type ReturnBody,
+  type ReturnResponse,
+  type ScanBody,
+  type ScanResponse,
+} from '@/types/ops';
 
 /**
  * Thrown when a route returns a non-2xx. Carries the server's own message so the UI
@@ -166,4 +208,142 @@ export const referenceApi = {
 
 export const usersApi = {
   me: () => getJson<MeResponse>('/api/users/me', meResponseSchema),
+};
+
+export const lotsApi = {
+  list: (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    return getJson<LotListResponse>(`/api/lots${qs ? `?${qs}` : ''}`, lotListResponseSchema);
+  },
+  create: (body: LotCreateBody) =>
+    sendJson<{ id: string; lotReference: string; itemsCreated: number }>(
+      '/api/lots',
+      'POST',
+      body,
+      lotCreateResponseSchema,
+    ),
+  detail: (id: string) =>
+    getJson<LotDetailResponse>(
+      `/api/lots/${encodeURIComponent(id)}`,
+      lotDetailResponseSchema,
+    ),
+  patch: (id: string, body: LotPatchBody) =>
+    sendJson<{ id: string; lotReference: string; version: number }>(
+      `/api/lots/${encodeURIComponent(id)}`,
+      'PATCH',
+      body,
+      lotPatchResponseSchema,
+    ),
+  submit: (id: string) =>
+    sendJson<SubmitResponse>(`/api/lots/${encodeURIComponent(id)}/submit`, 'POST', {}, submitResponseSchema),
+  recordDecision: (id: string, body: DecisionBody) =>
+    sendJson<DecisionResponse>(
+      `/api/lots/${encodeURIComponent(id)}/decision`,
+      'POST',
+      body,
+      decisionResponseSchema,
+    ),
+  requestOverride: (id: string, body: OverrideRequestBody) =>
+    sendJson<OverrideResponse>(
+      `/api/lots/${encodeURIComponent(id)}/override`,
+      'POST',
+      body,
+      overrideResponseSchema,
+    ),
+  decideOverride: (id: string, body: OverrideDecideBody) =>
+    sendJson<OverrideResponse>(
+      `/api/lots/${encodeURIComponent(id)}/override`,
+      'PATCH',
+      body,
+      overrideResponseSchema,
+    ),
+  scan: (id: string, body: ScanBody) =>
+    sendJson<ScanResponse>(
+      `/api/lots/${encodeURIComponent(id)}/scan`,
+      'PATCH',
+      body,
+      scanResponseSchema,
+    ),
+  reconcile: (id: string) =>
+    sendJson<ReconcileResponse>(
+      `/api/lots/${encodeURIComponent(id)}/reconcile`,
+      'POST',
+      {},
+      reconcileResponseSchema,
+    ),
+  tagMls: (id: string, body: MlsBody) =>
+    sendJson<MlsResponse>(
+      `/api/lots/${encodeURIComponent(id)}/mls`,
+      'PATCH',
+      body,
+      mlsResponseSchema,
+    ),
+  resolveDuplicate: (id: string, body: DuplicateBody) =>
+    sendJson<DuplicateResponse>(
+      `/api/lots/${encodeURIComponent(id)}/mls/duplicate`,
+      'PATCH',
+      body,
+      duplicateResponseSchema,
+    ),
+  manageReturn: (id: string, body: ReturnBody) =>
+    sendJson<ReturnResponse>(
+      `/api/lots/${encodeURIComponent(id)}/return`,
+      'PATCH',
+      body,
+      returnResponseSchema,
+    ),
+  confirmDiscard: (id: string, body: DiscardBody) =>
+    sendJson<DiscardResponse>(
+      `/api/lots/${encodeURIComponent(id)}/discard`,
+      'POST',
+      body,
+      discardResponseSchema,
+    ),
+  reverseDiscard: (id: string, version: number) =>
+    sendJson<DiscardResponse>(
+      `/api/lots/${encodeURIComponent(id)}/discard`,
+      'DELETE',
+      { version },
+      discardResponseSchema,
+    ),
+  items: (id: string, params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    return getJson<ItemsResponse>(
+      `/api/lots/${encodeURIComponent(id)}/items${qs ? `?${qs}` : ''}`,
+      itemsResponseSchema,
+    );
+  },
+  activity: (id: string, page: number, pageSize: number) =>
+    getJson<LotActivityResponse>(
+      `/api/lots/${encodeURIComponent(id)}/activity?page=${page}&pageSize=${pageSize}`,
+      lotActivityResponseSchema,
+    ),
+};
+
+export const queuesApi = {
+  decision: (page: number, pageSize: number) =>
+    getJson<LotListResponse>(
+      `/api/queues/decision?page=${page}&pageSize=${pageSize}`,
+      lotListResponseSchema,
+    ),
+  digitize: (page: number, pageSize: number) =>
+    getJson<LotListResponse>(
+      `/api/queues/digitize?page=${page}&pageSize=${pageSize}`,
+      lotListResponseSchema,
+    ),
+  mls: (page: number, pageSize: number) =>
+    getJson<LotListResponse>(
+      `/api/queues/mls?page=${page}&pageSize=${pageSize}`,
+      lotListResponseSchema,
+    ),
+  returns: (page: number, pageSize: number) =>
+    getJson<LotListResponse>(
+      `/api/queues/returns?page=${page}&pageSize=${pageSize}`,
+      lotListResponseSchema,
+    ),
+  discards: (page: number, pageSize: number) =>
+    getJson<LotListResponse>(
+      `/api/queues/discards?page=${page}&pageSize=${pageSize}`,
+      lotListResponseSchema,
+    ),
 };

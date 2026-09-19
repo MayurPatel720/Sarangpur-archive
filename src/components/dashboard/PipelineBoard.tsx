@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { num, severityText } from '@/lib/format';
@@ -38,12 +39,12 @@ export function PipelineBoard() {
         <span className="text-[11.5px] text-ink-3">
           {isPending ? 'Loading…' : `${num(data.totalActive)} lots in the pipeline`}
         </span>
-        <span
-          className="ml-auto text-[12.5px] font-semibold text-ink-4"
-          title="Register screen arrives in the next slice"
+        <Link
+          href="/register"
+          className="ml-auto text-[12.5px] font-semibold text-ink-4 no-underline hover:text-ink"
         >
           Open full register
-        </span>
+        </Link>
       </PanelHeader>
 
       <div className="p-3 sm:p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
@@ -57,7 +58,10 @@ export function PipelineBoard() {
             ))
           : data.stages.map((stage) => (
               <div key={stage.stage} className="flex flex-col gap-2.5 min-w-0">
-                <div className="flex flex-col gap-1.5 pb-2.5 relative">
+                <Link
+                  href={`/register?stage=${stage.stage}`}
+                  className="flex flex-col gap-1.5 pb-2.5 relative no-underline"
+                >
                   <span className="text-[9.5px] font-semibold tracking-[0.1em] uppercase text-ink-3 truncate">
                     {stage.label}
                   </span>
@@ -67,12 +71,13 @@ export function PipelineBoard() {
                   <span
                     className={`absolute left-0 right-0 bottom-0 h-0.5 ${HEAD_RULE[stage.accent]}`}
                   />
-                </div>
+                </Link>
 
                 {stage.samples.map((sample) => (
-                  <div
+                  <Link
                     key={sample.id}
-                    className="bg-surface-subtle border border-line-soft rounded-[6px] px-2.5 py-2 flex flex-col gap-1.5 min-w-0"
+                    href={`/register/${sample.id}`}
+                    className="bg-surface-subtle border border-line-soft rounded-[6px] px-2.5 py-2 flex flex-col gap-1.5 min-w-0 no-underline"
                   >
                     <span className="font-mono text-[10.5px] font-medium text-accent truncate">
                       {sample.code}
@@ -90,7 +95,7 @@ export function PipelineBoard() {
                     >
                       {sample.note}
                     </span>
-                  </div>
+                  </Link>
                 ))}
 
                 {stage.samples.length === 0 && (

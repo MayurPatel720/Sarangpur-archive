@@ -59,6 +59,9 @@ function SettingsFields({
     scanStuckDays: number;
     returnGraceDays: number;
     storageCapacityTb: number;
+    storageLabel: string;
+    storageRoot: string;
+    storageUsedTb: number;
     notifyEmailEnabled: boolean;
     notifySmsEnabled: boolean;
     revision: number;
@@ -71,6 +74,9 @@ function SettingsFields({
   const [scanStuckDays, setScanStuckDays] = useState(initial.scanStuckDays);
   const [returnGraceDays, setReturnGraceDays] = useState(initial.returnGraceDays);
   const [storageCapacityTb, setStorageCapacityTb] = useState(initial.storageCapacityTb);
+  const [storageLabel, setStorageLabel] = useState(initial.storageLabel);
+  const [storageRoot, setStorageRoot] = useState(initial.storageRoot);
+  const [storageUsedTb, setStorageUsedTb] = useState(initial.storageUsedTb);
   const [notifyEmailEnabled, setNotifyEmailEnabled] = useState(initial.notifyEmailEnabled);
   const [notifySmsEnabled, setNotifySmsEnabled] = useState(initial.notifySmsEnabled);
 
@@ -81,6 +87,9 @@ function SettingsFields({
         scanStuckDays,
         returnGraceDays,
         storageCapacityTb,
+        storageLabel,
+        storageRoot,
+        storageUsedTb,
         notifyEmailEnabled,
         notifySmsEnabled,
         expectedRevision: initial.revision,
@@ -117,6 +126,15 @@ function SettingsFields({
         </Field>
         <Field label="Storage capacity (TB)" hint="Total masters capacity; drives the storage meter.">
           <TextInput type="number" min={1} step={0.5} value={storageCapacityTb} onChange={(e) => setStorageCapacityTb(Number(e.target.value))} required />
+        </Field>
+        <Field label="Storage status label" hint="Shown in the sidebar, e.g. which store is reachable.">
+          <TextInput value={storageLabel} onChange={(e) => setStorageLabel(e.target.value)} required />
+        </Field>
+        <Field label="Storage root path" hint="File-server root shown in the sidebar.">
+          <TextInput value={storageRoot} onChange={(e) => setStorageRoot(e.target.value)} required />
+        </Field>
+        <Field label="Storage used (TB)" hint="Manually maintained until the storage-inventory job exists.">
+          <TextInput type="number" min={0} step={0.1} value={storageUsedTb} onChange={(e) => setStorageUsedTb(Number(e.target.value))} required />
         </Field>
       </div>
       <Checkbox label="Email notifications enabled" checked={notifyEmailEnabled} onChange={(e) => setNotifyEmailEnabled(e.target.checked)} />

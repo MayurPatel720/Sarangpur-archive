@@ -136,6 +136,8 @@ export async function handleMutation<TBody, T>(
   opts: {
     permission: import('@/server/permissions').Permission;
     run: (body: TBody, ctx: MutationContext) => Promise<T>;
+    /** Success status. Default 200 — POST-create routes pass 201. */
+    status?: number;
   },
 ): Promise<NextResponse> {
   try {
@@ -168,6 +170,7 @@ export async function handleMutation<TBody, T>(
     }
 
     return NextResponse.json(parsed.data, {
+      status: opts.status ?? 200,
       headers: { 'Cache-Control': 'no-store' },
     });
   } catch (error) {

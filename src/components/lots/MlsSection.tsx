@@ -1,0 +1,139 @@
+'use client';
+
+import { useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { ApiRequestError, lotsApi } from '@/lib/api-client';
+import type { LotDetailResponse } from '@/types/lot';
+import { prettyEnum } from '@/lib/format';
+import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
+import { Badge, Panel, PanelHeader } from '@/components/ui/primitives';
+import { useMe } from '@/hooks/useCan';
+
+type DetailLot = LotDetailResponse['lot'];
+
+const dash = <span className="text-ink-4">—</span>;
+
+const DUPLICATE_ACTIONS = ['retained', 'removed', 'merged'] as const;
+
+export function MlsSection({ lot, onChanged }: { lot: DetailLot; onChanged: () => void }) {
+  const me = useMe();
+  const canTag = me.data ? me.data.grants.includes('mls:tag') : false;
+  const canResolve = me.data ? me.data.grants.includes('duplicate:resolve') : false;
+  const [formError, setFormError] = useState<string | null>(null);
+  const [recordId, setRecordId] = useState('');
+  const [taggedCount, setTaggedCount] = useState('');
+  const [dataListAttached, setDataListAttached] = useState(false);
+  const [markComplete, setMarkComplete] = useState(false);
+  const [dupAction, setDupAction] = useState<(typeof DUPLICATE_ACTIONS)[number]>('retained');
+
+  const tag = useMutation({
+    mutationFn: () =>
+      lotsApi.tagMls(lot.id, {
+        ...(recordId.trim() ? { recordId: recordId.trim() } : {}),
+        ...(taggedCount.trim() ? { taggedCount: Number(taggedCount) } : {}),
+        ...(dataListAttached ? { dataListAttached: true } : {}),
+        ...(markComplete ? { markComplete: true } : {}),
+        version: lot.version,
+      }),
+    onSuccess: () => {
+      setFormError(null);
+      setRecordId('');
+      setTaggedCount('');
+      setDataListAttached(false);
+      setMarkComplete(false);
+      onChanged();
+    },
+    onError: (e) => setFormError(e instanceof ApiRequestError ? e.message : 'Could not save MLS tagging.'),
+  });
+
+  const resolve = useMutation({
+    mutationFn: () => lotsApi.resolveDuplicate(lot.id, { duplicateAction: dupAction, version: lot.version }),
+    onSuccess: () => {
+      setFormError(null);
+      onChanged();
+    },
+    onError: (e) => setFormError(e instanceof ApiRequestError ? e.message : 'Could not resolve duplicate.'),
+  });
+
+  return (
+    <Panel>
+      <PanelHeader title="MLS tagging" />
+      <div className="p-3 md:p-4 flex flex-col gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Record ID</span>
+            <span className="text-[13px] text-ink break-words">{lot.ops.mlsRecordId ?? dash}</span>
+          </div>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Tagged</span>
+            <span className="text-[13px] text-ink break-words">{lot.ops.mlsTaggedCount}</span>
+          </div>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Data list</span>
+            <span className="text-[13px] text-ink break-words">{lot.ops.mlsDataListAttached ? 'Attached' : dash}</span>
+          </div>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Duplicates</span>
+            <span className="text-[13px] text-ink break-words">
+              {lot.ops.mlsDuplicatesFound > 0 ? (
+                <Badge severity={lot.ops.mlsDuplicateAction ? 'neutral' : 'warning'}>
+                  {lot.ops.mlsDuplicatesFound} · {lot.ops.mlsDuplicateAction ?? 'unresolved'}
+                </Badge>
+              ) : (
+                dash
+              )}
+            </span>
+          </div>
+        </div>
+
+        {canTag ? (
+          <div className="flex flex-col gap-3 border-t border-line pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="MLS record ID">
+                <TextInput value={recordId} onChange={(e) => setRecordId(e.target.value)} placeholder="e.g. MLS-2026-0142" />
+              </Field>
+              <Field label="Tagged count">
+                <TextInput value={taggedCount} onChange={(e) => setTaggedCount(e.target.value)} inputMode="numeric" placeholder="e.g. 36" />
+              </Field>
+            </div>
+            <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
+              <input type="checkbox" checked={dataListAttached} onChange={(e) => setDataListAttached(e.target.checked)} className="h-4 w-4 accent-accent" />
+              Data list attached
+            </label>
+            <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
+              <input type="checkbox" checked={markComplete} onChange={(e) => setMarkComplete(e.target.checked)} className="h-4 w-4 accent-accent" />
+              Mark complete (advance to storage)
+            </label>
+            {formError ? <FormError message={formError} /> : null}
+            <div>
+              <PrimaryButton onClick={() => tag.mutate()} disabled={tag.isPending}>
+                {tag.isPending ? 'Saving…' : 'Save tagging'}
+              </PrimaryButton>
+            </div>
+          </div>
+        ) : null}
+
+        {canResolve && lot.ops.mlsDuplicatesFound > 0 && !lot.ops.mlsDuplicateAction ? (
+          <div className="flex flex-col gap-3 border-t border-line pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+              <Field label="Duplicate action">
+                <Select value={dupAction} onChange={(e) => setDupAction(e.target.value as (typeof DUPLICATE_ACTIONS)[number])}>
+                  {DUPLICATE_ACTIONS.map((a) => (
+                    <option key={a} value={a}>
+                      {prettyEnum(a)}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <div>
+                <GhostButton onClick={() => resolve.mutate()} disabled={resolve.isPending}>
+                  {resolve.isPending ? 'Resolving…' : 'Resolve duplicate'}
+                </GhostButton>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}

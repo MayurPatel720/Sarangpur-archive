@@ -13,7 +13,9 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "verify:seed": "tsx scripts/verify-seed.ts",
-    "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed",
+    "verify:decision-rule": "tsx scripts/verify-decision-rule.ts",
+    "verify:reconcile": "tsx scripts/verify-reconcile.ts",
+    "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile",
     "db:check": "tsx scripts/check-db.ts"
   },
   "dependencies": {

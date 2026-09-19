@@ -40,7 +40,20 @@ export function relativeStamp(iso: string, now = new Date()): string {
   return `${then.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${time}`;
 }
 
-/** Text colour for a severity, for notes and counters. */
+/** "in_progress" → "In progress" — enum values in selects and readouts. */
+export function prettyEnum(value: string): string {
+  if (!value) return '—';
+  return value.charAt(0).toUpperCase() + value.slice(1).replace(/_/g, ' ');
+}
+
+/** Raw bytes → human unit (B/KB/MB/GB/TB), one decimal. */
+export function formatBytes(bytes: number): string {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const unit = units[i] ?? 'B';
+  return `${(bytes / 1024 ** i).toFixed(1)} ${unit}`;
+}
 export const severityText: Record<Severity, string> = {
   neutral: 'text-ink-3',
   info: 'text-info',

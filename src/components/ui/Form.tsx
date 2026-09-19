@@ -37,6 +37,13 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputClass} ${props.className ?? ''}`} />;
 }
 
+const textareaClass =
+  'min-h-[76px] px-3 py-2.5 bg-surface border border-line-strong rounded-[6px] shadow-control text-[13px] text-ink placeholder:text-ink-4 disabled:opacity-60 w-full min-w-0 resize-y';
+
+export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} className={`${textareaClass} ${props.className ?? ''}`} />;
+}
+
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select {...props} className={`pr-8 appearance-none ${inputClass} ${props.className ?? ''}`} />
