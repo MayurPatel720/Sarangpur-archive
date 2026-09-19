@@ -10,6 +10,35 @@ import {
   type SummaryResponse,
 } from '@/types/dashboard';
 import { serverHealthResponseSchema, type ServerHealthResponse } from '@/types/health';
+import {
+  listDeleteResponseSchema,
+  listResponseSchema,
+  listsResponseSchema,
+  meResponseSchema,
+  referenceLookupResponseSchema,
+  roleResponseSchema,
+  rolesListResponseSchema,
+  settingsResponseSchema,
+  userResponseSchema,
+  usersResponseSchema,
+  type ListCreateBody,
+  type ListDeleteResponse,
+  type ListPatchBody,
+  type ListResponse,
+  type ListsResponse,
+  type MeResponse,
+  type ReferenceLookupResponse,
+  type RoleCreateBody,
+  type RolePatchBody,
+  type RoleResponse,
+  type RolesListResponse,
+  type SettingsPatchBody,
+  type SettingsResponse,
+  type UserCreateBody,
+  type UserPatchBody,
+  type UserResponse,
+  type UsersResponse,
+} from '@/types/admin';
 
 /**
  * Thrown when a route returns a non-2xx. Carries the server's own message so the UI
@@ -58,4 +87,83 @@ export const dashboardApi = {
 
 export const healthApi = {
   status: () => getJson<ServerHealthResponse>('/api/health', serverHealthResponseSchema),
+};
+
+async function sendJson<T>(
+  path: string,
+  method: 'POST' | 'PATCH' | 'DELETE',
+  body: unknown,
+  schema: ZodType<T>,
+): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let message = `Request failed with ${res.status}`;
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      if (parsed.error) message = parsed.error;
+    } catch {
+      /* the body was not JSON — keep the status message */
+    }
+    throw new ApiRequestError(res.status, message);
+  }
+
+  return schema.parse(await res.json());
+}
+
+export const adminApi = {
+  roles: () => getJson<RolesListResponse>('/api/admin/roles', rolesListResponseSchema),
+  createRole: (body: RoleCreateBody) =>
+    sendJson<RoleResponse>('/api/admin/roles', 'POST', body, roleResponseSchema),
+  patchRole: (key: string, body: RolePatchBody) =>
+    sendJson<RoleResponse>(
+      `/api/admin/roles/${encodeURIComponent(key)}`,
+      'PATCH',
+      body,
+      roleResponseSchema,
+    ),
+
+  lists: () => getJson<ListsResponse>('/api/admin/lists', listsResponseSchema),
+  createList: (body: ListCreateBody) =>
+    sendJson<ListResponse>('/api/admin/lists', 'POST', body, listResponseSchema),
+  patchList: (key: string, body: ListPatchBody) =>
+    sendJson<ListResponse>(
+      `/api/admin/lists/${encodeURIComponent(key)}`,
+      'PATCH',
+      body,
+      listResponseSchema,
+    ),
+  deleteList: (key: string) =>
+    sendJson<ListDeleteResponse>(
+      `/api/admin/lists/${encodeURIComponent(key)}`,
+      'DELETE',
+      {},
+      listDeleteResponseSchema,
+    ),
+
+  users: () => getJson<UsersResponse>('/api/users', usersResponseSchema),
+  createUser: (body: UserCreateBody) =>
+    sendJson<UserResponse>('/api/users', 'POST', body, userResponseSchema),
+  patchUser: (id: string, body: UserPatchBody) =>
+    sendJson<UserResponse>(`/api/users/${encodeURIComponent(id)}`, 'PATCH', body, userResponseSchema),
+
+  settings: () => getJson<SettingsResponse>('/api/admin/settings', settingsResponseSchema),
+  patchSettings: (body: SettingsPatchBody) =>
+    sendJson<SettingsResponse>('/api/admin/settings', 'PATCH', body, settingsResponseSchema),
+};
+
+export const referenceApi = {
+  lookup: (key: string) =>
+    getJson<ReferenceLookupResponse>(
+      `/api/reference/${encodeURIComponent(key)}`,
+      referenceLookupResponseSchema,
+    ),
+};
+
+export const usersApi = {
+  me: () => getJson<MeResponse>('/api/users/me', meResponseSchema),
 };

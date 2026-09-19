@@ -24,6 +24,11 @@ import { ActivityLog } from '../src/models/ActivityLog';
 import { ArchiveLot } from '../src/models/ArchiveLot';
 import { LotItem } from '../src/models/LotItem';
 import { User } from '../src/models/User';
+import { ReferenceList } from '../src/models/ReferenceList';
+import { Role } from '../src/models/Role';
+import { Setting } from '../src/models/Setting';
+import { checkSystemSafety, PERMISSIONS } from '../src/server/permissions';
+import { buildGlobalSettings, buildRoles, SEED_REFERENCE_LISTS } from './seed-data';
 import {
   lotFacetPipeline,
   pipelineBoardPipeline,
@@ -96,6 +101,9 @@ validateAll('user', User, users);
 validateAll('lot', ArchiveLot, lots);
 validateAll('item profile', LotItem, items);
 validateAll('audit', ActivityLog, activity);
+validateAll('role', Role, buildRoles());
+validateAll('reference list', ReferenceList, SEED_REFERENCE_LISTS);
+validateAll('setting', Setting, [buildGlobalSettings()]);
 
 /* --- 2. referential integrity (what MongoDB will not check for you) ------- */
 
@@ -136,7 +144,57 @@ refsOk(
   userIds,
 );
 
-/* --- 3. internal consistency --------------------------------------------- */
+/* --- 3. roles, vocabularies and the lockout invariants ---------------------- */
+
+console.log('\nAccess control seed');
+
+const roles = buildRoles();
+const knownGrants = new Set<string>(PERMISSIONS);
+const unknownGrants = roles.flatMap((r) =>
+  ((r.permissions as string[]) ?? []).filter((g) => !knownGrants.has(g)),
+);
+if (unknownGrants.length === 0) ok('every seeded grant is a registered permission');
+else fail(`unknown grants seeded: ${[...new Set(unknownGrants)].join(', ')}`);
+
+const roleKeys = new Set(roles.map((r) => String(r.key)));
+const orphanUsers = users.filter((u) => !roleKeys.has(String(u.role)));
+if (orphanUsers.length === 0) ok('every seed user resolves to a seeded role');
+else fail(`${orphanUsers.length} seed users reference a missing role`);
+
+const safety = checkSystemSafety(
+  roles.map((r) => ({
+    key: String(r.key),
+    active: r.active as boolean,
+    permissions: r.permissions as string[],
+  })),
+  users.map((u) => ({
+    username: String(u.username),
+    active: u.active as boolean,
+    role: String(u.role),
+  })),
+);
+if (safety.length === 0) ok('lockout invariants hold (managing role + managing user present)');
+else {
+  fail('lockout invariants violated');
+  for (const s of safety) console.log(`      ${s}`);
+}
+
+const listKeys = SEED_REFERENCE_LISTS.map((l) => String(l.key));
+const mediaSubtypes = ['mediaSubtype.photo', 'mediaSubtype.video', 'mediaSubtype.audio'];
+const missingLists = [...mediaSubtypes, 'rightsType'].filter((k) => !listKeys.includes(k));
+if (missingLists.length === 0) ok('media sub-type + rights vocabularies seeded');
+else fail(`missing vocabularies: ${missingLists.join(', ')}`);
+
+const listsWithoutPrefixes = mediaSubtypes.filter((k) => {
+  const list = SEED_REFERENCE_LISTS.find((l) => l.key === k) as {
+    items: { meta: { codePrefix?: unknown } }[];
+  };
+  return list.items.some((i) => typeof i.meta?.codePrefix !== 'string' || i.meta.codePrefix === '');
+});
+if (listsWithoutPrefixes.length === 0) ok('every media sub-type carries a codePrefix');
+else fail(`sub-types without codePrefix in: ${listsWithoutPrefixes.join(', ')}`);
+
+/* --- 4. internal consistency ---------------------------------------------- */
 
 console.log('\nInternal consistency');
 
@@ -161,7 +219,7 @@ const dupCodes = items.length - new Set(items.map((i) => i.code)).size;
 if (dupCodes === 0) ok('every item code is unique');
 else fail(`${dupCodes} duplicate item codes`);
 
-/* --- 4. the pipelines, over the generated data ---------------------------- */
+/* --- 5. the pipelines, over the generated data ----------------------------- */
 
 console.log('\nPipelines over the generated archive');
 
@@ -190,7 +248,7 @@ for (const [label, result] of [
   }
 }
 
-/* --- 5. the numbers the seed was built to produce -------------------------- */
+/* --- 6. the numbers the seed was built to produce --------------------------- */
 
 console.log('\nSeeded conditions land where they were designed to');
 
@@ -212,7 +270,7 @@ const oldest = alerts.alerts.find((a) => a.key === 'decision_overdue')?.detail ?
 if (oldest.endsWith('day 11')) ok('oldest overdue decision is day 11');
 else fail(`oldest overdue decision detail was "${oldest}"`);
 
-/* --- 6. print the dashboard ----------------------------------------------- */
+/* --- 7. print the dashboard ------------------------------------------------ */
 
 console.log('\n' + '─'.repeat(72));
 console.log('  DASHBOARD, rendered from the generated archive');

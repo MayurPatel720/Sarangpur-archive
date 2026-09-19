@@ -17,7 +17,17 @@ import { ActivityLog } from '../src/models/ActivityLog';
 import { ArchiveLot } from '../src/models/ArchiveLot';
 import { LotItem } from '../src/models/LotItem';
 import { User } from '../src/models/User';
+import { ReferenceList } from '../src/models/ReferenceList';
+import { Role } from '../src/models/Role';
+import { Setting } from '../src/models/Setting';
+import { hashPassword } from '../src/server/auth-verify';
 import { buildDataset } from './dataset';
+import {
+  buildGlobalSettings,
+  buildRoles,
+  SEED_DEV_PASSWORD,
+  SEED_REFERENCE_LISTS,
+} from './seed-data';
 
 const CHUNK = 5000;
 
@@ -49,10 +59,19 @@ async function main() {
     ArchiveLot.deleteMany({}),
     LotItem.deleteMany({}),
     ActivityLog.deleteMany({}),
+    Role.deleteMany({}),
+    ReferenceList.deleteMany({}),
+    // Settings are NOT wiped: on reseed the admin's thresholds survive.
   ]);
 
-  console.log(`→ inserting ${users.length} users…`);
-  await insertChunked(User, users);
+  // Every generated team member can sign in with the dev password. Real accounts are
+  // created with `scripts/create-user.ts`.
+  const devPassword = process.env.SEED_DEV_PASSWORD || SEED_DEV_PASSWORD;
+  const passwordHash = await hashPassword(devPassword);
+  const usersWithPasswords = users.map((u) => ({ ...u, passwordHash }));
+
+  console.log(`→ inserting ${usersWithPasswords.length} users…`);
+  await insertChunked(User, usersWithPasswords);
 
   console.log(`→ inserting ${lots.length} lots…`);
   await insertChunked(ArchiveLot, lots);
@@ -63,6 +82,16 @@ async function main() {
   console.log(`→ inserting ${activity.length} audit entries…`);
   await insertChunked(ActivityLog, activity);
 
+  const roles = buildRoles();
+  console.log(`→ inserting ${roles.length} roles…`);
+  await insertChunked(Role, roles);
+
+  console.log(`→ inserting ${SEED_REFERENCE_LISTS.length} reference lists…`);
+  await insertChunked(ReferenceList, SEED_REFERENCE_LISTS);
+
+  console.log('→ ensuring global settings…');
+  await Setting.updateOne({ key: 'global' }, { $setOnInsert: buildGlobalSettings() }, { upsert: true });
+
   // Indexes are declared on the schemas; build them now so the first dashboard load is
   // not the thing that pays for them.
   console.log('→ building indexes…');
@@ -71,6 +100,9 @@ async function main() {
     ArchiveLot.syncIndexes(),
     LotItem.syncIndexes(),
     ActivityLog.syncIndexes(),
+    Role.syncIndexes(),
+    ReferenceList.syncIndexes(),
+    Setting.syncIndexes(),
   ]);
 
   const bytes = lots.reduce(
@@ -84,9 +116,12 @@ async function main() {
   console.log(`  lots           ${lots.length}`);
   console.log(`  item profiles  ${items.length}`);
   console.log(`  audit entries  ${activity.length}`);
+  console.log(`  roles          ${roles.length}`);
+  console.log(`  vocabularies   ${SEED_REFERENCE_LISTS.length}`);
   console.log(`  masters        ${(bytes / 1e12).toFixed(1)} TB`);
   console.log('');
-  console.log('  Now run `npm run dev` and open http://localhost:3000');
+  console.log(`  Every seed user signs in with: ${devPassword}`);
+  console.log('  (try s.dave — the admin). Now run `npm run dev` and open http://localhost:3000');
   console.log('');
 
   await mongoose.disconnect();

@@ -47,7 +47,7 @@ export async function GET() {
     return NextResponse.json(parsed.data, {
       headers: { 'Cache-Control': 'no-store' },
     });
-  } catch (error) {
+  } catch {
     const latencyMs = Math.round(performance.now() - start);
     const uri = process.env.MONGODB_URI ?? '';
 

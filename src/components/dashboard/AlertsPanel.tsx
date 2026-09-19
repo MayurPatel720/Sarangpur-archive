@@ -47,15 +47,9 @@ export function AlertsPanel() {
         {!isPending && data.totalOpen > 0 && (
           <Badge severity="critical">{num(data.totalOpen)} open</Badge>
         )}
-        <span
-          className="ml-auto text-[12.5px] font-semibold text-ink-4"
-          title="Alert-rule configuration arrives with the admin screens"
-        >
-          Alert rules
-        </span>
       </PanelHeader>
 
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
         {isPending
           ? Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex items-center gap-3 px-4 py-3 border-b border-line-row">
@@ -91,12 +85,6 @@ export function AlertsPanel() {
                     className={`text-[14px] font-semibold tnum ${severityText[alert.severity]}`}
                   >
                     {num(alert.count)}
-                  </span>
-                  <span
-                    className="text-[12.5px] font-semibold text-ink-4"
-                    title="Queue screens arrive in the next slice"
-                  >
-                    Review
                   </span>
                 </div>
               );

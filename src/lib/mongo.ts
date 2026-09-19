@@ -39,7 +39,9 @@ export async function connectToDatabase(): Promise<typeof mongoose> {
   if (!cached.promise) {
     cached.promise = mongoose.connect(MONGODB_URI, {
       // Fail fast in development rather than hanging for 30s when Mongo is not running.
-      serverSelectionTimeoutMS: 5_000,
+      // 15s (not 5s): TLS handshake to Atlas from this environment takes ~5.2s
+      // consistently (middlebox delay), so 5s makes every fresh connection fail.
+      serverSelectionTimeoutMS: 15_000,
       // On a long-lived server one process serves everyone, so a pool of 10 is right.
       // On Vercel every concurrent invocation is its own process holding its own pool,
       // so keep it small — Atlas M0 allows 500 connections in total and a traffic spike

@@ -22,7 +22,7 @@ Legend: **DONE** · **TODO**
 | `*` | `/api/auth/[...nextauth]` | — | TODO |
 
 Credentials provider, JWT sessions in httpOnly cookies, `{ id, name, role }` in the token.
-`src/middleware.ts` redirects unauthenticated requests to `/login` and returns `401` JSON
+`src/proxy.ts` redirects unauthenticated requests to `/login` and returns `401` JSON
 for `/api/*`.
 
 ---
@@ -169,13 +169,28 @@ type QueueResponse = {
 
 ---
 
-## 7. Admin — TODO
+## 7. Admin — DONE (roles, lists, users, settings; live-verified)
+
+Permission checks read LIVE role grants from the database per request (`authorize()`
+in `src/lib/api.ts`), never the JWT. Response envelopes: `{ roles }`, `{ lists }`,
+`{ users }`, `{ settings }`, `{ role }`, `{ list }`, `{ user }`.
+
+| Method | Path | Permission |
+|---|---|---|
+| GET/POST | `/api/admin/roles` | `roles:manage` — PATCH only, no DELETE; system roles editable, never deletable; patch is revision-guarded (stale → 409) with lockout simulation |
+| PATCH | `/api/admin/roles/[key]` | `roles:manage` |
+| GET/POST | `/api/admin/lists` | `lists:manage` — full-item-replace PATCH, revision-guarded; DELETE refuses protected seed keys + in-use items |
+| PATCH/DELETE | `/api/admin/lists/[key]` | `lists:manage` |
+| GET | `/api/reference/[key]` | session only — active items for dropdowns (label-fallback client-side) |
+| GET/POST | `/api/users` | `user:manage` — duplicate username/email → 409 |
+| GET | `/api/users/me` | session only — `{ id, name, roleKey, grants }` for `useCan` gating |
+| PATCH | `/api/users/[userId]` | `user:manage` — no DELETE (deactivate only); self role-change/deactivation → 403 |
+| GET/PATCH | `/api/admin/settings` | `settings:manage` — revision-guarded; upsert-on-read from seed defaults |
+
+Still TODO:
 
 | Method | Path | Role |
 |---|---|---|
-| GET/POST | `/api/users` | admin |
-| PATCH/DELETE | `/api/users/[userId]` | admin — deactivate, never hard-delete (audit references) |
-| GET/PATCH | `/api/admin/settings` | admin — alert thresholds |
 | GET/PATCH | `/api/admin/naming-codes` | admin — origin-source list |
 | GET | `/api/admin/storage` | admin — volume usage, reconciliation health, sync failures |
 | GET | `/api/admin/audit` | admin — cross-lot audit search, CSV export |

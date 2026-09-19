@@ -15,7 +15,7 @@ Enum values come from `src/lib/domain.ts`; never hardcode a string literal.
 | `name` | String, required | "M. Patel" |
 | `initials` | String, required, ≤3 | Avatar |
 | `username` | String, required, **unique** | lowercase |
-| `email` | String | |
+| `email` | String, **unique + sparse** | Optional; also works at sign-in. `null` clears it |
 | `role` | Enum, **indexed** | `volunteer` · `reviewer` · `lead_reviewer` · `admin` |
 | `active` | Boolean, default true | |
 | `passwordHash` | String | **TODO** — argon2id. Never return it from an API |

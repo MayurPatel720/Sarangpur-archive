@@ -142,7 +142,7 @@ archive-tracker/
     │   ├── dashboard.ts                                            DONE
     │   ├── lot.ts  queue.ts  admin.ts                              TODO
     │
-    └── middleware.ts                                               TODO  auth gate
+    └── proxy.ts                                                    DONE  auth gate (Next 16 renamed middleware → proxy)
 ```
 
 ---
@@ -170,7 +170,7 @@ Each phase depends on the one before it. Estimates assume one experienced full-s
 2. `src/models/{FileIndex,Attachment,Setting,MlsOutbox}.ts` + update `models/index.ts`.
 3. `src/server/audit.ts` — `withAudit()`. Signature in §4.2.
 4. `src/server/permissions.ts` — `can(user, action, resource)`.
-5. `src/lib/auth.ts`, `src/app/api/auth/[...nextauth]/route.ts`, `src/middleware.ts`,
+5. `src/lib/auth.ts`, `src/app/api/auth/[...nextauth]/route.ts`, `src/proxy.ts`,
    `src/app/login/page.tsx`, `scripts/create-user.ts`.
 6. `src/models/User.ts` — add `passwordHash` (argon2 or bcrypt).
 
@@ -202,6 +202,8 @@ Each phase depends on the one before it. Estimates assume one experienced full-s
 ### Phase 4 — Admin (1.5 wk)
 
 Users and roles, alert-threshold settings, naming-codes sheet, audit explorer with export.
+SHIPPED: roles/lists/users/settings APIs + `/admin` UI (live-verified, Module 1).
+REMAINING: naming-codes sheet, storage dashboard, audit explorer with export.
 
 ### Phase 5 — Production (3 wk)
 

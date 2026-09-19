@@ -1,23 +1,44 @@
 'use client';
 
+import { useState } from 'react';
+import { signOut } from 'next-auth/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { dashboardApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { useMe } from '@/hooks/useCan';
 import {
   IconBell,
   IconChevronDown,
   IconMenu,
-  IconPlus,
   IconRefresh,
   IconSearch,
 } from '@/components/ui/icons';
 import { useDrawer } from '@/components/shell/drawer-context';
 
-const CURRENT_USER = { name: 'M. Patel', role: 'Volunteer', initials: 'MP' };
+/** 'lead_reviewer' → 'Lead reviewer'. Session only carries the key, not the label. */
+function prettifyRoleKey(key: string): string {
+  return key
+    .split('_')
+    .map((w) => (w.length > 0 ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(' ');
+}
+
+/** 'M. Patel' → 'MP'. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  const initials = parts.map((p) => p[0]!.toUpperCase()).join('');
+  return initials || '–';
+}
 
 export function Header({ section, page }: { section: string; page: string }) {
   const queryClient = useQueryClient();
   const { toggle } = useDrawer();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const { data: me } = useMe();
+
+  const displayName = me?.name ?? '';
+  const roleLabel = me ? prettifyRoleKey(me.roleKey) : '';
+  const initials = me ? initialsOf(me.name) : '';
 
   const alerts = useQuery({
     queryKey: queryKeys.dashboard.alerts(),
@@ -26,8 +47,8 @@ export function Header({ section, page }: { section: string; page: string }) {
 
   const openAlerts = alerts.data?.totalOpen ?? 0;
 
-  const refreshAll = () =>
-    queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+  // Page-agnostic: refetch everything (dashboard + admin + session), not just dashboard.
+  const refreshAll = () => queryClient.invalidateQueries();
 
   return (
     <header className="h-[60px] flex-shrink-0 bg-surface border-b border-line flex items-center gap-2.5 px-3 md:gap-4 md:px-5">
@@ -76,31 +97,21 @@ export function Header({ section, page }: { section: string; page: string }) {
         <IconSearch size={16} className="text-ink-4" />
       </button>
 
-      <div className="flex items-center gap-2 md:gap-2.5 ml-auto md:ml-2">
-        {/* New intake — full on md+, icon-only on sm, hidden on < sm */}
-        <button
-          type="button"
-          className="hidden sm:inline-flex h-10 px-[15px] bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold items-center gap-2 cursor-pointer"
-          title="Intake form arrives in the next slice"
-        >
-          <IconPlus size={15} />
-          <span className="hidden md:inline">New intake</span>
-        </button>
-
-        <span className="hidden sm:block w-px h-[26px] bg-line" />
-
+      {/* Utility cluster — flush right on desktop (lg:ml-auto restores the
+          auto-margin that md:ml-2 overrides). */}
+      <div className="flex items-center gap-2 md:gap-2.5 ml-auto md:ml-2 lg:ml-auto">
         <button
           type="button"
           onClick={refreshAll}
-          aria-label="Refresh dashboard data"
+          aria-label="Refresh data"
           title="Refresh"
           className="w-10 h-10 bg-surface border border-line rounded-[6px] shadow-control text-ink-2 flex items-center justify-center cursor-pointer"
         >
           <IconRefresh size={16} />
         </button>
 
-        <button
-          type="button"
+        <a
+          href="/alerts"
           aria-label={`Alerts, ${openAlerts} open`}
           className="relative w-10 h-10 bg-surface border border-line rounded-[6px] shadow-control text-ink-2 flex items-center justify-center cursor-pointer"
         >
@@ -110,24 +121,62 @@ export function Header({ section, page }: { section: string; page: string }) {
               {openAlerts}
             </span>
           )}
-        </button>
+        </a>
 
-        {/* User button — initials on sm, full on md+ */}
-        <button
-          type="button"
-          className="h-11 pl-1.5 pr-2.5 bg-surface border border-line rounded-[7px] shadow-control flex items-center gap-2.5 cursor-pointer"
-        >
-          <span className="w-[30px] h-[30px] rounded-[6px] bg-[#1C2431] text-white text-[11.5px] font-semibold flex items-center justify-center">
-            {CURRENT_USER.initials}
-          </span>
-          <span className="hidden md:flex flex-col gap-px text-left">
-            <span className="text-[12.5px] font-semibold text-ink leading-[1.15]">
-              {CURRENT_USER.name}
+        {/* User button + dropdown */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            aria-label={displayName || 'Account'}
+            className="h-11 pl-1.5 pr-2.5 bg-surface border border-line rounded-[7px] shadow-control flex items-center gap-2.5 cursor-pointer"
+          >
+            <span className="w-[30px] h-[30px] rounded-[6px] bg-ink text-white text-[11.5px] font-semibold flex items-center justify-center">
+              {initials}
             </span>
-            <span className="text-[10px] text-ink-4 leading-[1.15]">{CURRENT_USER.role}</span>
-          </span>
-          <IconChevronDown size={13} className="hidden md:block text-ink-4" />
-        </button>
+            <span className="hidden md:flex flex-col gap-px text-left">
+              <span className="text-[12.5px] font-semibold text-ink leading-[1.15]">
+                {displayName}
+              </span>
+              <span className="text-[10px] text-ink-4 leading-[1.15]">{roleLabel}</span>
+            </span>
+            <IconChevronDown size={13} className="hidden md:block text-ink-4" />
+          </button>
+
+          {menuOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Close account menu"
+                tabIndex={-1}
+                onClick={() => setMenuOpen(false)}
+                className="fixed inset-0 z-40 cursor-default bg-transparent border-0 p-0"
+              />
+              <div
+                role="menu"
+                className="absolute right-0 top-[calc(100%+8px)] z-50 w-56 rounded-[8px] border border-line bg-surface shadow-control p-1.5"
+              >
+                <div className="px-2.5 py-2">
+                  <div className="text-[12.5px] font-semibold text-ink truncate">
+                    {displayName}
+                  </div>
+                  <div className="text-[11px] text-ink-4">{roleLabel}</div>
+                </div>
+                <div className="h-px bg-line mx-1.5 my-1" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void signOut({ callbackUrl: '/login' })}
+                  className="w-full text-left px-2.5 py-2 rounded-[6px] text-[12.5px] font-medium text-ink hover:bg-surface-sunken cursor-pointer border-0 bg-transparent"
+                >
+                  Sign out
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

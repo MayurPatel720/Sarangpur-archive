@@ -18,13 +18,14 @@ const Ctx = createContext<DrawerCtx>({
   open: false,
   toggle() {},
   close() {},
-  collapsed: false,
+  collapsed: true,
   toggleCollapse() {},
 });
 
 export function DrawerProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // Collapsed by default: the rail + hover-preview is the primary desktop mode.
+  const [collapsed, setCollapsed] = useState(true);
   const pathname = usePathname();
 
   // Close drawer on route change (mobile nav)

@@ -74,6 +74,17 @@ const archiveLotSchema = new Schema(
     reasonForSending: { type: String, trim: true },
     senderRemarks: { type: String, trim: true },
 
+    /**
+     * Rights / consent (deed of gift). `type` is validated against the
+     * `rightsType` reference list at the API layer — deliberately not a Mongoose
+     * enum, because the vocabulary is admin-managed.
+     */
+    rights: {
+      type: { type: String, trim: true, default: null },
+      deedReference: { type: String, trim: true, default: null },
+      notes: { type: String, trim: true, default: null },
+    },
+
     stage: { type: String, required: true, enum: STAGES, index: true },
     /** When the lot entered its current stage. Drives every "stuck for N days" alert. */
     stageEnteredAt: { type: Date, required: true, index: true },

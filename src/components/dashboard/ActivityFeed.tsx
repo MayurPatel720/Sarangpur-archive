@@ -26,16 +26,9 @@ export function ActivityFeed() {
 
   return (
       <Panel className="lg:flex-1 lg:basis-0 flex flex-col overflow-hidden">
-      <PanelHeader title="Recent activity">
-        <span
-          className="ml-auto text-[12.5px] font-semibold text-ink-4"
-          title="Full audit log arrives with the admin screens"
-        >
-          Full audit log
-        </span>
-      </PanelHeader>
+      <PanelHeader title="Recent activity" />
 
-      <div className="flex-1 px-4 py-3.5 flex flex-col gap-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3.5 flex flex-col gap-3">
         {isPending
           ? Array.from({ length: LIMIT }).map((_, i) => (
               <div key={i} className="flex gap-2.5">
