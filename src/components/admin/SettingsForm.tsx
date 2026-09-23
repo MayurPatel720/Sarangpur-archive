@@ -6,6 +6,7 @@ import { adminApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useCan } from '@/hooks/useCan';
 import { Panel, PanelHeader, Skeleton, ErrorState } from '@/components/ui/primitives';
+import { useToast } from '@/components/ui/Toast';
 import { Field, TextInput, Checkbox, PrimaryButton, FormError } from '@/components/ui/Form';
 
 export function SettingsForm() {
@@ -70,6 +71,7 @@ function SettingsFields({
   onSaved: () => void;
   onConflict: () => void;
 }) {
+  const toast = useToast();
   const [decisionPendingDays, setDecisionPendingDays] = useState(initial.decisionPendingDays);
   const [scanStuckDays, setScanStuckDays] = useState(initial.scanStuckDays);
   const [returnGraceDays, setReturnGraceDays] = useState(initial.returnGraceDays);
@@ -94,9 +96,13 @@ function SettingsFields({
         notifySmsEnabled,
         expectedRevision: initial.revision,
       }),
-    onSuccess: onSaved,
+    onSuccess: () => {
+      toast.success('Settings saved');
+      onSaved();
+    },
     onError: (e) => {
       if (e instanceof ApiRequestError && e.status === 409) onConflict();
+      toast.error('Couldn’t save settings', e instanceof ApiRequestError ? e.message : undefined);
     },
   });
 

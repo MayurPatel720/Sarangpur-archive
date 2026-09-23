@@ -19,6 +19,7 @@ export function DataTable<T>({
   emptyMessage,
   getRowKey,
   onRowClick,
+  rowActions,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -26,6 +27,8 @@ export function DataTable<T>({
   emptyMessage: string;
   getRowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
+  /** Trailing actions cell (desktop) / actions row (mobile). */
+  rowActions?: (row: T) => ReactNode;
 }) {
   if (loading) {
     return (
@@ -68,6 +71,11 @@ export function DataTable<T>({
                   {c.header}
                 </th>
               ))}
+              {rowActions ? (
+                <th scope="col" className="px-3 py-2.5 text-right text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3 whitespace-nowrap">
+                  Actions
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -87,6 +95,17 @@ export function DataTable<T>({
                     {c.render(row)}
                   </td>
                 ))}
+                {rowActions ? (
+                  <td
+                    className="px-3 py-2.5 text-right align-middle whitespace-nowrap"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <span className="inline-flex items-center justify-end gap-1">
+                      {rowActions(row)}
+                    </span>
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -112,6 +131,15 @@ export function DataTable<T>({
                 <span className="min-w-0 flex-1 text-[13px] text-ink-2">{c.render(row)}</span>
               </div>
             ))}
+            {rowActions ? (
+              <div
+                className="mt-1 flex items-center justify-end gap-1 border-t border-line-soft pt-2"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                {rowActions(row)}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>

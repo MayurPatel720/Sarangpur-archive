@@ -50,4 +50,8 @@ export const queryKeys = {
     discards: (page: number, pageSize: number) =>
       [...queryKeys.queues.all, 'discards', page, pageSize] as const,
   },
+  search: {
+    all: ['search'] as const,
+    query: (params: string) => [...queryKeys.search.all, 'query', params] as const,
+  },
 } as const;

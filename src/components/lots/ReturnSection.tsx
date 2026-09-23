@@ -7,12 +7,12 @@ import type { LotDetailResponse } from '@/types/lot';
 import { RETURN_FORMATS, RETURN_STATUSES } from '@/lib/domain';
 import { prettyEnum } from '@/lib/format';
 import { Field, FormError, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
-import { Panel, PanelHeader } from '@/components/ui/primitives';
+import { Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
 
 type DetailLot = LotDetailResponse['lot'];
 
-const dash = <span className="text-ink-4">—</span>;
+const dash = <EmptyValue />;
 
 export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: () => void }) {
   const me = useMe();
@@ -52,16 +52,12 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
   return (
     <Panel>
       <PanelHeader title="Return" />
-      <div className="p-3 md:p-4 flex flex-col gap-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Status</span>
-            <span className="text-[13px] text-ink break-words">{prettyEnum(lot.ops.returnStatus)}</span>
-          </div>
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Format</span>
-            <span className="text-[13px] text-ink break-words">{lot.ops.returnFormat ? prettyEnum(lot.ops.returnFormat) : dash}</span>
-          </div>
+      <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+          <Definition label="Status">{prettyEnum(lot.ops.returnStatus)}</Definition>
+          <Definition label="Format">
+            {lot.ops.returnFormat ? prettyEnum(lot.ops.returnFormat) : dash}
+          </Definition>
         </div>
 
         {canManage ? (

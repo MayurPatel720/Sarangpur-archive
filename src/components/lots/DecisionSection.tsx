@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { DecisionBody, LotDetailResponse } from '@/types/lot';
+import { date } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea } from '@/components/ui/Form';
 import { Badge, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
@@ -175,7 +176,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
               <span className="text-[13px] text-ink-2">
                 {d.verdict ? `Verdict: ${d.verdict === 'archive' ? 'archive' : 'return or discard'}` : null}
                 {d.decidedByName ? ` · by ${d.decidedByName}` : null}
-                {d.decidedAt ? ` · ${d.decidedAt.slice(0, 10)}` : null}
+                {d.decidedAt ? ` · ${date(d.decidedAt)}` : null}
               </span>
             </div>
             <div className="text-[13px] text-ink-2">
@@ -217,7 +218,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                 ) : null}
               </div>
               <fieldset className="m-0 p-0 border-0 min-w-0">
-                <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+                <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
                   Significance criteria (any one archives the lot)
                 </legend>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

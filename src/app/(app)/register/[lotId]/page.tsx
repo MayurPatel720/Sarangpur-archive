@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { LotDetail } from '@/components/lots/LotDetail';
 
 export const metadata: Metadata = {
@@ -11,5 +12,9 @@ export default async function LotRecordPage({
   params: Promise<{ lotId: string }>;
 }) {
   const { lotId } = await params;
-  return <LotDetail lotId={lotId} />;
+  return (
+    <Suspense fallback={null}>
+      <LotDetail lotId={lotId} />
+    </Suspense>
+  );
 }

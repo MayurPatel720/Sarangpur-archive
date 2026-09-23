@@ -1,6 +1,14 @@
 'use client';
 
-import { DATA_TYPES, DECISIONS, FORMATS, STAGES, STAGE_LABELS } from '@/lib/domain';
+import {
+  DATA_TYPES,
+  DECISIONS,
+  DECISION_LABELS,
+  FORMATS,
+  FORMAT_LABELS,
+  STAGES,
+  STAGE_LABELS,
+} from '@/lib/domain';
 import { Field, GhostButton, Select, TextInput } from '@/components/ui/Form';
 
 export interface LotFilters {
@@ -23,13 +31,6 @@ export const EMPTY_FILTERS: LotFilters = {
   sort: '-dateReceived',
   receivedFrom: '',
   receivedTo: '',
-};
-
-const DECISION_LABELS: Record<string, string> = {
-  pending: 'Pending',
-  archive: 'Archive',
-  return: 'Return',
-  discard: 'Discard',
 };
 
 export function RegisterFilters({
@@ -83,22 +84,22 @@ export function RegisterFilters({
         </Field>
         <Field label="Format">
           <Select value={filters.format} onChange={(e) => set('format')(e.target.value)}>
-            <option value="">All formats</option>
-            {FORMATS.map((f) => (
-              <option key={f} value={f}>
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Data type">
-          <Select value={filters.dataType} onChange={(e) => set('dataType')(e.target.value)}>
-            <option value="">Physical + digital</option>
-            {DATA_TYPES.map((d) => (
-              <option key={d} value={d}>
-                {d.charAt(0).toUpperCase() + d.slice(1)}
-              </option>
-            ))}
+              <option value="">All formats</option>
+              {FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMAT_LABELS[f]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Data type">
+            <Select value={filters.dataType} onChange={(e) => set('dataType')(e.target.value)}>
+              <option value="">Physical + digital</option>
+              {DATA_TYPES.map((d) => (
+                <option key={d} value={d}>
+                  {d === 'physical' ? 'Physical' : 'Digital'}
+                </option>
+              ))}
           </Select>
         </Field>
         <Field label="Received from">
@@ -106,6 +107,7 @@ export function RegisterFilters({
             type="date"
             value={filters.receivedFrom}
             onChange={(e) => set('receivedFrom')(e.target.value)}
+            aria-label="Received from date"
           />
         </Field>
         <Field label="Received to">
@@ -113,22 +115,29 @@ export function RegisterFilters({
             type="date"
             value={filters.receivedTo}
             onChange={(e) => set('receivedTo')(e.target.value)}
+            aria-label="Received to date"
           />
         </Field>
       </div>
-      <div className="mt-3 flex items-center gap-3">
-        <Field label="Sort">
-          <Select value={filters.sort} onChange={(e) => set('sort')(e.target.value)}>
-            <option value="-dateReceived">Newest first</option>
-            <option value="dateReceived">Oldest first</option>
-            <option value="-quantity">Largest first</option>
-            <option value="quantity">Smallest first</option>
-            <option value="stage">By stage</option>
-            <option value="-stage">By stage (desc)</option>
-          </Select>
-        </Field>
+      <div className="mt-3 flex items-end gap-3">
+        <div className="w-[170px] shrink-0">
+          <Field label="Sort">
+            <Select
+              className="h-8 text-[12px] px-2 pr-6"
+              value={filters.sort}
+              onChange={(e) => set('sort')(e.target.value)}
+            >
+              <option value="-dateReceived">Newest first</option>
+              <option value="dateReceived">Oldest first</option>
+              <option value="-quantity">Largest first</option>
+              <option value="quantity">Smallest first</option>
+              <option value="stage">By stage</option>
+              <option value="-stage">By stage (desc)</option>
+            </Select>
+          </Field>
+        </div>
         {isActive ? (
-          <div className="ml-auto self-end">
+          <div className="ml-auto">
             <GhostButton onClick={() => onChange({ ...EMPTY_FILTERS, sort: filters.sort })}>
               Clear filters
             </GhostButton>

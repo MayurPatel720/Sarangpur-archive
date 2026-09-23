@@ -19,15 +19,15 @@
   --color-rail-muted: #7d8698;
 
   /* The light workspace */
-  --color-canvas: #f7f8fa;
-  --color-surface: #ffffff;
-  --color-surface-subtle: #f9fafb;
-  --color-surface-sunken: #f5f7f9;
+  --color-canvas: #f5f5f7;
+  --color-surface: #fbfbfd;
+  --color-surface-subtle: #f7f8fa;
+  --color-surface-sunken: #f0f2f5;
 
   --color-line: #e3e6eb;
   --color-line-strong: #d2d7de;
-  --color-line-soft: #eef0f3;
-  --color-line-row: #f3f5f7;
+  --color-line-soft: #eaecf0;
+  --color-line-row: #f0f2f5;
 
   --color-ink: #12151a;
   --color-ink-2: #4a5261;
@@ -41,6 +41,11 @@
   --color-accent-bright: #4d74d8;
   --color-accent-tint: #7fa0ee;
   --color-accent-track: #e5eaf4;
+
+  /* Solid “strong” chip (avatar initials, active filters). Never use
+     ink as a fill + text-white — ink flips with the theme. */
+  --color-strong-bg: #12151a;
+  --color-on-strong: #ffffff;
 
   /* Status. Reserved — never reused as a categorical series colour. */
   --color-good: #1a5b3c;
@@ -82,6 +87,71 @@
   --shadow-lift: 0 16px 40px -12px rgba(17, 21, 28, 0.14), 0 2px 8px rgba(17, 21, 28, 0.06);
 }
 
+/*
+ * Dark theme — same variable names, different values.
+ * Components only ever read var(--color-*) via utilities, so flipping these
+ * is the entire theme. Add a future mode the same way: [data-theme='hc'] { … }.
+ * Rail stays dark in both modes (brand chrome).
+ */
+:root[data-theme='dark'] {
+  --color-canvas: #0e1116;
+  --color-surface: #151a21;
+  --color-surface-subtle: #1a2029;
+  --color-surface-sunken: #10141a;
+
+  --color-line: #262d38;
+  --color-line-strong: #333b48;
+  --color-line-soft: #1e242e;
+  --color-line-row: #1b212a;
+
+  --color-ink: #e8eaee;
+  --color-ink-2: #b3bac6;
+  --color-ink-3: #8b93a1;
+  --color-ink-4: #6b7382;
+
+  --color-accent: #6b8fe8;
+  --color-accent-hover: #85a3ee;
+  --color-accent-soft: #1a2340;
+  --color-accent-bright: #4d74d8;
+  --color-accent-tint: #7fa0ee;
+  --color-accent-track: #1e2a45;
+
+  --color-strong-bg: #e8eaee;
+  --color-on-strong: #0e1116;
+
+  --color-good: #6fbf94;
+  --color-good-mark: #3d9a6a;
+  --color-good-bg: #10241b;
+  --color-good-line: #1d3d2e;
+
+  --color-warn: #d9a94f;
+  --color-warn-mark: #c08a2a;
+  --color-warn-bg: #2a2110;
+  --color-warn-line: #453717;
+
+  --color-danger: #e08585;
+  --color-danger-mark: #c44040;
+  --color-danger-bg: #2b1616;
+  --color-danger-line: #4a2424;
+
+  --color-info: #7ba1e8;
+  --color-info-mark: #6b8fe8;
+  --color-info-bg: #14203a;
+  --color-info-line: #22345c;
+
+  --color-neutral: #a8b0bd;
+  --color-neutral-mark: #8b93a1;
+  --color-neutral-bg: #1a1f27;
+  --color-neutral-line: #2a313c;
+
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lift:
+    0 16px 40px -12px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
 html,
 body {
   height: 100%;
@@ -113,6 +183,12 @@ body {
  * would lose to it from inside a Tailwind layer (unlayered beats layered).
  */
 .login-field-input:focus-visible {
+  outline: none;
+}
+
+/* Spotlight input: wrapper is the chrome; a blue ring on the field fights it. */
+.search-overlay-input:focus-visible,
+.search-overlay-input:focus {
   outline: none;
 }
 

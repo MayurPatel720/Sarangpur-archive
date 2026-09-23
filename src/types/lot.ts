@@ -105,7 +105,7 @@ export const lotListQuerySchema = z.object({
 });
 export type LotListQuery = z.output<typeof lotListQuerySchema>;
 
-const lotRowSchema = z.object({
+export const lotRowSchema = z.object({
   id: z.string(),
   lotReference: z.string(),
   namingCode: z.string().nullable(),
@@ -122,6 +122,7 @@ const lotRowSchema = z.object({
   returnLabel: z.string(),
   returnSeverity: z.enum(['neutral', 'info', 'good', 'warning', 'critical']),
 });
+export type LotRow = z.output<typeof lotRowSchema>;
 
 export const lotListResponseSchema = z.object({
   rows: z.array(lotRowSchema),

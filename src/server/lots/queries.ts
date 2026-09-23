@@ -47,15 +47,52 @@ const SORT_MAP: Record<string, Record<string, 1 | -1>> = {
   '-stageEnteredAt': { stageEnteredAt: -1 },
 };
 
-/** Paginated intake register (API.md §3). No $lookup — receiver names are batched after. */
-export async function listLots(query: LotListQuery): Promise<LotListResponse> {
-  await connectToDatabase();
+/** Escape user text for a safe RegExp literal. */
+export function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
+/**
+ * Text-match clauses for register + global search. Case-insensitive contains.
+ * Prefer an anchored uppercase prefix on `LotItem.code` separately when the query
+ * looks like an item code — that can use the unique index.
+ */
+export function lotTextOr(q: string): Record<string, unknown>[] {
+  const rx = new RegExp(escapeRegex(q), 'i');
+  return [
+    { 'owner.name': rx },
+    { lotReference: rx },
+    { namingCode: rx },
+    { 'pointsOfContact.name': rx },
+    { 'facilitator.name': rx },
+    { 'digitization.folderPath': rx },
+    { 'rights.deedReference': rx },
+  ];
+}
+
+export type LotFilterInput = {
+  q?: string;
+  stage?: string;
+  decision?: string;
+  format?: string;
+  dataType?: string;
+  receiver?: string;
+  returnStatus?: string | string[];
+  receivedFrom?: string;
+  receivedTo?: string;
+};
+
+/**
+ * Shared find() filter for register, queues and global search.
+ * Pass `textOr` to replace the default `q` clauses (search merges item lot-ids).
+ */
+export function buildLotFilter(
+  query: LotFilterInput,
+  textOr?: Record<string, unknown>[],
+): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
-  if (query.q) {
-    const rx = new RegExp(query.q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    filter.$or = [{ 'owner.name': rx }, { lotReference: rx }, { namingCode: rx }];
-  }
+  const or = textOr ?? (query.q ? lotTextOr(query.q) : null);
+  if (or && or.length > 0) filter.$or = or;
   if (query.stage) filter.stage = query.stage;
   if (query.decision) filter['decision.status'] = query.decision;
   if (query.format) filter.format = query.format;
@@ -74,6 +111,14 @@ export async function listLots(query: LotListQuery): Promise<LotListResponse> {
       ...(query.receivedTo ? { $lte: new Date(query.receivedTo) } : {}),
     };
   }
+  return filter;
+}
+
+/** Paginated intake register (API.md §3). No $lookup — receiver names are batched after. */
+export async function listLots(query: LotListQuery): Promise<LotListResponse> {
+  await connectToDatabase();
+
+  const filter = buildLotFilter(query);
 
   const skip = (query.page - 1) * query.pageSize;
   const [docs, total] = await Promise.all([

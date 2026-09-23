@@ -2,18 +2,25 @@
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { adminApi } from '@/lib/api-client';
+import { adminApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { useCan } from '@/hooks/useCan';
+import { useCan, useMe } from '@/hooks/useCan';
 import { Panel, PanelHeader, Skeleton, ErrorState, Badge } from '@/components/ui/primitives';
 import { Dialog } from '@/components/ui/Dialog';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { IconButton } from '@/components/ui/IconButton';
+import { useToast } from '@/components/ui/Toast';
 import { Field, TextInput, Select, Checkbox, PrimaryButton, GhostButton, FormError } from '@/components/ui/Form';
 import type { AdminUser, UserCreateBody, UserPatchBody } from '@/types/admin';
 
 export function UsersManager() {
   const canManage = useCan('user:manage');
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const me = useMe();
   const [dialog, setDialog] = useState<{ mode: 'create' } | { mode: 'edit'; user: AdminUser } | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState<AdminUser | null>(null);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
 
   const users = useQuery({
     queryKey: queryKeys.admin.users(),
@@ -26,6 +33,21 @@ export function UsersManager() {
     enabled: canManage,
   });
 
+  const deactivate = useMutation({
+    mutationFn: (user: AdminUser) => adminApi.patchUser(user.id, { active: false }),
+    onSuccess: (_res, user) => {
+      setConfirmDeactivate(null);
+      setDeactivateError(null);
+      toast.success('User deactivated', `${user.name} can no longer sign in.`);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
+    },
+    onError: (e) => {
+      const msg = e instanceof ApiRequestError ? e.message : 'Could not deactivate user.';
+      setDeactivateError(msg);
+      toast.error('Couldn’t deactivate user', msg);
+    },
+  });
+
   if (!canManage) {
     return (
       <Panel>
@@ -35,6 +57,7 @@ export function UsersManager() {
   }
 
   const roleLabel = (key: string) => roles.data?.roles.find((r) => r.key === key)?.label ?? key;
+  const selfId = me.data?.id;
 
   return (
     <Panel>
@@ -63,29 +86,74 @@ export function UsersManager() {
         />
       ) : (
         <ul className="m-0 p-0 list-none divide-y divide-line-soft">
-          {users.data.users.map((u) => (
-            <li key={u.id} className="px-4 py-3 flex items-center gap-3 min-w-0">
-              <span className="w-8 h-8 rounded-[6px] bg-rail-control text-ink-2 text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
-                {u.initials}
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="m-0 text-[13px] font-semibold text-ink truncate">{u.name}</p>
-                <p className="m-0 text-[12px] text-ink-3 truncate">
-                  @{u.username} · {roleLabel(u.role)}
-                </p>
-              </div>
-              <Badge severity={u.active ? 'good' : 'neutral'}>{u.active ? 'Active' : 'Inactive'}</Badge>
-              <button
-                type="button"
-                onClick={() => setDialog({ mode: 'edit', user: u })}
-                className="h-9 px-3.5 bg-surface border border-line-strong rounded-[6px] shadow-control text-[12.5px] font-semibold text-ink-2 cursor-pointer flex-shrink-0"
-              >
-                Edit
-              </button>
-            </li>
-          ))}
+          {users.data.users.map((u) => {
+            const isSelf = u.id === selfId;
+            const canDeactivate = !isSelf && u.active;
+            return (
+              <li key={u.id} className="px-4 py-3 flex items-center gap-3 min-w-0">
+                <span className="w-8 h-8 rounded-[6px] bg-rail-control text-ink-2 text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
+                  {u.initials}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="m-0 text-[13px] font-semibold text-ink truncate">{u.name}</p>
+                  <p className="m-0 text-[12px] text-ink-3 truncate">
+                    @{u.username} · {roleLabel(u.role)}
+                    {isSelf ? ' · You' : ''}
+                  </p>
+                </div>
+                <Badge severity={u.active ? 'good' : 'neutral'}>{u.active ? 'Active' : 'Inactive'}</Badge>
+                <span className="flex items-center gap-1 flex-shrink-0">
+                  <IconButton
+                    label={`Edit ${u.name}`}
+                    icon="edit"
+                    onClick={() => setDialog({ mode: 'edit', user: u })}
+                  />
+                  {canDeactivate ? (
+                    <IconButton
+                      label={`Deactivate ${u.name}`}
+                      icon="trash"
+                      variant="danger"
+                      onClick={() => {
+                        setDeactivateError(null);
+                        setConfirmDeactivate(u);
+                      }}
+                    />
+                  ) : null}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
+
+      {confirmDeactivate ? (
+        <ConfirmDialog
+          title={`Deactivate ${confirmDeactivate.name}?`}
+          body={
+            <>
+              They will not be able to sign in. You can reactivate the account later by editing
+              the user and enabling <strong>Account active</strong>. Nothing is deleted.
+            </>
+          }
+          meta={
+            <>
+              <span className="font-semibold">@{confirmDeactivate.username}</span>
+              {' · '}
+              {roleLabel(confirmDeactivate.role)}
+            </>
+          }
+          confirmLabel="Deactivate"
+          pending={deactivate.isPending}
+          error={deactivateError}
+          onConfirm={() => deactivate.mutate(confirmDeactivate)}
+          onClose={() => {
+            if (!deactivate.isPending) {
+              setConfirmDeactivate(null);
+              setDeactivateError(null);
+            }
+          }}
+        />
+      ) : null}
 
       {dialog && (
         <UserDialog
@@ -95,6 +163,7 @@ export function UsersManager() {
           onClose={() => setDialog(null)}
           onSaved={() => {
             setDialog(null);
+            toast.success(dialog.mode === 'edit' ? 'User updated' : 'User created');
             void queryClient.invalidateQueries({ queryKey: queryKeys.admin.users() });
           }}
         />
@@ -114,6 +183,7 @@ function UserDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const toast = useToast();
   const [name, setName] = useState(initial?.name ?? '');
   const [username, setUsername] = useState(initial?.username ?? '');
   const [password, setPassword] = useState('');
@@ -143,6 +213,12 @@ function UserDialog({
       return adminApi.createUser(body);
     },
     onSuccess: onSaved,
+    onError: (e) => {
+      toast.error(
+        initial ? 'Couldn’t update user' : 'Couldn’t create user',
+        e instanceof ApiRequestError ? e.message : undefined,
+      );
+    },
   });
 
   return (

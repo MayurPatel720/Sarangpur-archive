@@ -6,12 +6,12 @@ import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { LotDetailResponse } from '@/types/lot';
 import { prettyEnum } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
-import { Badge, Panel, PanelHeader } from '@/components/ui/primitives';
+import { Badge, Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
 
 type DetailLot = LotDetailResponse['lot'];
 
-const dash = <span className="text-ink-4">—</span>;
+const dash = <EmptyValue />;
 
 const DUPLICATE_ACTIONS = ['retained', 'removed', 'merged'] as const;
 
@@ -58,32 +58,20 @@ export function MlsSection({ lot, onChanged }: { lot: DetailLot; onChanged: () =
   return (
     <Panel>
       <PanelHeader title="MLS tagging" />
-      <div className="p-3 md:p-4 flex flex-col gap-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Record ID</span>
-            <span className="text-[13px] text-ink break-words">{lot.ops.mlsRecordId ?? dash}</span>
-          </div>
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Tagged</span>
-            <span className="text-[13px] text-ink break-words">{lot.ops.mlsTaggedCount}</span>
-          </div>
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Data list</span>
-            <span className="text-[13px] text-ink break-words">{lot.ops.mlsDataListAttached ? 'Attached' : dash}</span>
-          </div>
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Duplicates</span>
-            <span className="text-[13px] text-ink break-words">
-              {lot.ops.mlsDuplicatesFound > 0 ? (
-                <Badge severity={lot.ops.mlsDuplicateAction ? 'neutral' : 'warning'}>
-                  {lot.ops.mlsDuplicatesFound} · {lot.ops.mlsDuplicateAction ?? 'unresolved'}
-                </Badge>
-              ) : (
-                dash
-              )}
-            </span>
-          </div>
+      <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+          <Definition label="Record ID">{lot.ops.mlsRecordId ?? dash}</Definition>
+          <Definition label="Tagged">{lot.ops.mlsTaggedCount}</Definition>
+          <Definition label="Data list">{lot.ops.mlsDataListAttached ? 'Attached' : dash}</Definition>
+          <Definition label="Duplicates">
+            {lot.ops.mlsDuplicatesFound > 0 ? (
+              <Badge severity={lot.ops.mlsDuplicateAction ? 'neutral' : 'warning'}>
+                {lot.ops.mlsDuplicatesFound} · {lot.ops.mlsDuplicateAction ?? 'unresolved'}
+              </Badge>
+            ) : (
+              dash
+            )}
+          </Definition>
         </div>
 
         {canTag ? (

@@ -28,12 +28,126 @@ export function PanelHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="h-12 flex-shrink-0 border-b border-line-soft px-3 md:px-4 flex items-center gap-2.5">
+    <div className="h-11 flex-shrink-0 border-b border-line-soft px-4 md:px-5 flex items-center gap-2.5">
       <h2 className="m-0 text-[13.5px] font-semibold tracking-[-0.005em] text-ink">{title}</h2>
       {children}
     </div>
   );
 }
+
+/* -------------------------------------------------------------------- tabs */
+
+export type TabItem = { id: string; label: string };
+
+/**
+ * In-page tab bar. Active state uses weight + underline (not colour alone).
+ * Controlled: parent owns value/onChange (pair with useUrlTab for deep links).
+ */
+export function Tabs({
+  tabs,
+  value,
+  onChange,
+  ariaLabel = 'Sections',
+}: {
+  tabs: readonly TabItem[];
+  value: string;
+  onChange: (id: string) => void;
+  ariaLabel?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className="flex gap-0.5 overflow-x-auto border-b border-line-soft -mx-0 px-0"
+    >
+      {tabs.map((t) => {
+        const active = t.id === value;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`tab-${t.id}`}
+            aria-selected={active}
+            aria-controls={`tabpanel-${t.id}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(t.id)}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+              e.preventDefault();
+              const i = tabs.findIndex((x) => x.id === t.id);
+              if (i < 0) return;
+              const next =
+                e.key === 'ArrowRight'
+                  ? tabs[(i + 1) % tabs.length]
+                  : tabs[(i - 1 + tabs.length) % tabs.length];
+              if (next) onChange(next.id);
+            }}
+            className={`relative h-10 px-3.5 flex items-center text-[13px] whitespace-nowrap transition-colors border-b-2 -mb-px cursor-pointer ${
+              active
+                ? 'font-semibold text-ink border-accent'
+                : 'font-medium text-ink-3 border-transparent hover:text-ink'
+            }`}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Tab panel body. Hide when inactive; keep ids for aria-controls. */
+export function TabPanel({
+  id,
+  active,
+  children,
+  className = '',
+}: {
+  id: string;
+  active: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  if (!active) return null;
+  return (
+    <div
+      role="tabpanel"
+      id={`tabpanel-${id}`}
+      aria-labelledby={`tab-${id}`}
+      tabIndex={0}
+      className={`flex flex-col gap-3.5 md:gap-4 focus:outline-none ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------- definition */
+
+/**
+ * Read-only label/value cell. Sentence-case label so stacks of fields stay calm;
+ * value is medium-weight so it reads first.
+ */
+export function Definition({
+  label,
+  children,
+  className = '',
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex flex-col gap-1 min-w-0 ${className}`}>
+      <span className="text-[12px] font-medium leading-tight text-ink-3">{label}</span>
+      <span className="text-[13px] font-medium leading-snug text-ink break-words">{children}</span>
+    </div>
+  );
+}
+
+/** Shared empty-value marker for Definition cells. */
+export const EmptyValue = () => <span className="text-ink-4 font-normal">—</span>;
 
 /* -------------------------------------------------------------------- badge */
 

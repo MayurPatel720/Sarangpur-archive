@@ -11,8 +11,18 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {/*
+          Apply the stored theme before the body paints so dark mode never
+          flashes light. Mirrors useTheme() + THEME_STORAGE_KEY.
+        */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var k='archive-tracker.theme';var t=localStorage.getItem(k)||'system';if(t!=='light'&&t!=='dark'&&t!=='system')t='system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){document.documentElement.setAttribute('data-theme','light');}})();",
+          }}
+        />
         {/*
           Loaded over a link rather than next/font so the production build never needs
           network access. Switch to next/font/google if you want the fonts self-hosted

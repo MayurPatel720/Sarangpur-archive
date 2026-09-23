@@ -48,7 +48,8 @@ aggregation — eleven sub-pipelines over a single pass.
 Server-side pagination. Never return the whole collection.
 
 **Query:** `page` (1) · `pageSize` (25, max 100) · `sort` (`dateReceived`|`stage`|`quantity`,
-prefix `-` for desc, default `-dateReceived`) · `q` (owner name, lot ref, naming code) ·
+prefix `-` for desc, default `-dateReceived`) · `q` (owner name, lot ref, naming code,
+POC, facilitator, folder path, deed ref) ·
 `stage` · `decision` · `format` · `dataType` · `receiver` · `returnStatus` ·
 `receivedFrom` / `receivedTo` (ISO dates)
 
@@ -66,6 +67,28 @@ type LotListResponse = {
 ```
 `receiverName` is resolved with one batched `User` lookup **after** the aggregation, not a
 `$lookup` inside it.
+
+### `GET /api/search` — DONE — global palette
+
+Role: `lot:view`. Spotlight search: text over lots **and** `LotItem.code` / `fileName`,
+plus filter chips (`format`, `dataType`, `stage`, `decision`).
+
+**Query:** `q` (1–120, optional if any chip set) · `format` · `dataType` · `stage` ·
+`decision` · `page` (1) · `pageSize` (10, max 10)
+
+```ts
+type SearchResponse = {
+  rows: LotRow & {
+    matchedVia: 'lot' | 'item' | 'both';
+    matchedItems: { id: string; code: string; fileName: string | null }[]; // ≤5
+  }[];
+  total: number; page: number; pageSize: number;
+};
+```
+
+Implementation: item codes resolve first (bounded scan, unique-index prefix when
+`q` looks like a code), then one paginated `ArchiveLot.find` merges lot-id hits into
+the text `$or`. No `$lookup`.
 
 ### `POST /api/lots` — DONE — create an intake
 

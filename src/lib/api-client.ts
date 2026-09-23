@@ -81,6 +81,10 @@ import {
   type ScanBody,
   type ScanResponse,
 } from '@/types/ops';
+import {
+  searchResponseSchema,
+  type SearchResponse,
+} from '@/types/search';
 
 /**
  * Thrown when a route returns a non-2xx. Carries the server's own message so the UI
@@ -318,6 +322,13 @@ export const lotsApi = {
       `/api/lots/${encodeURIComponent(id)}/activity?page=${page}&pageSize=${pageSize}`,
       lotActivityResponseSchema,
     ),
+};
+
+export const searchApi = {
+  global: (params: Record<string, string>) => {
+    const qs = new URLSearchParams(params).toString();
+    return getJson<SearchResponse>(`/api/search${qs ? `?${qs}` : ''}`, searchResponseSchema);
+  },
 };
 
 export const queuesApi = {

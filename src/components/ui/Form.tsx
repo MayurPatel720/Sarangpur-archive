@@ -14,15 +14,15 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      <span className="text-[12px] font-semibold text-ink-2">{label}</span>
-      {children}
+    <div className="flex flex-col gap-1.5 w-full min-w-0">
+      <span className="block text-[12px] font-semibold text-left text-ink-2">{label}</span>
+      <div className="w-full min-w-0">{children}</div>
       {error ? (
-        <span role="alert" className="text-[11.5px] font-medium text-danger">
+        <span role="alert" className="block text-[11.5px] font-medium text-danger">
           {error}
         </span>
       ) : hint ? (
-        <span className="text-[11.5px] text-ink-3">{hint}</span>
+        <span className="block text-[11.5px] text-ink-3">{hint}</span>
       ) : null}
     </div>
   );
@@ -31,14 +31,14 @@ export function Field({
 /* --------------------------------------------------------------------- input */
 
 const inputClass =
-  'h-10 px-3 bg-surface border border-line-strong rounded-[6px] shadow-control text-[13px] text-ink placeholder:text-ink-4 disabled:opacity-60 w-full min-w-0';
+  'h-10 px-3 bg-surface border border-line-strong rounded-[6px] shadow-control text-[13px] text-ink placeholder:text-ink-4 disabled:opacity-60 w-full min-w-0 max-w-full block';
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputClass} ${props.className ?? ''}`} />;
 }
 
 const textareaClass =
-  'min-h-[76px] px-3 py-2.5 bg-surface border border-line-strong rounded-[6px] shadow-control text-[13px] text-ink placeholder:text-ink-4 disabled:opacity-60 w-full min-w-0 resize-y';
+  'min-h-[76px] px-3 py-2.5 bg-surface border border-line-strong rounded-[6px] shadow-control text-[13px] text-ink placeholder:text-ink-4 disabled:opacity-60 w-full min-w-0 max-w-full block resize-y';
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={`${textareaClass} ${props.className ?? ''}`} />;
@@ -46,7 +46,10 @@ export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select {...props} className={`pr-8 appearance-none ${inputClass} ${props.className ?? ''}`} />
+    <select
+      {...props}
+      className={`pr-8 appearance-none max-w-full ${inputClass} ${props.className ?? ''}`}
+    />
   );
 }
 

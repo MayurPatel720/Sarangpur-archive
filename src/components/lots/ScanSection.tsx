@@ -6,9 +6,9 @@ import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { LotDetailResponse } from '@/types/lot';
 import type { ReconcileResponse } from '@/types/ops';
 import { SCAN_STATUSES } from '@/lib/domain';
-import { prettyEnum } from '@/lib/format';
+import { date, prettyEnum } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
-import { Panel, PanelHeader } from '@/components/ui/primitives';
+import { Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
 
 type DetailLot = LotDetailResponse['lot'];
@@ -51,26 +51,16 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
   return (
     <Panel>
       <PanelHeader title="Scanning & reconciliation" />
-      <div className="p-3 md:p-4 flex flex-col gap-3">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[13px]">
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-ink-3">Status</span>
-            <span className="text-ink font-medium">{prettyEnum(lot.ops.scanStatus)}</span>
-          </span>
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-ink-3">Folder</span>
-            <span className="text-ink break-all">{lot.ops.folderPath ?? '—'}</span>
-          </span>
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-ink-3">Expected / found</span>
-            <span className="text-ink">
-              {lot.ops.expectedFileCount} / {lot.ops.foundFileCount}
-            </span>
-          </span>
-          <span className="flex flex-col gap-0.5">
-            <span className="text-[11px] uppercase tracking-[0.04em] text-ink-3">Last reconciled</span>
-            <span className="text-ink">{lot.ops.lastReconciledAt ? lot.ops.lastReconciledAt.slice(0, 10) : '—'}</span>
-          </span>
+      <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+          <Definition label="Status">{prettyEnum(lot.ops.scanStatus)}</Definition>
+          <Definition label="Folder">{lot.ops.folderPath ?? <EmptyValue />}</Definition>
+          <Definition label="Expected / found">
+            {lot.ops.expectedFileCount} / {lot.ops.foundFileCount}
+          </Definition>
+          <Definition label="Last reconciled">
+            {lot.ops.lastReconciledAt ? date(lot.ops.lastReconciledAt) : <EmptyValue />}
+          </Definition>
         </div>
 
         <FormError message={error} />

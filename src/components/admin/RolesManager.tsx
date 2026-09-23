@@ -6,9 +6,11 @@ import { adminApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useCan } from '@/hooks/useCan';
 import { PERMISSIONS } from '@/server/permissions';
+import { dateTime } from '@/lib/format';
 import type { Permission } from '@/server/permissions';
 import { Panel, PanelHeader, Skeleton, ErrorState, Badge } from '@/components/ui/primitives';
 import { Dialog } from '@/components/ui/Dialog';
+import { useToast } from '@/components/ui/Toast';
 import { Field, TextInput, Checkbox, PrimaryButton, GhostButton, FormError } from '@/components/ui/Form';
 import type { AdminRole, RoleCreateBody } from '@/types/admin';
 
@@ -105,6 +107,7 @@ export function RolesManager() {
 }
 
 function RoleDetail({ role, onSaved }: { role: AdminRole | null; onSaved: () => void }) {
+  const toast = useToast();
   const [label, setLabel] = useState(role?.label ?? '');
   const [active, setActive] = useState(role?.active ?? true);
   const [grants, setGrants] = useState<Permission[]>((role?.permissions ?? []) as Permission[]);
@@ -119,7 +122,11 @@ function RoleDetail({ role, onSaved }: { role: AdminRole | null; onSaved: () => 
         expectedRevision: role.revision,
       });
     },
-    onSuccess: onSaved,
+    onSuccess: () => {
+      toast.success('Role saved', role ? `${role.label} is up to date.` : undefined);
+      onSaved();
+    },
+    onError: (e) => toast.error('Couldn’t save role', e.message),
   });
 
   const groups = useMemo(() => {
@@ -202,7 +209,7 @@ function RoleDetail({ role, onSaved }: { role: AdminRole | null; onSaved: () => 
             <ul className="m-0 p-0 list-none flex flex-col gap-1.5">
               {role.recentChanges.map((c, i) => (
                 <li key={`${c.at}-${i}`} className="text-[12px] text-ink-3">
-                  {c.summary} · {c.actorName}
+                  {c.summary} · {c.actorName} · {dateTime(c.at)}
                 </li>
               ))}
             </ul>
@@ -214,6 +221,7 @@ function RoleDetail({ role, onSaved }: { role: AdminRole | null; onSaved: () => 
 }
 
 function CreateRoleDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const toast = useToast();
   const [key, setKey] = useState('');
   const [label, setLabel] = useState('');
   const [grants, setGrants] = useState<Permission[]>([]);
@@ -223,7 +231,11 @@ function CreateRoleDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
       const body: RoleCreateBody = { key: key.trim(), label: label.trim(), rank: 0, permissions: grants };
       return adminApi.createRole(body);
     },
-    onSuccess: onSaved,
+    onSuccess: () => {
+      toast.success('Role created', label.trim() || key.trim());
+      onSaved();
+    },
+    onError: (e) => toast.error('Couldn’t create role', e.message),
   });
 
   return (

@@ -1,14 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Suspense, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotContactInput, LotDetailResponse, LotPatchBody } from '@/types/lot';
 import { ORIGIN_LABELS, STAGE_LABELS } from '@/lib/domain';
+import { date } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea, TextInput } from '@/components/ui/Form';
-import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
+import {
+  Badge,
+  Definition,
+  EmptyValue,
+  ErrorState,
+  Panel,
+  PanelHeader,
+  Skeleton,
+  TabPanel,
+  Tabs,
+} from '@/components/ui/primitives';
+import { IconChevronLeft } from '@/components/ui/icons';
+import { useUrlTab } from '@/lib/useUrlTab';
 import { useMe } from '@/hooks/useCan';
 import { ContactFields, EMPTY_CONTACT, RightsTypeField, SubtypeField } from './lot-form-fields';
 import { DecisionSection } from './DecisionSection';
@@ -20,6 +34,16 @@ import { ItemsPanel } from './ItemsPanel';
 import { ActivityPanel } from './ActivityPanel';
 
 type LotDetail = LotDetailResponse['lot'];
+
+const LOT_TABS = ['intake', 'workflow', 'items', 'activity'] as const;
+type LotTab = (typeof LOT_TABS)[number];
+
+const TAB_ITEMS = [
+  { id: 'intake', label: 'Intake' },
+  { id: 'workflow', label: 'Workflow' },
+  { id: 'items', label: 'Items' },
+  { id: 'activity', label: 'Activity' },
+] as const;
 
 const STAGE_SEVERITY: Record<string, Severity> = {
   intake: 'info',
@@ -59,23 +83,80 @@ function cleanContact(c: LotContactInput): LotContactInput {
 const sameContact = (a: LotContactInput, b: LotContactInput) =>
   JSON.stringify(cleanContact(a)) === JSON.stringify(cleanContact(b));
 
-function Definition({ label, children }: { label: string; children: React.ReactNode }) {
+const dash = <EmptyValue />;
+
+function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-0.5 min-w-0">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">{label}</span>
-      <span className="text-[13px] text-ink break-words">{children}</span>
+    <div className="col-span-full mt-1 first:mt-0">
+      <span className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-ink-4">
+        {children}
+      </span>
     </div>
   );
 }
 
-const dash = <span className="text-ink-4">—</span>;
+function StripItem({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <span className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-[11px] font-medium leading-tight text-ink-4">{label}</span>
+      <span className="text-[12.5px] font-medium leading-snug text-ink truncate">{children}</span>
+    </span>
+  );
+}
+
+/** Always-visible context strip — stage counts + key facts without opening a tab. */
+function StatusStrip({ lot }: { lot: LotDetail }) {
+  return (
+    <Panel className="px-4 md:px-5 py-3">
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+        <StripItem label="Received">{date(lot.dateReceived)}</StripItem>
+        <StripItem label="Owner">{lot.owner.name}</StripItem>
+        <StripItem label="Format · qty">
+          <span className="capitalize">{lot.format}</span>
+          {' · '}
+          {lot.quantity}
+        </StripItem>
+        <StripItem label="Items (total / selected)">
+          {lot.itemCounts.total} / {lot.itemCounts.selected}
+        </StripItem>
+        <StripItem label="Digitized / tagged">
+          {lot.itemCounts.digitized} / {lot.itemCounts.tagged}
+        </StripItem>
+        <StripItem label="Stage since">{date(lot.stageEnteredAt)}</StripItem>
+      </div>
+    </Panel>
+  );
+}
 
 export function LotDetail({ lotId }: { lotId: string }) {
+  return (
+    <Suspense fallback={<LotDetailSkeleton />}>
+      <LotDetailInner lotId={lotId} />
+    </Suspense>
+  );
+}
+
+function LotDetailSkeleton() {
+  return (
+    <Panel>
+      <PanelHeader title="Lot record" />
+      <div className="p-3 md:p-4 flex flex-col gap-2">
+        <Skeleton className="h-7 w-1/3" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-10 w-full" />
+      </div>
+    </Panel>
+  );
+}
+
+function LotDetailInner({ lotId }: { lotId: string }) {
+  const router = useRouter();
   const queryClient = useQueryClient();
   const me = useMe();
   const canEdit = me.data ? me.data.grants.includes('lot:edit') : false;
   const [editing, setEditing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const { tab, setTab } = useUrlTab<LotTab>(LOT_TABS, 'intake');
 
   // Edit state (initialised when entering edit mode)
   const [originSource, setOriginSource] = useState('');
@@ -216,139 +297,149 @@ export function LotDetail({ lotId }: { lotId: string }) {
     patch.mutate(body as unknown as LotPatchBody);
   };
 
+  const onChanged = () => {
+    detail.refetch();
+    queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
+    queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
+  };
+
   return (
-    <div className="flex flex-col gap-4 md:gap-5">
-      <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
-        <div className="flex flex-col gap-1.5 min-w-0">
-          <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">
-            {lot.lotReference}
-          </h1>
-          <p className="m-0 text-[12.5px] text-ink-3">
-            {lot.namingCode ? `Naming code ${lot.namingCode} · ` : 'Naming code issued at decision · '}
-            Record version {lot.version}
-          </p>
+    <div className="flex flex-col gap-3.5 md:gap-4">
+      <header className="flex flex-col gap-3 sm:gap-3.5">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          aria-label="Go back"
+          className="m-0 inline-flex w-fit cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[12.5px] text-ink-3 transition-colors duration-150 hover:text-ink"
+        >
+          <IconChevronLeft size={14} />
+          Back
+        </button>
+        <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
+          <div className="flex flex-col gap-1.5 min-w-0">
+            <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">
+              {lot.lotReference}
+            </h1>
+            <p className="m-0 text-[12.5px] text-ink-3">
+              {lot.namingCode ? `Naming code ${lot.namingCode} · ` : 'Naming code issued at decision · '}
+              Record version {lot.version}
+            </p>
+          </div>
+          <div className="sm:ml-auto flex items-center gap-2">
+            <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>
+              {STAGE_LABELS[lot.stage as keyof typeof STAGE_LABELS] ?? lot.stage}
+            </Badge>
+            <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
+              <span className="capitalize">{lot.decision}</span>
+            </Badge>
+            {canEdit && !editing ? <GhostButton onClick={startEdit}>Edit</GhostButton> : null}
+          </div>
         </div>
-        <div className="sm:ml-auto flex items-center gap-2">
-          <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>
-            {STAGE_LABELS[lot.stage as keyof typeof STAGE_LABELS] ?? lot.stage}
-          </Badge>
-          <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
-            <span className="capitalize">{lot.decision}</span>
-          </Badge>
-          {canEdit && !editing ? <GhostButton onClick={startEdit}>Edit</GhostButton> : null}
-        </div>
-      </div>
+      </header>
 
       <FormError message={formError} />
 
       {!editing ? (
         <>
-          <Panel>
-            <PanelHeader title="Receipt" />
-            <div className="p-3 md:p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Definition label="Date received">{lot.dateReceived.slice(0, 10)}</Definition>
-              <Definition label="Origin">{lot.originSource ? ORIGIN_LABELS[lot.originSource as keyof typeof ORIGIN_LABELS] ?? lot.originSource : dash}</Definition>
-              <Definition label="Received by">{lot.receiver.name}</Definition>
-              <Definition label="Stage since">{lot.stageEnteredAt.slice(0, 10)}</Definition>
-            </div>
-          </Panel>
+          <StatusStrip lot={lot} />
+          <div className="flex flex-col gap-3.5 md:gap-4">
+            <Tabs tabs={TAB_ITEMS} value={tab} onChange={(id) => setTab(id as LotTab)} ariaLabel="Lot sections" />
+            <TabPanel id="intake" active={tab === 'intake'}>
+              <Panel>
+                <PanelHeader title="Intake" />
+                <div className="px-4 md:px-5 py-3.5 grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+                  <GroupLabel>Receipt</GroupLabel>
+                  <Definition label="Date received">{date(lot.dateReceived)}</Definition>
+                  <Definition label="Origin">
+                    {lot.originSource ? ORIGIN_LABELS[lot.originSource as keyof typeof ORIGIN_LABELS] ?? lot.originSource : dash}
+                  </Definition>
+                  <Definition label="Received by">{lot.receiver.name}</Definition>
+                  <Definition label="Stage since">{date(lot.stageEnteredAt)}</Definition>
 
-          <Panel>
-            <PanelHeader title="Owner & contacts" />
-            <div className="p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              <Definition label="Owner">
-                {lot.owner.name}
-                {lot.owner.phone ? <><br />{lot.owner.phone}</> : null}
-                {lot.owner.email ? <><br />{lot.owner.email}</> : null}
-                {lot.owner.address ? <><br />{lot.owner.address}</> : null}
-              </Definition>
-              <Definition label={`Points of contact (${lot.pointsOfContact.length})`}>
-                {lot.pointsOfContact.length > 0 ? lot.pointsOfContact.map((p) => p.name).join(', ') : dash}
-              </Definition>
-              <Definition label="Facilitator">{lot.facilitator ? lot.facilitator.name : dash}</Definition>
-            </div>
-          </Panel>
+                  <GroupLabel>Owner &amp; contacts</GroupLabel>
+                  <Definition label="Owner" className="col-span-2">
+                    <span className="flex flex-col gap-0.5">
+                      <span>{lot.owner.name}</span>
+                      {lot.owner.phone ? <span className="text-ink-2 font-normal">{lot.owner.phone}</span> : null}
+                      {lot.owner.email ? <span className="text-ink-2 font-normal">{lot.owner.email}</span> : null}
+                      {lot.owner.address ? <span className="text-ink-2 font-normal">{lot.owner.address}</span> : null}
+                    </span>
+                  </Definition>
+                  <Definition label={`Points of contact (${lot.pointsOfContact.length})`}>
+                    {lot.pointsOfContact.length > 0 ? lot.pointsOfContact.map((p) => p.name).join(', ') : dash}
+                  </Definition>
+                  <Definition label="Facilitator">{lot.facilitator ? lot.facilitator.name : dash}</Definition>
+                </div>
+              </Panel>
 
-          <Panel>
-            <PanelHeader title="Media & quantities" />
-            <div className="p-3 md:p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Definition label="Format"><span className="capitalize">{lot.format}</span></Definition>
-              <Definition label="Data type"><span className="capitalize">{lot.dataType}</span></Definition>
-              <Definition label="Sub-type">{lot.mediaSubtypeLabel}</Definition>
-              <Definition label="Quantity">{lot.quantity}</Definition>
-              <Definition label="To digitize">{lot.quantityToDigitize}</Definition>
-              <Definition label="Already digitized">{lot.quantityAlreadyDigitized}</Definition>
-              <Definition label="Items (total / selected)">{lot.itemCounts.total} / {lot.itemCounts.selected}</Definition>
-              <Definition label="Digitized / tagged">{lot.itemCounts.digitized} / {lot.itemCounts.tagged}</Definition>
-            </div>
-            {lot.quantityRemarks ? (
-              <div className="px-3 md:px-4 pb-3 md:pb-4">
-                <Definition label="Quantity remarks">{lot.quantityRemarks}</Definition>
-              </div>
-            ) : null}
-          </Panel>
+              <Panel>
+                <PanelHeader title="Media & quantities" />
+                <div className="px-4 md:px-5 py-3.5 grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+                  <Definition label="Format"><span className="capitalize">{lot.format}</span></Definition>
+                  <Definition label="Data type"><span className="capitalize">{lot.dataType}</span></Definition>
+                  <Definition label="Sub-type">{lot.mediaSubtypeLabel}</Definition>
+                  <Definition label="Quantity">{lot.quantity}</Definition>
+                  <Definition label="To digitize">{lot.quantityToDigitize}</Definition>
+                  <Definition label="Already digitized">{lot.quantityAlreadyDigitized}</Definition>
+                  <Definition label="Items (total / selected)">
+                    {lot.itemCounts.total} / {lot.itemCounts.selected}
+                  </Definition>
+                  <Definition label="Digitized / tagged">
+                    {lot.itemCounts.digitized} / {lot.itemCounts.tagged}
+                  </Definition>
+                  {lot.quantityRemarks ? (
+                    <Definition label="Quantity remarks" className="col-span-full">
+                      {lot.quantityRemarks}
+                    </Definition>
+                  ) : null}
+                </div>
+              </Panel>
 
-          <Panel>
-            <PanelHeader title="Condition & sender" />
-            <div className="p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Definition label="Condition notes">{lot.conditionNotes ?? dash}</Definition>
-              <Definition label="Condition photo">{lot.conditionPhotoUrl ?? dash}</Definition>
-              <Definition label="Reason for sending">{lot.reasonForSending ?? dash}</Definition>
-              <Definition label="Sender remarks">{lot.senderRemarks ?? dash}</Definition>
-            </div>
-          </Panel>
+              <Panel>
+                <PanelHeader title="Condition, sender & rights" />
+                <div className="px-4 md:px-5 py-3.5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+                  <GroupLabel>Condition</GroupLabel>
+                  <Definition label="Condition notes" className="col-span-full sm:col-span-1">
+                    {lot.conditionNotes ?? dash}
+                  </Definition>
+                  <Definition label="Condition photo" className="col-span-full sm:col-span-1">
+                    {lot.conditionPhotoUrl ?? dash}
+                  </Definition>
 
-          <Panel>
-            <PanelHeader title="Rights" />
-            <div className="p-3 md:p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Definition label="Rights type">{lot.rights.typeLabel ?? dash}</Definition>
-              <Definition label="Deed reference">{lot.rights.deedReference ?? dash}</Definition>
-              <Definition label="Rights notes">{lot.rights.notes ?? dash}</Definition>
-            </div>
-          </Panel>
+                  <GroupLabel>Sender</GroupLabel>
+                  <Definition label="Reason for sending" className="col-span-full sm:col-span-1">
+                    {lot.reasonForSending ?? dash}
+                  </Definition>
+                  <Definition label="Sender remarks" className="col-span-full sm:col-span-1">
+                    {lot.senderRemarks ?? dash}
+                  </Definition>
 
-          <DecisionSection
-            lot={lot}
-            onChanged={() => {
-              detail.refetch();
-              queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-              queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-            }}
-          />
-          <ScanSection
-            lot={lot}
-            onChanged={() => {
-              detail.refetch();
-              queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-              queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-            }}
-          />
-          <MlsSection
-            lot={lot}
-            onChanged={() => {
-              detail.refetch();
-              queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-              queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-            }}
-          />
-          <ReturnSection
-            lot={lot}
-            onChanged={() => {
-              detail.refetch();
-              queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-              queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-            }}
-          />
-          <DiscardSection
-            lot={lot}
-            onChanged={() => {
-              detail.refetch();
-              queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-              queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-            }}
-          />
-          <ItemsPanel lotId={lot.id} />
-          <ActivityPanel lotId={lot.id} />
+                  <GroupLabel>Rights</GroupLabel>
+                  <Definition label="Rights type">{lot.rights.typeLabel ?? dash}</Definition>
+                  <Definition label="Deed reference">{lot.rights.deedReference ?? dash}</Definition>
+                  <Definition label="Rights notes" className="col-span-full md:col-span-2">
+                    {lot.rights.notes ?? dash}
+                  </Definition>
+                </div>
+              </Panel>
+            </TabPanel>
+
+            <TabPanel id="workflow" active={tab === 'workflow'}>
+              <DecisionSection lot={lot} onChanged={onChanged} />
+              <ScanSection lot={lot} onChanged={onChanged} />
+              <MlsSection lot={lot} onChanged={onChanged} />
+              <ReturnSection lot={lot} onChanged={onChanged} />
+              <DiscardSection lot={lot} onChanged={onChanged} />
+            </TabPanel>
+
+            <TabPanel id="items" active={tab === 'items'}>
+              <ItemsPanel lotId={lot.id} />
+            </TabPanel>
+
+            <TabPanel id="activity" active={tab === 'activity'}>
+              <ActivityPanel lotId={lot.id} />
+            </TabPanel>
+          </div>
         </>
       ) : (
         <Panel>
@@ -372,7 +463,7 @@ export function LotDetail({ lotId }: { lotId: string }) {
             <ContactFields legend="Owner" value={owner} onChange={setOwner} />
 
             <fieldset className="m-0 p-0 border-0 min-w-0">
-              <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+              <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
                 Points of contact {pocs.length > 0 ? `(${pocs.length})` : ''}
               </legend>
               <div className="flex flex-col gap-4">
@@ -401,7 +492,7 @@ export function LotDetail({ lotId }: { lotId: string }) {
             </fieldset>
 
             <fieldset className="m-0 p-0 border-0 min-w-0">
-              <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+              <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
                 Facilitator
               </legend>
               {facilitator === null ? (
@@ -447,7 +538,7 @@ export function LotDetail({ lotId }: { lotId: string }) {
             </div>
 
             <fieldset className="m-0 p-0 border-0 min-w-0">
-              <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+              <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
                 Rights
               </legend>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

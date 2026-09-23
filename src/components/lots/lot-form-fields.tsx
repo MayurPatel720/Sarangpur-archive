@@ -22,7 +22,7 @@ export function ContactFields({
     onChange({ ...value, [k]: v });
   return (
     <fieldset className="m-0 p-0 border-0 min-w-0">
-      <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+      <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
         {legend}
       </legend>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

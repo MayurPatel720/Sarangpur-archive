@@ -284,3 +284,46 @@ export const IconLock = (p: IconProps) => (
     <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
   </Icon>
 );
+
+export const IconEdit = (p: IconProps) => (
+  <Icon strokeWidth={1.9} {...p}>
+    <path d="M14.5 5.5l4 4" />
+    <path d="M4 20l1.2-4.2L16.2 4.8a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8.2 18.8 4 20z" />
+  </Icon>
+);
+
+export const IconTrash = (p: IconProps) => (
+  <Icon strokeWidth={1.9} {...p}>
+    <path d="M3.5 6h17" />
+    <path d="M8.5 6V3.6h7V6" />
+    <path d="M6 6l1 14.4h10L18 6" />
+    <path d="M10 10.5v6M14 10.5v6" />
+  </Icon>
+);
+
+export const IconCheckCircle = (p: IconProps) => (
+  <Icon strokeWidth={1.9} {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M8.5 12.2l2.4 2.4 4.6-5" />
+  </Icon>
+);
+
+export const IconAlertCircle = (p: IconProps) => (
+  <Icon strokeWidth={1.9} {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 8v4.5M12 15.5h.01" />
+  </Icon>
+);
+
+export const IconInfoCircle = (p: IconProps) => (
+  <Icon strokeWidth={1.9} {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 11.5v5M12 8h.01" />
+  </Icon>
+);
+
+export const IconX = (p: IconProps) => (
+  <Icon strokeWidth={2} {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);

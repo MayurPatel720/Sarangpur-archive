@@ -1,20 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import type { LotListResponse } from '@/types/lot';
 import type { Permission } from '@/server/permissions';
 import { STAGE_LABELS } from '@/lib/domain';
+import { date } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Badge, ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
 import { DataTable } from '@/components/ui/DataTable';
-import { GhostButton } from '@/components/ui/Form';
+import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
+import { useUrlPagination } from '@/lib/useUrlPagination';
 import { useMe } from '@/hooks/useCan';
+import { LotRowActions } from './LotRowActions';
 
 type Row = LotListResponse['rows'][number];
 
-const PAGE_SIZE = 20;
+const DECISION_SEVERITY: Record<string, Severity> = {
+  pending: 'warning',
+  archive: 'good',
+  return: 'info',
+  discard: 'critical',
+};
 
 export function QueueTable({
   title,
@@ -26,6 +34,8 @@ export function QueueTable({
   queryKey,
   fetchPage,
   showReturn = false,
+  showDecision = false,
+  defaultPageSize = 25,
 }: {
   title: string;
   subtitle: (total: number | null) => string;
@@ -36,14 +46,60 @@ export function QueueTable({
   queryKey: (page: number, pageSize: number) => readonly unknown[];
   fetchPage: (page: number, pageSize: number) => Promise<LotListResponse>;
   showReturn?: boolean;
+  showDecision?: boolean;
+  defaultPageSize?: number;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <QueueTableInner
+        title={title}
+        subtitle={subtitle}
+        gate={gate}
+        deniedMessage={deniedMessage}
+        deniedHint={deniedHint}
+        emptyMessage={emptyMessage}
+        queryKey={queryKey}
+        fetchPage={fetchPage}
+        showReturn={showReturn}
+        showDecision={showDecision}
+        defaultPageSize={defaultPageSize}
+      />
+    </Suspense>
+  );
+}
+
+function QueueTableInner({
+  title,
+  subtitle,
+  gate,
+  deniedMessage,
+  deniedHint,
+  emptyMessage,
+  queryKey,
+  fetchPage,
+  showReturn,
+  showDecision,
+  defaultPageSize,
+}: {
+  title: string;
+  subtitle: (total: number | null) => string;
+  gate: Permission;
+  deniedMessage: string;
+  deniedHint: string;
+  emptyMessage: string;
+  queryKey: (page: number, pageSize: number) => readonly unknown[];
+  fetchPage: (page: number, pageSize: number) => Promise<LotListResponse>;
+  showReturn?: boolean;
+  showDecision?: boolean;
+  defaultPageSize?: number;
 }) {
   const router = useRouter();
   const me = useMe();
-  const [page, setPage] = useState(1);
+  const { page, pageSize, setPage, setPageSize } = useUrlPagination(defaultPageSize);
 
   const queue = useQuery({
-    queryKey: queryKey(page, PAGE_SIZE),
-    queryFn: () => fetchPage(page, PAGE_SIZE),
+    queryKey: queryKey(page, pageSize),
+    queryFn: () => fetchPage(page, pageSize),
     enabled: me.data ? me.data.grants.includes(gate) : false,
   });
 
@@ -66,7 +122,7 @@ export function QueueTable({
     );
   }
 
-  const totalPages = queue.data ? Math.max(1, Math.ceil(queue.data.total / PAGE_SIZE)) : 1;
+  const totalPages = queue.data ? totalPagesOf(queue.data.total, queue.data.pageSize) : 1;
 
   return (
     <div className="flex flex-col gap-4 md:gap-5">
@@ -89,81 +145,97 @@ export function QueueTable({
         </Panel>
       ) : (
         <Panel>
-          <DataTable<Row>
-            rows={queue.data ? queue.data.rows : []}
-            loading={queue.isLoading}
-            emptyMessage={emptyMessage}
-            getRowKey={(r) => r.id}
-            onRowClick={(r) => router.push(`/register/${r.id}`)}
-            columns={[
-              {
-                key: 'lot',
-                header: 'Lot',
-                render: (r) => (
-                  <span className="flex flex-col">
-                    <span className="font-semibold text-ink">{r.lotReference}</span>
-                    {r.namingCode ? <span className="text-ink-3">{r.namingCode}</span> : null}
-                  </span>
-                ),
-              },
-              {
-                key: 'owner',
-                header: 'Owner',
-                render: (r) => (
-                  <span className="flex flex-col">
-                    <span className="text-ink">{r.ownerName}</span>
-                    <span className="text-ink-3">{r.pointOfContactName ?? '—'}</span>
-                  </span>
-                ),
-              },
-              {
-                key: 'media',
-                header: 'Media',
-                render: (r) => (
-                  <span className="text-ink">
-                    <span className="capitalize">{r.format}</span> · {r.quantity}
-                  </span>
-                ),
-              },
-              ...(showReturn
-                ? [
-                    {
-                      key: 'return',
-                      header: 'Return',
-                      render: (r: Row) => (
-                        <Badge severity={r.returnSeverity}>
-                          <span className="capitalize">{r.returnLabel}</span>
-                        </Badge>
-                      ),
-                    },
-                  ]
-                : []),
-              {
-                key: 'stage',
-                header: 'Stage',
-                render: (r) => (
-                  <span className="text-ink-2">{STAGE_LABELS[r.stage as keyof typeof STAGE_LABELS] ?? r.stage}</span>
-                ),
-              },
-              {
-                key: 'received',
-                header: 'Received',
-                render: (r) => <span className="text-ink-2">{r.dateReceived.slice(0, 10)}</span>,
-              },
-            ]}
-          />
-          {totalPages > 1 ? (
-            <div className="flex items-center gap-2 px-3 md:px-4 py-3 border-t border-line-soft">
-              <GhostButton disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                Previous
-              </GhostButton>
-              <span className="text-[13px] text-ink-3">
-                Page {page} of {totalPages}
-              </span>
-              <GhostButton disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
-                Next
-              </GhostButton>
-            </div>
+          <div className="p-3 md:p-4 pb-0">
+            <DataTable<Row>
+              rows={queue.data ? queue.data.rows : []}
+              loading={queue.isLoading}
+              emptyMessage={emptyMessage}
+              getRowKey={(r) => r.id}
+              onRowClick={(r) => router.push(`/register/${r.id}`)}
+              rowActions={(r) => <LotRowActions row={r} />}
+              columns={[
+                {
+                  key: 'lot',
+                  header: 'Lot',
+                  render: (r) => (
+                    <span className="flex flex-col">
+                      <span className="font-semibold text-ink">{r.lotReference}</span>
+                      {r.namingCode ? <span className="text-ink-3">{r.namingCode}</span> : null}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'owner',
+                  header: 'Owner',
+                  render: (r) => (
+                    <span className="flex flex-col">
+                      <span className="text-ink">{r.ownerName}</span>
+                      <span className="text-ink-3">{r.pointOfContactName ?? '—'}</span>
+                    </span>
+                  ),
+                },
+                {
+                  key: 'media',
+                  header: 'Media',
+                  render: (r) => (
+                    <span className="text-ink">
+                      <span className="capitalize">{r.format}</span> · {r.quantity}
+                    </span>
+                  ),
+                },
+                ...(showDecision
+                  ? [
+                      {
+                        key: 'decision',
+                        header: 'Decision',
+                        render: (r: Row) => (
+                          <Badge severity={DECISION_SEVERITY[r.decision] ?? 'neutral'}>
+                            <span className="capitalize">{r.decision}</span>
+                          </Badge>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(showReturn
+                  ? [
+                      {
+                        key: 'return',
+                        header: 'Return',
+                        render: (r: Row) => (
+                          <Badge severity={r.returnSeverity}>
+                            <span className="capitalize">{r.returnLabel}</span>
+                          </Badge>
+                        ),
+                      },
+                    ]
+                  : []),
+                {
+                  key: 'stage',
+                  header: 'Stage',
+                  render: (r) => (
+                    <span className="text-ink-2">
+                      {STAGE_LABELS[r.stage as keyof typeof STAGE_LABELS] ?? r.stage}
+                    </span>
+                  ),
+                },
+                {
+                  key: 'received',
+                  header: 'Received',
+                  render: (r) => <span className="text-ink-2">{date(r.dateReceived)}</span>,
+                },
+              ]}
+            />
+          </div>
+          {queue.data && queue.data.total > 0 ? (
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              total={queue.data.total}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              label="lots"
+            />
           ) : null}
         </Panel>
       )}

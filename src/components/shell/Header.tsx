@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signOut } from 'next-auth/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { dashboardApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
+import { THEME_OPTIONS, useTheme } from '@/hooks/useTheme';
 import {
   IconBell,
   IconChevronDown,
@@ -14,6 +15,8 @@ import {
   IconSearch,
 } from '@/components/ui/icons';
 import { useDrawer } from '@/components/shell/drawer-context';
+import { SearchOverlay } from '@/components/shell/SearchOverlay';
+import { Kbd } from '@/components/ui/Kbd';
 
 /** 'lead_reviewer' → 'Lead reviewer'. Session only carries the key, not the label. */
 function prettifyRoleKey(key: string): string {
@@ -30,11 +33,19 @@ function initialsOf(name: string): string {
   return initials || '–';
 }
 
-export function Header({ section, page }: { section: string; page: string }) {
+/** ⌘ on Apple platforms, Ctrl elsewhere — for the search hint badge. */
+function isApplePlatform(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+}
+
+export function Header({ page }: { page: string }) {
   const queryClient = useQueryClient();
   const { toggle } = useDrawer();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const { data: me } = useMe();
+  const { theme, setTheme } = useTheme();
 
   const displayName = me?.name ?? '';
   const roleLabel = me ? prettifyRoleKey(me.roleKey) : '';
@@ -50,56 +61,71 @@ export function Header({ section, page }: { section: string; page: string }) {
   // Page-agnostic: refetch everything (dashboard + admin + session), not just dashboard.
   const refreshAll = () => queryClient.invalidateQueries();
 
+  // Global ⌘/Ctrl+K opens the search overlay (Spotlight convention).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  const searchKeys = isApplePlatform() ? (['⌘', 'K'] as const) : (['Ctrl', 'K'] as const);
+  const searchHint = searchKeys.join(' ');
+
   return (
-    <header className="h-[60px] flex-shrink-0 bg-surface border-b border-line flex items-center gap-2.5 px-3 md:gap-4 md:px-5">
+    <header className="relative h-[60px] flex-shrink-0 bg-surface border-b border-line flex items-center gap-2.5 px-3 md:gap-4 md:px-5">
       {/* Hamburger — visible only on mobile */}
       <button
         type="button"
         onClick={toggle}
-        className="xl:hidden w-10 h-10 flex items-center justify-center rounded-[6px] text-ink-2 cursor-pointer"
+        className="xl:hidden w-10 h-10 flex items-center justify-center rounded-[6px] text-ink-2 cursor-pointer z-10"
         aria-label="Open navigation"
       >
         <IconMenu size={20} />
       </button>
 
       {/* Page locator */}
-      <div className="flex flex-col gap-0.5 min-w-0">
-        <span className="text-[9.5px] font-semibold tracking-[0.12em] uppercase text-ink-4 hidden sm:block">
-          {section}
-        </span>
+      <div className="flex flex-col gap-0.5 min-w-0 flex-shrink-0 relative z-10">
         <span className="text-[13.5px] font-semibold tracking-[-0.005em] text-ink truncate">
           {page}
         </span>
       </div>
 
-      {/* Search bar — full on lg+, icon-only on md, hidden on < md */}
+      {/* Search — absolute center of the header (main column, excludes sidebar) */}
       <button
         type="button"
-        className="ml-2 hidden lg:flex w-[392px] h-10 bg-surface-sunken border border-line rounded-[6px] pl-3 pr-2.5 items-center gap-2.5 cursor-pointer"
-        title="Command palette — not wired up in this slice"
+        onClick={() => setSearchOpen(true)}
+        className="hidden lg:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(100%-1.5rem,560px)] h-10 bg-surface-sunken border border-line rounded-[6px] pl-3 pr-2.5 items-center gap-2.5 cursor-pointer z-0"
+        title={`Search (${searchHint})`}
+        aria-label={`Open search (${searchHint})`}
       >
         <IconSearch size={15} className="flex-shrink-0 text-ink-4" />
         <span className="flex-1 text-left text-[13px] text-ink-4">
           Search lots, codes, people, paths…
         </span>
-        <span className="flex gap-[3px] flex-shrink-0">
-          <Kbd>Ctrl</Kbd>
-          <Kbd>K</Kbd>
+        <span className="flex-shrink-0">
+          <Kbd keys={searchKeys} label={searchHint} />
         </span>
       </button>
 
       {/* Compact search — md only */}
       <button
         type="button"
-        className="hidden md:flex lg:hidden w-10 h-10 bg-surface-sunken border border-line rounded-[6px] items-center justify-center cursor-pointer ml-auto"
+        onClick={() => setSearchOpen(true)}
+        className="hidden md:flex lg:hidden w-10 h-10 bg-surface-sunken border border-line rounded-[6px] items-center justify-center cursor-pointer ml-auto relative z-10"
         title="Search"
+        aria-label="Open search"
       >
         <IconSearch size={16} className="text-ink-4" />
       </button>
 
       {/* Utility cluster — flush right on desktop (lg:ml-auto restores the
           auto-margin that md:ml-2 overrides). */}
-      <div className="flex items-center gap-2 md:gap-2.5 ml-auto md:ml-2 lg:ml-auto">
+      <div className="flex items-center gap-2 md:gap-2.5 ml-auto md:ml-2 lg:ml-auto relative z-10">
         <button
           type="button"
           onClick={refreshAll}
@@ -133,7 +159,7 @@ export function Header({ section, page }: { section: string; page: string }) {
             aria-label={displayName || 'Account'}
             className="h-11 pl-1.5 pr-2.5 bg-surface border border-line rounded-[7px] shadow-control flex items-center gap-2.5 cursor-pointer"
           >
-            <span className="w-[30px] h-[30px] rounded-[6px] bg-ink text-white text-[11.5px] font-semibold flex items-center justify-center">
+            <span className="w-[30px] h-[30px] rounded-[6px] bg-strong-bg text-on-strong text-[11.5px] font-semibold flex items-center justify-center">
               {initials}
             </span>
             <span className="hidden md:flex flex-col gap-px text-left">
@@ -165,6 +191,40 @@ export function Header({ section, page }: { section: string; page: string }) {
                   <div className="text-[11px] text-ink-4">{roleLabel}</div>
                 </div>
                 <div className="h-px bg-line mx-1.5 my-1" />
+                <div className="px-2.5 pt-1.5 pb-1">
+                  <div
+                    id="account-theme-label"
+                    className="text-[10.5px] font-semibold tracking-[0.06em] uppercase text-ink-4 mb-1.5"
+                  >
+                    Theme
+                  </div>
+                  <div
+                    role="group"
+                    aria-labelledby="account-theme-label"
+                    className="grid grid-cols-3 gap-1 bg-surface-sunken border border-line rounded-[6px] p-0.5"
+                  >
+                    {THEME_OPTIONS.map((opt) => {
+                      const active = theme === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={active}
+                          onClick={() => setTheme(opt.value)}
+                          className={`h-7 rounded-[4px] text-[11.5px] font-medium cursor-pointer border-0 ${
+                            active
+                              ? 'bg-strong-bg text-on-strong'
+                              : 'bg-transparent text-ink-2 hover:text-ink'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="h-px bg-line mx-1.5 my-1" />
                 <button
                   type="button"
                   role="menuitem"
@@ -178,14 +238,8 @@ export function Header({ section, page }: { section: string; page: string }) {
           )}
         </div>
       </div>
-    </header>
-  );
-}
 
-function Kbd({ children }: { children: string }) {
-  return (
-    <kbd className="font-sans text-[10.5px] font-semibold text-ink-3 bg-surface border border-line-strong rounded-[4px] px-[5px] py-0.5 leading-[1.2]">
-      {children}
-    </kbd>
+      {searchOpen && <SearchOverlay onClose={() => setSearchOpen(false)} />}
+    </header>
   );
 }

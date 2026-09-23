@@ -7,18 +7,20 @@ import type { LotDetailResponse } from '@/types/lot';
 import { DISCARD_REASONS } from '@/lib/domain';
 import { prettyEnum } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
-import { Panel, PanelHeader } from '@/components/ui/primitives';
+import { Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
+import { useToast } from '@/components/ui/Toast';
 import { useMe } from '@/hooks/useCan';
 
 type DetailLot = LotDetailResponse['lot'];
 
-const dash = <span className="text-ink-4">—</span>;
+const dash = <EmptyValue />;
 
 /** Stages from which a working lot may be discarded (server is source of truth). */
 const DISCARDABLE = ['metadata', 'scanning', 'mls_tag', 'storage'];
 
 export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: () => void }) {
   const me = useMe();
+  const toast = useToast();
   const canConfirm = me.data ? me.data.grants.includes('discard:confirm') : false;
   const canReverse = me.data ? me.data.grants.includes('discard:reverse') : false;
   const [formError, setFormError] = useState<string | null>(null);
@@ -38,18 +40,28 @@ export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: 
       setFormError(null);
       setConfirming(false);
       setNotes('');
+      toast.success('Lot discarded', `${lot.lotReference} moved to Discarded.`);
       onChanged();
     },
-    onError: (e) => setFormError(e instanceof ApiRequestError ? e.message : 'Could not discard lot.'),
+    onError: (e) => {
+      const msg = e instanceof ApiRequestError ? e.message : 'Could not discard lot.';
+      setFormError(msg);
+      toast.error('Couldn’t discard lot', msg);
+    },
   });
 
   const reverse = useMutation({
     mutationFn: () => lotsApi.reverseDiscard(lot.id, lot.version),
     onSuccess: () => {
       setFormError(null);
+      toast.success('Discard reversed', `${lot.lotReference} returned to metadata.`);
       onChanged();
     },
-    onError: (e) => setFormError(e instanceof ApiRequestError ? e.message : 'Could not reverse discard.'),
+    onError: (e) => {
+      const msg = e instanceof ApiRequestError ? e.message : 'Could not reverse discard.';
+      setFormError(msg);
+      toast.error('Couldn’t reverse discard', msg);
+    },
   });
 
   const isDiscarded = lot.stage === 'discarded';
@@ -57,12 +69,11 @@ export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: 
   return (
     <Panel>
       <PanelHeader title="Discard" />
-      <div className="p-3 md:p-4 flex flex-col gap-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3">Reason</span>
-            <span className="text-[13px] text-ink break-words">{lot.ops.discardReason ? prettyEnum(lot.ops.discardReason) : dash}</span>
-          </div>
+      <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
+          <Definition label="Reason">
+            {lot.ops.discardReason ? prettyEnum(lot.ops.discardReason) : dash}
+          </Definition>
         </div>
 
         {formError ? <FormError message={formError} /> : null}

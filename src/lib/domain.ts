@@ -57,11 +57,31 @@ export const BOARD_STAGES: Stage[] = [...IN_FLIGHT_STAGES, ...TERMINAL_STAGES];
 export const DECISIONS = ['pending', 'archive', 'return', 'discard'] as const;
 export type Decision = (typeof DECISIONS)[number];
 
+export const DECISION_LABELS: Record<Decision, string> = {
+  pending: 'Pending',
+  archive: 'Archive',
+  return: 'Return',
+  discard: 'Discard',
+};
+
 export const FORMATS = ['photo', 'video', 'audio', 'documents', 'prasadi'] as const;
 export type Format = (typeof FORMATS)[number];
 
+export const FORMAT_LABELS: Record<Format, string> = {
+  photo: 'Photo',
+  video: 'Video',
+  audio: 'Audio',
+  documents: 'Documents',
+  prasadi: 'Prasadi',
+};
+
 export const DATA_TYPES = ['physical', 'digital'] as const;
 export type DataType = (typeof DATA_TYPES)[number];
+
+export const DATA_TYPE_LABELS: Record<DataType, string> = {
+  physical: 'Physical',
+  digital: 'Digital',
+};
 
 export const SCAN_STATUSES = ['pending', 'in_progress', 'scanned', 'cannot_scan'] as const;
 export type ScanStatus = (typeof SCAN_STATUSES)[number];

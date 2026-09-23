@@ -7,12 +7,15 @@ import { useQuery } from '@tanstack/react-query';
 import { lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotListResponse } from '@/types/lot';
-import { STAGE_LABELS, STAGES } from '@/lib/domain';
+import { FORMATS, STAGE_LABELS, STAGES } from '@/lib/domain';
+import { date } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Badge, ErrorState, Panel, PanelHeader } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
-import { GhostButton } from '@/components/ui/Form';
+import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
+import { useUrlPagination } from '@/lib/useUrlPagination';
 import { useMe } from '@/hooks/useCan';
+import { LotRowActions } from './LotRowActions';
 import { EMPTY_FILTERS, RegisterFilters, type LotFilters } from './RegisterFilters';
 
 type LotRow = LotListResponse['rows'][number];
@@ -51,7 +54,7 @@ const COLUMNS: Column<LotRow>[] = [
   {
     key: 'received',
     header: 'Received',
-    render: (r) => <span className="whitespace-nowrap">{r.dateReceived.slice(0, 10)}</span>,
+    render: (r) => <span className="whitespace-nowrap">{date(r.dateReceived)}</span>,
   },
   {
     key: 'owner',
@@ -99,28 +102,46 @@ const COLUMNS: Column<LotRow>[] = [
   },
 ];
 
-function toParams(filters: LotFilters, page: number): Record<string, string> {
-  const p: Record<string, string> = { page: String(page), sort: filters.sort };
+function toParams(filters: LotFilters, page: number, pageSize: number): Record<string, string> {
+  const p: Record<string, string> = {
+    page: String(page),
+    pageSize: String(pageSize),
+    sort: filters.sort,
+  };
   if (filters.q.trim()) p.q = filters.q.trim();
   if (filters.stage) p.stage = filters.stage;
   if (filters.decision) p.decision = filters.decision;
   if (filters.format) p.format = filters.format;
   if (filters.dataType) p.dataType = filters.dataType;
-  if (filters.receivedFrom) p.receivedFrom = new Date(`${filters.receivedFrom}T00:00:00`).toISOString();
-  if (filters.receivedTo) p.receivedTo = new Date(`${filters.receivedTo}T23:59:59`).toISOString();
+  const from = filters.receivedFrom.trim();
+  const to = filters.receivedTo.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) p.receivedFrom = new Date(`${from}T00:00:00`).toISOString();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) p.receivedTo = new Date(`${to}T23:59:59`).toISOString();
   return p;
 }
 
-export function RegisterManager({ initialStage }: { initialStage?: string }) {
+export function RegisterManager({
+  initialStage,
+  initialFormat,
+}: {
+  initialStage?: string;
+  initialFormat?: string;
+} = {}) {
   const router = useRouter();
+  const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
   const cleanStage =
     initialStage && (STAGES as readonly string[]).includes(initialStage) ? initialStage : '';
-  const [filters, setFilters] = useState<LotFilters>({ ...EMPTY_FILTERS, stage: cleanStage });
-  const [page, setPage] = useState(1);
+  const cleanFormat =
+    initialFormat && (FORMATS as readonly string[]).includes(initialFormat) ? initialFormat : '';
+  const [filters, setFilters] = useState<LotFilters>({
+    ...EMPTY_FILTERS,
+    stage: cleanStage,
+    format: cleanFormat,
+  });
   const me = useMe();
   const can = me.data ? me.data.grants.includes('lot:view') : false;
 
-  const params = useMemo(() => toParams(filters, page), [filters, page]);
+  const params = useMemo(() => toParams(filters, page, pageSize), [filters, page, pageSize]);
   const key = useMemo(() => JSON.stringify(params), [params]);
   const query = useQuery({
     queryKey: queryKeys.lots.list(key),
@@ -130,7 +151,7 @@ export function RegisterManager({ initialStage }: { initialStage?: string }) {
 
   const applyFilters = (next: LotFilters) => {
     setFilters(next);
-    setPage(1);
+    resetPage();
   };
 
   if (me.isLoading) {
@@ -161,7 +182,7 @@ export function RegisterManager({ initialStage }: { initialStage?: string }) {
     );
   }
 
-  const totalPages = query.data ? Math.max(1, Math.ceil(query.data.total / query.data.pageSize)) : 1;
+  const totalPages = query.data ? totalPagesOf(query.data.total, query.data.pageSize) : 1;
 
   return (
     <div className="flex flex-col gap-4 md:gap-5">
@@ -188,7 +209,7 @@ export function RegisterManager({ initialStage }: { initialStage?: string }) {
 
       <Panel>
         <PanelHeader title="Lots" />
-        <div className="p-3 md:p-4">
+        <div className="p-3 md:p-4 pb-0">
           {query.isError ? (
             <ErrorState
               message="Couldn't load the register."
@@ -196,36 +217,28 @@ export function RegisterManager({ initialStage }: { initialStage?: string }) {
               onRetry={() => query.refetch()}
             />
           ) : (
-            <>
-              <DataTable<LotRow>
-                columns={COLUMNS}
-                rows={query.data?.rows ?? []}
-                loading={query.isLoading}
-                emptyMessage="No lots match these filters."
-                getRowKey={(r) => r.id}
-                onRowClick={(r) => router.push(`/register/${r.id}`)}
-              />
-              {query.data && query.data.total > 0 ? (
-                <div className="mt-3 flex items-center gap-3">
-                  <span className="text-[12.5px] text-ink-3">
-                    Page {query.data.page} of {totalPages} · {query.data.total} total
-                  </span>
-                  <div className="ml-auto flex items-center gap-2">
-                    <GhostButton disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-                      Previous
-                    </GhostButton>
-                    <GhostButton
-                      disabled={page >= totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Next
-                    </GhostButton>
-                  </div>
-                </div>
-              ) : null}
-            </>
+            <DataTable<LotRow>
+              columns={COLUMNS}
+              rows={query.data?.rows ?? []}
+              loading={query.isLoading}
+              emptyMessage="No lots match these filters."
+              getRowKey={(r) => r.id}
+              onRowClick={(r) => router.push(`/register/${r.id}`)}
+              rowActions={(r) => <LotRowActions row={r} />}
+            />
           )}
         </div>
+        {query.data && query.data.total > 0 ? (
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={query.data.total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+            label="lots"
+          />
+        ) : null}
       </Panel>
     </div>
   );

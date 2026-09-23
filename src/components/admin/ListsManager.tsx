@@ -7,6 +7,7 @@ import { queryKeys } from '@/lib/query-keys';
 import { useCan } from '@/hooks/useCan';
 import { Panel, PanelHeader, Skeleton, ErrorState, Badge } from '@/components/ui/primitives';
 import { Dialog } from '@/components/ui/Dialog';
+import { useToast } from '@/components/ui/Toast';
 import { Field, TextInput, Checkbox, PrimaryButton, GhostButton, FormError } from '@/components/ui/Form';
 import type { AdminReferenceList, AdminListItem, ListCreateBody } from '@/types/admin';
 
@@ -120,6 +121,7 @@ export function ListsManager() {
 }
 
 function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onChanged: () => void }) {
+  const toast = useToast();
   const [label, setLabel] = useState(list?.label ?? '');
   const [group, setGroup] = useState(list?.group ?? '');
   const [items, setItems] = useState<EditableItem[]>(list ? toEditable(list.items) : []);
@@ -143,7 +145,11 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
         expectedRevision: list.revision,
       });
     },
-    onSuccess: onChanged,
+    onSuccess: () => {
+      toast.success('List saved', list ? `${list.label} is up to date.` : undefined);
+      onChanged();
+    },
+    onError: (e) => toast.error('Couldn’t save list', e.message),
   });
 
   const remove = useMutation({
@@ -151,7 +157,12 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
       if (!list) throw new Error('No list selected.');
       return adminApi.deleteList(list.key);
     },
-    onSuccess: onChanged,
+    onSuccess: () => {
+      setConfirmDelete(false);
+      toast.success('List deleted', list ? `${list.label} was removed.` : undefined);
+      onChanged();
+    },
+    onError: (e) => toast.error('Couldn’t delete list', e.message),
   });
 
   if (!list) {
@@ -277,6 +288,7 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
 }
 
 function CreateListDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (key: string) => void }) {
+  const toast = useToast();
   const [key, setKey] = useState('');
   const [label, setLabel] = useState('');
   const [group, setGroup] = useState('Custom');
@@ -286,7 +298,11 @@ function CreateListDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
       const body: ListCreateBody = { key: key.trim(), label: label.trim(), group: group.trim() || 'Custom', metaSchema: [] };
       return adminApi.createList(body);
     },
-    onSuccess: (res) => onSaved(res.list.key),
+    onSuccess: (res) => {
+      toast.success('List created', res.list.label);
+      onSaved(res.list.key);
+    },
+    onError: (e) => toast.error('Couldn’t create list', e.message),
   });
 
   return (
