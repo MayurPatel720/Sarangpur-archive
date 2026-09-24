@@ -28,6 +28,7 @@ import {
   SEED_DEV_PASSWORD,
   SEED_REFERENCE_LISTS,
 } from './seed-data';
+import { CATALOG_LIST_KEYS } from '../src/lib/vocab-catalog';
 
 const CHUNK = 5000;
 
@@ -60,7 +61,7 @@ async function main() {
     LotItem.deleteMany({}),
     ActivityLog.deleteMany({}),
     Role.deleteMany({}),
-    ReferenceList.deleteMany({}),
+    // ReferenceList is NOT wiped: admin vocabulary edits survive reseed.
     // Settings are NOT wiped: on reseed the admin's thresholds survive.
   ]);
 
@@ -86,8 +87,51 @@ async function main() {
   console.log(`→ inserting ${roles.length} roles…`);
   await insertChunked(Role, roles);
 
-  console.log(`→ inserting ${SEED_REFERENCE_LISTS.length} reference lists…`);
-  await insertChunked(ReferenceList, SEED_REFERENCE_LISTS);
+  console.log(`→ upserting ${SEED_REFERENCE_LISTS.length} reference lists…`);
+  const catalogKeys = new Set(CATALOG_LIST_KEYS);
+  for (const list of SEED_REFERENCE_LISTS) {
+    const key = String(list.key);
+    const existing = await ReferenceList.findOne({ key }).lean();
+    if (!existing) {
+      await ReferenceList.updateOne({ key }, { $setOnInsert: list }, { upsert: true });
+      continue;
+    }
+    if (!catalogKeys.has(key)) continue;
+    // Catalog lists: refresh metaSchema + item meta from the catalog so new flags
+    // (stage.discardable, returnStatus.open, …) land; preserve usageCount and labels.
+    const seedItems = list.items as {
+      value: string;
+      label: string;
+      active: boolean;
+      sortOrder: number;
+      meta: Record<string, unknown>;
+    }[];
+    const currentItems = (existing.items ?? []) as {
+      value: string;
+      label: string;
+      active: boolean;
+      sortOrder: number;
+      usageCount: number;
+      meta: Record<string, unknown>;
+    }[];
+    const byValue = new Map(currentItems.map((i) => [i.value, i] as const));
+    const items = seedItems.map((s, index) => {
+      const cur = byValue.get(s.value);
+      return {
+        value: s.value,
+        label: cur?.label ?? s.label,
+        active: cur?.active ?? s.active,
+        sortOrder: cur?.sortOrder ?? s.sortOrder ?? index,
+        usageCount: cur?.usageCount ?? 0,
+        // Catalog flags win; extra admin meta keys on the stored item are kept.
+        meta: { ...(cur?.meta ?? {}), ...s.meta },
+      };
+    });
+    await ReferenceList.updateOne(
+      { key },
+      { $set: { metaSchema: list.metaSchema, items } },
+    );
+  }
 
   console.log('→ ensuring global settings…');
   await Setting.updateOne({ key: 'global' }, { $setOnInsert: buildGlobalSettings() }, { upsert: true });

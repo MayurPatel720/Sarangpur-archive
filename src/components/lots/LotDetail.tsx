@@ -6,7 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotContactInput, LotDetailResponse, LotPatchBody } from '@/types/lot';
-import { ORIGIN_LABELS, STAGE_LABELS } from '@/lib/domain';
+import { STAGE_LABELS } from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { date } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea, TextInput } from '@/components/ui/Form';
@@ -153,6 +154,8 @@ function LotDetailInner({ lotId }: { lotId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const me = useMe();
+  const originList = useReferenceList('originSource');
+  const stageList = useReferenceList('stage');
   const canEdit = me.data ? me.data.grants.includes('lot:edit') : false;
   const [editing, setEditing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -327,7 +330,9 @@ function LotDetailInner({ lotId }: { lotId: string }) {
           </div>
           <div className="sm:ml-auto flex items-center gap-2">
             <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>
-              {STAGE_LABELS[lot.stage as keyof typeof STAGE_LABELS] ?? lot.stage}
+              {stageList.data?.items.find((i) => i.value === lot.stage)?.label ??
+                STAGE_LABELS[lot.stage as keyof typeof STAGE_LABELS] ??
+                lot.stage}
             </Badge>
             <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
               <span className="capitalize">{lot.decision}</span>
@@ -351,7 +356,9 @@ function LotDetailInner({ lotId }: { lotId: string }) {
                   <GroupLabel>Receipt</GroupLabel>
                   <Definition label="Date received">{date(lot.dateReceived)}</Definition>
                   <Definition label="Origin">
-                    {lot.originSource ? ORIGIN_LABELS[lot.originSource as keyof typeof ORIGIN_LABELS] ?? lot.originSource : dash}
+                    {lot.originSource
+                      ? originList.data?.items.find((o) => o.value === lot.originSource)?.label ?? lot.originSource
+                      : dash}
                   </Definition>
                   <Definition label="Received by">{lot.receiver.name}</Definition>
                   <Definition label="Stage since">{date(lot.stageEnteredAt)}</Definition>
@@ -414,6 +421,17 @@ function LotDetailInner({ lotId }: { lotId: string }) {
                     {lot.senderRemarks ?? dash}
                   </Definition>
 
+                  <GroupLabel>Photo content</GroupLabel>
+                  <Definition label="Photo date">{lot.photoDate ?? dash}</Definition>
+                  <Definition label="Photo location">{lot.photoLocation ?? dash}</Definition>
+                  <Definition label="Photo event">{lot.photoEvent ?? dash}</Definition>
+                  <Definition label="People in photo" className="col-span-2">{lot.peopleInPhoto ?? dash}</Definition>
+
+                  <GroupLabel>Storage</GroupLabel>
+                  <Definition label="Digital file path" className="col-span-2">{lot.digitalFilePath ?? dash}</Definition>
+                  <Definition label="Physical label">{lot.physicalLabelApplied ? 'Applied' : 'Not applied'}</Definition>
+                  <Definition label="Container label">{lot.containerLabelApplied ? 'Applied' : 'Not applied'}</Definition>
+
                   <GroupLabel>Rights</GroupLabel>
                   <Definition label="Rights type">{lot.rights.typeLabel ?? dash}</Definition>
                   <Definition label="Deed reference">{lot.rights.deedReference ?? dash}</Definition>
@@ -448,9 +466,10 @@ function LotDetailInner({ lotId }: { lotId: string }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Origin source">
                 <Select value={originSource} onChange={(e) => setOriginSource(e.target.value)}>
-                  {Object.entries(ORIGIN_LABELS).map(([v, l]) => (
-                    <option key={v} value={v}>
-                      {v} — {l}
+                  <option value="">Choose…</option>
+                  {(originList.data?.items ?? []).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
                     </option>
                   ))}
                 </Select>

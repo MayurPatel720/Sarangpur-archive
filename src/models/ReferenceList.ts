@@ -48,6 +48,10 @@ const referenceListSchema = new Schema(
     label: { type: String, required: true, trim: true },
     /** Sidebar group in the admin UI, e.g. `Media`, `Rights & Legal`. */
     group: { type: String, required: true, trim: true, default: 'Custom' },
+    /** `open` = free label/value CRUD; `system` = meta drives app logic (values immutable). */
+    tier: { type: String, enum: ['open', 'system'], default: 'open' },
+    /** Catalog lists the app depends on — undeletable. */
+    protected: { type: Boolean, default: false },
     metaSchema: { type: [metaFieldSchema], default: [] },
     items: { type: [listItemSchema], default: [] },
     revision: { type: Number, required: true, default: 1 },

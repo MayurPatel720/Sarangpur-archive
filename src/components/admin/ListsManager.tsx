@@ -8,8 +8,8 @@ import { useCan } from '@/hooks/useCan';
 import { Panel, PanelHeader, Skeleton, ErrorState, Badge } from '@/components/ui/primitives';
 import { Dialog } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/Toast';
-import { Field, TextInput, Checkbox, PrimaryButton, GhostButton, FormError } from '@/components/ui/Form';
-import type { AdminReferenceList, AdminListItem, ListCreateBody } from '@/types/admin';
+import { Field, TextInput, Select, Checkbox, PrimaryButton, GhostButton, FormError } from '@/components/ui/Form';
+import type { AdminReferenceList, AdminListItem, ListCreateBody, ListMetaField } from '@/types/admin';
 
 type EditableItem = {
   value: string;
@@ -44,6 +44,11 @@ export function ListsManager() {
   const fallbackKey = lists.data?.lists[0]?.key ?? null;
   const activeKey = selectedKey ?? fallbackKey;
   const selected = lists.data?.lists.find((l) => l.key === activeKey) ?? null;
+
+  const invalidateAll = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.admin.lists() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reference.all });
+  };
 
   if (!canManage) {
     return (
@@ -93,6 +98,11 @@ export function ListsManager() {
                       {l.group} · {l.items.length} items
                     </span>
                   </span>
+                  {l.tier === 'system' ? (
+                    <Badge severity="info">System</Badge>
+                  ) : l.protected ? (
+                    <Badge severity="neutral">Seeded</Badge>
+                  ) : null}
                 </button>
               </li>
             ))}
@@ -103,7 +113,7 @@ export function ListsManager() {
       <ListDetail
         key={selected?.key ?? 'empty'}
         list={selected}
-        onChanged={() => void queryClient.invalidateQueries({ queryKey: queryKeys.admin.lists() })}
+        onChanged={invalidateAll}
       />
 
       {creating && (
@@ -112,7 +122,7 @@ export function ListsManager() {
           onSaved={(key) => {
             setCreating(false);
             setSelectedKey(key);
-            void queryClient.invalidateQueries({ queryKey: queryKeys.admin.lists() });
+            invalidateAll();
           }}
         />
       )}
@@ -120,14 +130,24 @@ export function ListsManager() {
   );
 }
 
+function metaLabel(field: string): string {
+  return field
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
 function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onChanged: () => void }) {
   const toast = useToast();
   const [label, setLabel] = useState(list?.label ?? '');
   const [group, setGroup] = useState(list?.group ?? '');
   const [items, setItems] = useState<EditableItem[]>(list ? toEditable(list.items) : []);
+  const [metaSchema, setMetaSchema] = useState(list?.metaSchema ?? []);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [newValue, setNewValue] = useState('');
   const [newLabel, setNewLabel] = useState('');
+  const [newMeta, setNewMeta] = useState<Record<string, string>>({});
+  const [schemaDraft, setSchemaDraft] = useState({ field: '', type: 'string' as 'string' | 'number' | 'boolean' });
 
   const save = useMutation({
     mutationFn: () => {
@@ -135,6 +155,7 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
       return adminApi.patchList(list.key, {
         label: label.trim(),
         group: group.trim(),
+        metaSchema,
         items: items.map((i) => ({
           value: i.value,
           label: i.label.trim(),
@@ -176,26 +197,96 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
   const patchItem = (value: string, patch: Partial<EditableItem>) =>
     setItems((arr) => arr.map((i) => (i.value === value ? { ...i, ...patch } : i)));
 
+  const patchItemMeta = (value: string, field: string, raw: string, type: ListMetaField['type']) =>
+    setItems((arr) =>
+      arr.map((i) => {
+        if (i.value !== value) return i;
+        const meta = { ...i.meta };
+        if (raw === '') {
+          delete meta[field];
+        } else if (type === 'number') {
+          meta[field] = Number(raw);
+        } else if (type === 'boolean') {
+          meta[field] = raw === 'true' || raw === 'on';
+        } else {
+          meta[field] = raw;
+        }
+        return { ...i, meta };
+      }),
+    );
+
+  const metaRaw = (m: EditableItem['meta'], field: string): string => {
+    const v = m[field];
+    if (v === undefined || v === null) return '';
+    return String(v);
+  };
+
   // usageCount is server-owned; look it up from the last fetched list.
   const usageByValue = new Map(list.items.map((o) => [o.value, o.usageCount] as const));
+
+  const isSystem = list.tier === 'system';
+  const isProtected = list.protected || isSystem;
 
   const addItem = () => {
     const v = newValue.trim();
     if (!v || items.some((i) => i.value === v)) return;
     const maxOrder = items.reduce((m, i) => Math.max(m, i.sortOrder), -1);
-    setItems((arr) => [...arr, { value: v, label: newLabel.trim() || v, active: true, sortOrder: maxOrder + 1, meta: {} }]);
+    const meta: Record<string, unknown> = {};
+    for (const f of metaSchema) {
+      const raw = newMeta[f.field]?.trim() ?? '';
+      if (raw === '') continue;
+      meta[f.field] = f.type === 'number' ? Number(raw) : f.type === 'boolean' ? raw === 'true' || raw === 'on' : raw;
+    }
+    setItems((arr) => [...arr, { value: v, label: newLabel.trim() || v, active: true, sortOrder: maxOrder + 1, meta }]);
     setNewValue('');
     setNewLabel('');
+    setNewMeta({});
+  };
+
+  const addSchemaField = () => {
+    const field = schemaDraft.field.trim();
+    if (!field || metaSchema.some((f) => f.field === field)) return;
+    setMetaSchema((arr) => [...arr, { field, type: schemaDraft.type, required: false, unique: false }]);
+    setSchemaDraft({ field: '', type: 'string' });
+  };
+
+  const removeSchemaField = (field: string) => {
+    setMetaSchema((arr) => arr.filter((f) => f.field !== field));
+    setItems((arr) =>
+      arr.map((i) => {
+        if (!(field in i.meta)) return i;
+        const meta = { ...i.meta };
+        delete meta[field];
+        return { ...i, meta };
+      }),
+    );
+    setNewMeta((m) => {
+      if (!(field in m)) return m;
+      const next = { ...m };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const patchSchemaField = (field: string, patch: Partial<ListMetaField>) => {
+    setMetaSchema((arr) => arr.map((f) => (f.field === field ? { ...f, ...patch } : f)));
   };
 
   return (
     <Panel className="flex-1 w-full min-w-0">
       <PanelHeader title={list.label}>
         <span className="ml-2 text-[11px] font-semibold text-ink-3 truncate">{list.key}</span>
+        {isSystem && <Badge severity="info">System</Badge>}
+        {!isSystem && list.protected && <Badge severity="neutral">Seeded</Badge>}
       </PanelHeader>
       <div className="p-4 flex flex-col gap-4">
         <FormError message={save.isError ? save.error.message : null} />
-        <FormError message={remove.isError ? remove.error.message : null} />
+        {isSystem && (
+          <p className="m-0 text-[12px] text-ink-2 bg-surface border border-line-soft rounded-[6px] px-3 py-2">
+            System list — labels, sort order, active flags and item meta are editable; item values are immutable.
+            Deactivate a value to retire it.
+          </p>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Label">
             <TextInput value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={120} />
@@ -206,52 +297,162 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className="text-[12px] font-semibold text-ink-2">Items · {items.length}</span>
-          {items.map((i) => (
-            <div key={i.value} className="border border-line-soft rounded-[6px] px-3 py-2 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="sm:w-[180px] flex-shrink-0 min-w-0">
-                <p className="m-0 text-[12.5px] font-semibold text-ink truncate" title={i.value}>{i.value}</p>
-                {Object.keys(i.meta).length > 0 && (
-                  <p className="m-0 text-[11px] text-ink-3 truncate" title={JSON.stringify(i.meta)}>
-                    {JSON.stringify(i.meta)}
-                  </p>
-                )}
-              </div>
-              <TextInput
-                aria-label={`Label for ${i.value}`}
-                value={i.label}
-                onChange={(e) => patchItem(i.value, { label: e.target.value })}
-                maxLength={120}
-                className="flex-1"
-              />
-              <TextInput
-                aria-label={`Sort order for ${i.value}`}
-                type="number"
-                value={i.sortOrder}
-                onChange={(e) => patchItem(i.value, { sortOrder: Number(e.target.value) })}
-                className="sm:w-[90px]"
-              />
-              <label className="flex items-center gap-2 cursor-pointer flex-shrink-0 min-h-[44px] sm:min-h-0">
+          <span className="text-[12px] font-semibold text-ink-2">Meta fields · {metaSchema.length}</span>
+          {metaSchema.map((f) => (
+            <div key={f.field} className="border border-line-soft rounded-[6px] px-3 py-2 flex flex-wrap items-center gap-3">
+              <span className="text-[12.5px] font-semibold text-ink min-w-[120px]">{f.field}</span>
+              <span className="text-[11px] text-ink-3 uppercase tracking-wide">{f.type}</span>
+              <label className="flex items-center gap-1.5 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={i.active}
-                  onChange={(e) => patchItem(i.value, { active: e.target.checked })}
-                  className="w-4 h-4 accent-accent cursor-pointer"
+                  checked={f.required}
+                  onChange={(e) => patchSchemaField(f.field, { required: e.target.checked })}
+                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
                 />
-                <span className="text-[12.5px] text-ink-2">Active</span>
+                <span className="text-[12px] text-ink-2">Required</span>
               </label>
-              {(usageByValue.get(i.value) ?? 0) > 0 && (
-                <Badge severity="info">Used ×{usageByValue.get(i.value) ?? 0}</Badge>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={f.unique}
+                  onChange={(e) => patchSchemaField(f.field, { unique: e.target.checked })}
+                  className="w-3.5 h-3.5 accent-accent cursor-pointer"
+                />
+                <span className="text-[12px] text-ink-2">Unique</span>
+              </label>
+              <span className="flex-1" />
+              <GhostButton onClick={() => removeSchemaField(f.field)}>Remove</GhostButton>
+            </div>
+          ))}
+          <div className="flex flex-wrap gap-2">
+            <TextInput
+              aria-label="New meta field name"
+              placeholder="field name"
+              value={schemaDraft.field}
+              onChange={(e) => setSchemaDraft((s) => ({ ...s, field: e.target.value }))}
+              maxLength={40}
+              className="flex-1 min-w-[140px]"
+            />
+            <Select
+              aria-label="New meta field type"
+              value={schemaDraft.type}
+              onChange={(e) =>
+                setSchemaDraft((s) => ({ ...s, type: e.target.value as typeof schemaDraft.type }))
+              }
+              className="w-[110px]"
+            >
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+            </Select>
+            <GhostButton onClick={addSchemaField} disabled={!schemaDraft.field.trim()}>
+              Add meta field
+            </GhostButton>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-[12px] font-semibold text-ink-2">Items · {items.length}</span>
+          {items.map((i) => (
+            <div key={i.value} className="border border-line-soft rounded-[6px] px-3 py-2 flex flex-col gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                <div className="sm:w-[180px] flex-shrink-0 min-w-0">
+                  <p className="m-0 text-[12.5px] font-semibold text-ink truncate" title={i.value}>{i.value}</p>
+                </div>
+                <TextInput
+                  aria-label={`Label for ${i.value}`}
+                  value={i.label}
+                  onChange={(e) => patchItem(i.value, { label: e.target.value })}
+                  maxLength={120}
+                  className="flex-1"
+                />
+                <TextInput
+                  aria-label={`Sort order for ${i.value}`}
+                  type="number"
+                  value={i.sortOrder}
+                  onChange={(e) => patchItem(i.value, { sortOrder: Number(e.target.value) })}
+                  className="sm:w-[90px]"
+                />
+                <label className="flex items-center gap-2 cursor-pointer flex-shrink-0 min-h-[44px] sm:min-h-0">
+                  <input
+                    type="checkbox"
+                    checked={i.active}
+                    onChange={(e) => patchItem(i.value, { active: e.target.checked })}
+                    className="w-4 h-4 accent-accent cursor-pointer"
+                  />
+                  <span className="text-[12.5px] text-ink-2">Active</span>
+                </label>
+                {(usageByValue.get(i.value) ?? 0) > 0 && (
+                  <Badge severity="info">Used ×{usageByValue.get(i.value) ?? 0}</Badge>
+                )}
+              </div>
+              {metaSchema.length > 0 && (
+                <div className="flex flex-wrap gap-2 pl-1">
+                  {metaSchema.map((f) => (
+                    <label key={f.field} className="flex items-center gap-1.5 min-w-[140px]">
+                      <span className="text-[11px] text-ink-3 w-[90px] shrink-0">{metaLabel(f.field)}</span>
+                      {f.type === 'boolean' ? (
+                        <input
+                          type="checkbox"
+                          checked={i.meta[f.field] === true}
+                          onChange={(e) => patchItemMeta(i.value, f.field, e.target.checked ? 'true' : '', 'boolean')}
+                          className="w-4 h-4 accent-accent cursor-pointer"
+                          aria-label={`${metaLabel(f.field)} for ${i.value}`}
+                        />
+                      ) : (
+                        <TextInput
+                          aria-label={`${metaLabel(f.field)} for ${i.value}`}
+                          type={f.type === 'number' ? 'number' : 'text'}
+                          value={metaRaw(i.meta, f.field)}
+                          onChange={(e) => patchItemMeta(i.value, f.field, e.target.value, f.type)}
+                          className="flex-1"
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
               )}
             </div>
           ))}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          <TextInput aria-label="New item value" placeholder="value (immutable once added)" value={newValue} onChange={(e) => setNewValue(e.target.value)} maxLength={80} autoComplete="off" className="flex-1" />
-          <TextInput aria-label="New item label" placeholder="Label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} maxLength={120} autoComplete="off" className="flex-1" />
-          <GhostButton onClick={addItem} disabled={!newValue.trim()}>Add item</GhostButton>
-        </div>
+        {!isSystem && (
+          <div className="flex flex-col gap-2 border border-line-soft rounded-[6px] p-3">
+            <span className="text-[12px] font-semibold text-ink-2">Add item</span>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <TextInput aria-label="New item value" placeholder="value (immutable once added)" value={newValue} onChange={(e) => setNewValue(e.target.value)} maxLength={80} autoComplete="off" className="flex-1" />
+              <TextInput aria-label="New item label" placeholder="Label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} maxLength={120} autoComplete="off" className="flex-1" />
+            </div>
+            {metaSchema.map((f) => (
+              <div key={f.field} className="flex items-center gap-2">
+                <span className="text-[11px] text-ink-3 w-[90px] shrink-0">{metaLabel(f.field)}</span>
+                {f.type === 'boolean' ? (
+                  <Select
+                    aria-label={`${metaLabel(f.field)} for new item`}
+                    value={newMeta[f.field] ?? ''}
+                    onChange={(e) => setNewMeta((m) => ({ ...m, [f.field]: e.target.value }))}
+                    className="flex-1"
+                  >
+                    <option value="">—</option>
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </Select>
+                ) : (
+                  <TextInput
+                    aria-label={`${metaLabel(f.field)} for new item`}
+                    type={f.type === 'number' ? 'number' : 'text'}
+                    value={newMeta[f.field] ?? ''}
+                    onChange={(e) => setNewMeta((m) => ({ ...m, [f.field]: e.target.value }))}
+                    className="flex-1"
+                  />
+                )}
+              </div>
+            ))}
+            <div className="flex justify-end">
+              <GhostButton onClick={addItem} disabled={!newValue.trim()}>Add item</GhostButton>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2.5">
           <PrimaryButton onClick={() => save.mutate()} disabled={save.isPending}>
@@ -259,7 +460,9 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
           </PrimaryButton>
           <span className="text-[11.5px] text-ink-3">Revision {list.revision} · optimistic locking</span>
           <span className="flex-1" />
-          {!confirmDelete ? (
+          {isProtected ? (
+            <span className="text-[12px] text-ink-3">Protected — cannot be deleted.</span>
+          ) : !confirmDelete ? (
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}

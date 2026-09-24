@@ -7,6 +7,8 @@ import { connectToDatabase } from '@/lib/mongo';
 import { HttpError, type MutationContext } from '@/lib/api';
 import { PERMISSIONS, checkSystemSafety, checkSelfEdit } from '@/server/permissions';
 import { hashPassword } from '@/server/auth-verify';
+import { PROTECTED_LIST_KEYS, catalogList } from '@/lib/vocab-catalog';
+import { invalidateReferenceCache } from '@/server/reference/runtime';
 import {
   serializeList,
   serializeRole,
@@ -160,13 +162,86 @@ export async function patchRole(
 
 /* ---------------------------------------------------------- reference lists */
 
-/** Seeded vocabularies the app depends on — protected from deletion. */
-const PROTECTED_LIST_KEYS = new Set([
-  'mediaSubtype.photo',
-  'mediaSubtype.video',
-  'mediaSubtype.audio',
-  'rightsType',
-]);
+/**
+ * Stage-list invariants so free-form editing cannot break the board or SLA
+ * queries: at least one terminal stage, at least one board column, no silent
+ * value renames, and alert roles stay unique among active stages.
+ */
+function assertStageListInvariants(
+  currentItems: { value: string; active: boolean; usageCount: number; meta: unknown }[],
+  nextItems: { value: string; active: boolean; sortOrder: number; meta: Record<string, unknown> }[],
+): void {
+  const before = new Map(currentItems.map((i) => [i.value, i] as const));
+  const removed = currentItems.filter((i) => !nextItems.some((n) => n.value === i.value));
+  if (removed.length > 0) {
+    throw new HttpError(
+      400,
+      `Stage values are immutable — deactivate instead of removing ${removed.map((r) => `'${r.value}'`).join(', ')}.`,
+    );
+  }
+  for (const item of nextItems) {
+    if (!before.has(item.value)) {
+      throw new HttpError(400, `Stage values are immutable — cannot add '${item.value}'.`);
+    }
+  }
+  const actives = nextItems.filter((i) => i.active);
+  if (actives.length === 0) throw new HttpError(400, 'At least one stage must stay active.');
+  const terminal = actives.filter((i) => i.meta?.terminal === true);
+  if (terminal.length === 0) {
+    throw new HttpError(400, 'At least one active stage must be marked terminal.');
+  }
+  const board = actives.filter((i) => i.meta?.board === true);
+  if (board.length === 0) {
+    throw new HttpError(400, 'At least one active stage must appear on the board.');
+  }
+  const offGraph = board.filter((i) => i.meta?.terminal !== true && i.meta?.inFlight !== true);
+  if (offGraph.length > 0) {
+    throw new HttpError(
+      400,
+      `Board stages must be in-flight or terminal so the pipeline can count them: ${offGraph.map((i) => `'${i.value}'`).join(', ')}.`,
+    );
+  }
+  const roles = actives
+    .map((i) => String(i.meta?.alertRole ?? ''))
+    .filter((r) => r !== '');
+  if (new Set(roles).size !== roles.length) {
+    throw new HttpError(400, 'alertRole must be unique among active stages.');
+  }
+}
+
+/** Format / decision system lists: values never change; meta/labels may. */
+function assertSystemValueImmutable(
+  key: string,
+  currentItems: { value: string }[],
+  nextItems: { value: string }[],
+): void {
+  const before = new Set(currentItems.map((i) => i.value));
+  const after = new Set(nextItems.map((i) => i.value));
+  const removed = [...before].filter((v) => !after.has(v));
+  const added = [...after].filter((v) => !before.has(v));
+  if (removed.length > 0 || added.length > 0) {
+    throw new HttpError(
+      400,
+      `'${key}' is a system list — values are immutable. Deactivate items instead of adding or removing values.`,
+    );
+  }
+}
+
+/** All lists: values already in the list never change (open tier too). Deactivate to retire. */
+function assertExistingValuesImmutable(
+  key: string,
+  currentItems: { value: string }[],
+  nextItems: { value: string }[],
+): void {
+  const after = new Set(nextItems.map((i) => i.value));
+  const removed = currentItems.filter((i) => !after.has(i.value));
+  if (removed.length > 0) {
+    throw new HttpError(
+      400,
+      `'${key}' values are immutable — deactivate instead of removing ${removed.map((r) => `'${r.value}'`).join(', ')}.`,
+    );
+  }
+}
 
 function validateListItems(
   metaSchema: ListMetaField[],
@@ -212,6 +287,27 @@ function validateListItems(
   }
 }
 
+/** Non-empty `format.meta.subtypeListKey` must point at an existing reference list. */
+async function assertFormatSubtypeKeysExist(
+  items: { value: string; meta: Record<string, unknown> }[],
+): Promise<void> {
+  const keys = items
+    .map((i) => i.meta.subtypeListKey)
+    .filter((k): k is string => typeof k === 'string' && k !== '');
+  if (keys.length === 0) return;
+  const found = await ReferenceList.find({ key: { $in: keys } })
+    .select('key')
+    .lean();
+  const present = new Set(found.map((d) => d.key));
+  const missing = [...new Set(keys)].filter((k) => !present.has(k));
+  if (missing.length > 0) {
+    throw new HttpError(
+      400,
+      `subtypeListKey points at missing list(s): ${missing.join(', ')}. Create the list first.`,
+    );
+  }
+}
+
 export async function createReferenceList(
   body: ListCreateBody,
   ctx: MutationContext,
@@ -229,11 +325,14 @@ export async function createReferenceList(
     key: body.key,
     label: body.label,
     group: body.group,
+    tier: 'open',
+    protected: false,
     metaSchema: body.metaSchema,
     items: [],
     revision: 1,
     updatedBy: actorId(ctx),
   });
+  invalidateReferenceCache(body.key);
   return serializeList(doc.toObject());
 }
 
@@ -253,11 +352,47 @@ export async function patchReferenceList(
   if (body.label !== undefined) set.label = body.label;
   if (body.group !== undefined) set.group = body.group;
 
+  let nextMetaSchema = current.metaSchema as ListMetaField[];
+  if (body.metaSchema !== undefined) {
+    const fields = body.metaSchema.map((f) => f.field);
+    if (new Set(fields).size !== fields.length) {
+      throw new HttpError(400, 'metaSchema declares a field twice.');
+    }
+    nextMetaSchema = body.metaSchema;
+    set.metaSchema = body.metaSchema;
+  }
+
   if (body.items !== undefined) {
     validateListItems(
-      current.metaSchema as ListMetaField[],
+      nextMetaSchema,
       body.items as { value: string; label: string; active: boolean; sortOrder: number; meta: Record<string, unknown> }[],
     );
+    // Values already in the list never change — open and system tiers alike.
+    assertExistingValuesImmutable(
+      key,
+      current.items as { value: string }[],
+      body.items as { value: string }[],
+    );
+    const catalog = catalogList(key);
+    const isSystem = (current.tier ?? catalog?.tier ?? 'open') === 'system';
+    if (isSystem) {
+      assertSystemValueImmutable(
+        key,
+        current.items as { value: string }[],
+        body.items as { value: string }[],
+      );
+      if (key === 'stage') {
+        assertStageListInvariants(
+          current.items as { value: string; active: boolean; usageCount: number; meta: unknown }[],
+          body.items as { value: string; active: boolean; sortOrder: number; meta: Record<string, unknown> }[],
+        );
+      }
+      if (key === 'format') {
+        await assertFormatSubtypeKeysExist(
+          body.items as { value: string; meta: Record<string, unknown> }[],
+        );
+      }
+    }
     const counts = new Map(current.items.map((i) => [i.value, i.usageCount]));
     const removed = current.items.filter((i) => !body.items!.some((n) => n.value === i.value));
     const blocked = removed.filter((i) => i.usageCount > 0);
@@ -287,16 +422,18 @@ export async function patchReferenceList(
   if (!updated) {
     throw new HttpError(409, `'${current.label}' changed since you loaded it. Reload and try again.`);
   }
+  invalidateReferenceCache(key);
   return serializeList(updated);
 }
 
 export async function deleteReferenceList(key: string): Promise<{ deleted: true; key: string }> {
   await connectToDatabase();
-  if (PROTECTED_LIST_KEYS.has(key)) {
-    throw new HttpError(400, `'${key}' is required by the app and cannot be deleted.`);
-  }
+  const catalogProtected = PROTECTED_LIST_KEYS.has(key);
   const current = await ReferenceList.findOne({ key }).lean();
   if (!current) throw new HttpError(404, `Reference list '${key}' not found.`);
+  if (catalogProtected || current.protected === true || (current.tier ?? 'open') === 'system') {
+    throw new HttpError(400, `'${key}' is required by the app and cannot be deleted.`);
+  }
   const inUse = current.items.filter((i) => i.usageCount > 0);
   if (inUse.length > 0) {
     throw new HttpError(
@@ -305,6 +442,7 @@ export async function deleteReferenceList(key: string): Promise<{ deleted: true;
     );
   }
   await ReferenceList.deleteOne({ key });
+  invalidateReferenceCache(key);
   return { deleted: true as const, key };
 }
 

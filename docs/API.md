@@ -210,8 +210,8 @@ in `src/lib/api.ts`), never the JWT. Response envelopes: `{ roles }`, `{ lists }
 |---|---|---|
 | GET/POST | `/api/admin/roles` | `roles:manage` — PATCH only, no DELETE; system roles editable, never deletable; patch is revision-guarded (stale → 409) with lockout simulation |
 | PATCH | `/api/admin/roles/[key]` | `roles:manage` |
-| GET/POST | `/api/admin/lists` | `lists:manage` — full-item-replace PATCH, revision-guarded; DELETE refuses protected seed keys + in-use items |
-| PATCH/DELETE | `/api/admin/lists/[key]` | `lists:manage` |
+| GET/POST | `/api/admin/lists` | `lists:manage` — body `{ key, label, group?, metaSchema? }`; full-item-replace PATCH is revision-guarded; values are immutable (deactivate to retire); system tier never adds/removes values; stage board ⊆ inFlight∪terminal; format `subtypeListKey` must point at an existing list |
+| PATCH/DELETE | `/api/admin/lists/[key]` | `lists:manage` — PATCH body optional `{ label?, group?, metaSchema?, items?, expectedRevision }`; `items[]` = `{ value, label, active, sortOrder?, meta? }` (usageCount server-owned); DELETE refuses protected seed keys + in-use items |
 | GET | `/api/reference/[key]` | session only — active items for dropdowns (label-fallback client-side) |
 | GET/POST | `/api/users` | `user:manage` — duplicate username/email → 409 |
 | GET | `/api/users/me` | session only — `{ id, name, roleKey, grants }` for `useCan` gating |

@@ -180,6 +180,28 @@ Indexes: `{ path }` unique · `{ lot, matchedItemCode }` · `{ mtime: -1 }` ·
 
 ---
 
+## `referencelists` — DONE (`src/models/ReferenceList.ts`)
+
+Admin-manageable vocabularies (Tier-2). Seed inventory lives in
+`src/lib/vocab-catalog.ts`; values are immutable after create (deactivate to retire).
+
+| Field | Type | Notes |
+|---|---|---|
+| `key` | String, **unique** | e.g. `originSource`, `mediaSubtype.photo`, `stage` |
+| `label` / `group` | String | Admin UI identity |
+| `tier` | Enum | `open` (label CRUD) · `system` (app reads meta: stage flags, format subtype lists) |
+| `protected` | Boolean | Seed keys cannot be deleted |
+| `metaSchema[]` | `{ field, type, required, unique }` | Declares allowed `items[].meta` fields |
+| `items[]` | subdocuments | `{ value, label, active, sortOrder, usageCount, meta }` |
+| `revision` | Number | Optimistic concurrency for admin PATCH |
+| `updatedBy` / `updatedAt` | | |
+
+> `usageCount` is server-owned: bumped on write paths via `bumpUsage` / decremented via
+> `transferUsage` when a lot field changes value. Delete-in-use guards read it.
+> `items[].value` never changes — `assertExistingValuesImmutable` enforces this for every tier.
+
+---
+
 ## `settings` — **TODO** (`src/models/Setting.ts`)
 
 Single document, `key: 'global'`. Moves the alert thresholds out of env vars so an Admin

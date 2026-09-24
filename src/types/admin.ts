@@ -91,6 +91,8 @@ export const referenceListSchema = z.object({
   key: z.string(),
   label: z.string(),
   group: z.string(),
+  tier: z.enum(['open', 'system']),
+  protected: z.boolean(),
   metaSchema: z.array(metaFieldSchema),
   items: z.array(listItemSchema),
   revision: z.number(),
@@ -133,11 +135,12 @@ export const listPatchBodySchema = z
   .object({
     label: z.string().trim().min(1).max(120).optional(),
     group: z.string().trim().min(1).max(60).optional(),
+    metaSchema: z.array(metaFieldSchema).optional(),
     items: z.array(listPatchItemSchema).optional(),
     expectedRevision: z.number().int(),
   })
   .refine(
-    (b) => b.label !== undefined || b.group !== undefined || b.items !== undefined,
+    (b) => b.label !== undefined || b.group !== undefined || b.metaSchema !== undefined || b.items !== undefined,
     'Nothing to change.',
   );
 export type ListPatchBody = z.infer<typeof listPatchBodySchema>;

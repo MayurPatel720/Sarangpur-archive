@@ -58,8 +58,8 @@ export const PERMISSIONS = [
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 
-/** The four seeded role keys. Mirror `ROLES` in domain.ts. */
-export const SYSTEM_ROLE_KEYS = ['volunteer', 'reviewer', 'lead_reviewer', 'admin'] as const;
+/** The five seeded role keys. Mirror `ROLES` in domain.ts. */
+export const SYSTEM_ROLE_KEYS = ['volunteer', 'reviewer', 'lead_reviewer', 'admin', 'viewer'] as const;
 export type SystemRoleKey = (typeof SYSTEM_ROLE_KEYS)[number];
 
 /**
@@ -121,6 +121,17 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'attachment:upload',
   ],
   admin: [...PERMISSIONS],
+  /** Brief: view all records — read-only, no mutations. */
+  viewer: [
+    'dashboard:view',
+    'lot:view',
+    'decision:view',
+    'digitize:view',
+    'mls:view',
+    'returns:view',
+    'discards:view',
+    'storage:view',
+  ],
 };
 
 export const SYSTEM_ROLE_META: { key: SystemRoleKey; label: string; rank: number }[] = [
@@ -128,6 +139,7 @@ export const SYSTEM_ROLE_META: { key: SystemRoleKey; label: string; rank: number
   { key: 'reviewer', label: 'Reviewer', rank: 1 },
   { key: 'lead_reviewer', label: 'Lead Reviewer', rank: 2 },
   { key: 'admin', label: 'Admin', rank: 3 },
+  { key: 'viewer', label: 'Viewer', rank: 4 },
 ];
 
 /** Pure grant check. `grants` must be the role's live permissions from the database. */

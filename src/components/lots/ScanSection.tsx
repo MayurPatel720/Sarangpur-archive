@@ -5,7 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { LotDetailResponse } from '@/types/lot';
 import type { ReconcileResponse } from '@/types/ops';
-import { SCAN_STATUSES } from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { date, prettyEnum } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
@@ -18,6 +18,7 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
   const grants = me.data ? me.data.grants : [];
   const canScan = grants.includes('scan:record');
   const canReconcile = grants.includes('reconcile:trigger');
+  const scanStatuses = useReferenceList('scanStatus');
 
   const [scanStatus, setScanStatus] = useState(lot.ops.scanStatus);
   const [folderPath, setFolderPath] = useState(lot.ops.folderPath ?? '');
@@ -27,7 +28,7 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
   const scanMut = useMutation({
     mutationFn: () =>
       lotsApi.scan(lot.id, {
-        scanStatus: scanStatus as (typeof SCAN_STATUSES)[number],
+        scanStatus,
         ...(folderPath.trim() ? { folderPath: folderPath.trim() } : {}),
         version: lot.version,
       }),
@@ -54,6 +55,8 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
       <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
           <Definition label="Status">{prettyEnum(lot.ops.scanStatus)}</Definition>
+          <Definition label="Scanned by">{lot.ops.scannedByName ?? <EmptyValue />}</Definition>
+          <Definition label="Scan date">{lot.ops.scanDate ? date(lot.ops.scanDate) : <EmptyValue />}</Definition>
           <Definition label="Folder">{lot.ops.folderPath ?? <EmptyValue />}</Definition>
           <Definition label="Expected / found">
             {lot.ops.expectedFileCount} / {lot.ops.foundFileCount}
@@ -69,11 +72,14 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Scan status">
               <Select value={scanStatus} onChange={(e) => setScanStatus(e.target.value)}>
-                {SCAN_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {prettyEnum(s)}
+                {(scanStatuses.data?.items ?? []).map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
                   </option>
                 ))}
+                {scanStatus && !(scanStatuses.data?.items ?? []).some((s) => s.value === scanStatus) ? (
+                  <option value={scanStatus}>{prettyEnum(scanStatus)}</option>
+                ) : null}
               </Select>
             </Field>
             <Field label="Folder path" hint="Where the scanned files live on the file server.">

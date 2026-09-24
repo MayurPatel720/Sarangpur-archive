@@ -8,15 +8,21 @@ import { ActivityLog } from '@/models/ActivityLog';
 import { Attachment } from '@/models/Attachment';
 import { User } from '@/models/User';
 import { resolveReferenceLabel } from '@/server/reference';
+import { subtypeListKeyForFormat, subtypeListKeySync } from '@/server/reference/runtime';
 import type { LotDetailResponse, LotListQuery, LotListResponse } from '@/types/lot';
 import type { ItemsQuery, ItemsResponse, ActivityQuery, ActivityResponse } from '@/types/ops';
 
-/** Which Tier-2 vocabulary holds the sub-types for a format. None for documents/prasadi (SPEC Q2). */
+/**
+ * Subtype list key for a format, from the admin `format` list meta.
+ * Sync fallback uses the domain mapping; async form is preferred on write paths.
+ */
 export function mediaSubtypeListKey(format: string): string | null {
-  if (format === 'photo') return 'mediaSubtype.photo';
-  if (format === 'video') return 'mediaSubtype.video';
-  if (format === 'audio') return 'mediaSubtype.audio';
-  return null;
+  return subtypeListKeySync(format);
+}
+
+/** Async variant that reads format meta from the database (with cache). */
+export async function mediaSubtypeListKeyAsync(format: string): Promise<string | null> {
+  return subtypeListKeyForFormat(format);
 }
 
 function prettify(value: string): string {
@@ -167,9 +173,15 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
   if (!doc) throw new HttpError(404, 'Lot not found.');
 
   const subtypeKey = mediaSubtypeListKey(doc.format);
-  const userIds = [doc.receiver, doc.decision?.decidedBy, doc.decision?.overrideRequestedBy, doc.decision?.overrideApprovedBy].filter(
-    (id): id is Types.ObjectId => id != null,
-  );
+  const userIds = [
+    doc.receiver,
+    doc.decision?.decidedBy,
+    doc.decision?.overrideRequestedBy,
+    doc.decision?.overrideApprovedBy,
+    doc.digitization?.scannedBy,
+    doc.return?.handledBy,
+    doc.discard?.discardedBy,
+  ].filter((id): id is Types.ObjectId => id != null);
   const [mediaSubtypeLabel, rightsTypeLabel, users, counts, attachmentCount] =
     await Promise.all([
       subtypeKey ? resolveReferenceLabel(subtypeKey, doc.mediaSubtype) : doc.mediaSubtype,
@@ -229,6 +241,13 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       conditionPhotoUrl: doc.conditionPhotoUrl ?? null,
       reasonForSending: doc.reasonForSending ?? null,
       senderRemarks: doc.senderRemarks ?? null,
+      photoDate: doc.photoDate ?? null,
+      photoLocation: doc.photoLocation ?? null,
+      photoEvent: doc.photoEvent ?? null,
+      peopleInPhoto: doc.peopleInPhoto ?? null,
+      digitalFilePath: doc.digitalFilePath ?? null,
+      physicalLabelApplied: doc.physicalLabelApplied ?? false,
+      containerLabelApplied: doc.containerLabelApplied ?? false,
       rights: {
         type: doc.rights?.type ?? null,
         typeLabel: rightsTypeLabel,
@@ -244,7 +263,10 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
         decidedByName: userName(doc.decision?.decidedBy),
         decidedAt: doc.decision?.decidedAt ? new Date(doc.decision.decidedAt).toISOString() : null,
         existsInMls: doc.decision?.existsInMls ?? null,
+        newCopyIsBetter: doc.decision?.newCopyIsBetter ?? null,
         conditionUsable: doc.decision?.conditionUsable ?? null,
+        conditionIssue: doc.decision?.conditionIssue ?? null,
+        mlsMatchPaths: doc.decision?.mlsMatchPaths ? [...doc.decision.mlsMatchPaths] : [],
         significanceFlags: doc.decision?.significanceFlags ? [...doc.decision.significanceFlags] : null,
         notes: doc.decision?.significanceNotes ?? null,
         overrideStatus: doc.decision?.overrideStatus ?? 'none',
@@ -260,6 +282,10 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       },
       ops: {
         scanStatus: doc.digitization?.scanStatus ?? 'pending',
+        scannedByName: userName(doc.digitization?.scannedBy),
+        scanDate: doc.digitization?.scanDate
+          ? new Date(doc.digitization.scanDate).toISOString()
+          : null,
         folderPath: doc.digitization?.folderPath ?? null,
         expectedFileCount: doc.digitization?.expectedFileCount ?? 0,
         foundFileCount: doc.digitization?.foundFileCount ?? 0,
@@ -268,12 +294,22 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
           : null,
         mlsRecordId: doc.mls?.recordId ?? null,
         mlsTaggedCount: doc.mls?.taggedCount ?? 0,
+        mlsTagsApplied: doc.mls?.tagsApplied ?? null,
         mlsDataListAttached: doc.mls?.dataListAttached ?? false,
         mlsDuplicatesFound: doc.mls?.duplicatesFound ?? 0,
         mlsDuplicateAction: doc.mls?.duplicateAction ?? null,
         returnStatus: doc.return?.status ?? 'not_requested',
         returnFormat: doc.return?.format ?? 'none',
+        returnRequested: doc.return?.requested ?? false,
+        returnDuration: doc.return?.durationText ?? null,
+        returnDueAt: doc.return?.dueAt ? new Date(doc.return.dueAt).toISOString() : null,
+        returnedAt: doc.return?.returnedAt ? new Date(doc.return.returnedAt).toISOString() : null,
+        returnHandledByName: userName(doc.return?.handledBy),
+        returnMethod: doc.return?.method ?? null,
         discardReason: doc.discard?.reason ?? null,
+        discardedByName: userName(doc.discard?.discardedBy),
+        discardedAt: doc.discard?.discardedAt ? new Date(doc.discard.discardedAt).toISOString() : null,
+        discardNotes: doc.discard?.notes ?? null,
       },
       attachmentCount,
       version: doc.__v ?? 0,

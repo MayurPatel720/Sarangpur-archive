@@ -85,6 +85,8 @@ export function serializeList(doc: {
   key: string;
   label: string;
   group: string;
+  tier?: 'open' | 'system';
+  protected?: boolean;
   metaSchema: { field: string; type: 'string' | 'number' | 'boolean'; required: boolean; unique: boolean }[];
   items: {
     value: string;
@@ -102,6 +104,8 @@ export function serializeList(doc: {
     key: doc.key,
     label: doc.label,
     group: doc.group,
+    tier: doc.tier ?? 'open',
+    protected: doc.protected ?? false,
     metaSchema: doc.metaSchema.map((m) => ({
       field: m.field,
       type: m.type,

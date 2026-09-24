@@ -28,6 +28,19 @@ import { ReferenceList } from '../src/models/ReferenceList';
 import { Role } from '../src/models/Role';
 import { Setting } from '../src/models/Setting';
 import { checkSystemSafety, PERMISSIONS } from '../src/server/permissions';
+import { CATALOG_LIST_KEYS, catalogList } from '../src/lib/vocab-catalog';
+import {
+  DATA_TYPES,
+  DECISIONS,
+  DISCARD_REASONS,
+  FORMATS,
+  NOT_DIGITIZED_REASONS,
+  ORIGIN_SOURCES,
+  RETURN_FORMATS,
+  RETURN_STATUSES,
+  SCAN_STATUSES,
+  STAGES,
+} from '../src/lib/domain';
 import { buildGlobalSettings, buildRoles, SEED_REFERENCE_LISTS } from './seed-data';
 import {
   lotFacetPipeline,
@@ -185,6 +198,10 @@ const missingLists = [...mediaSubtypes, 'rightsType'].filter((k) => !listKeys.in
 if (missingLists.length === 0) ok('media sub-type + rights vocabularies seeded');
 else fail(`missing vocabularies: ${missingLists.join(', ')}`);
 
+const missingCatalog = CATALOG_LIST_KEYS.filter((k) => !listKeys.includes(k));
+if (missingCatalog.length === 0) ok(`all ${CATALOG_LIST_KEYS.length} catalog lists seeded`);
+else fail(`missing catalog lists: ${missingCatalog.join(', ')}`);
+
 const listsWithoutPrefixes = mediaSubtypes.filter((k) => {
   const list = SEED_REFERENCE_LISTS.find((l) => l.key === k) as {
     items: { meta: { codePrefix?: unknown } }[];
@@ -193,6 +210,141 @@ const listsWithoutPrefixes = mediaSubtypes.filter((k) => {
 });
 if (listsWithoutPrefixes.length === 0) ok('every media sub-type carries a codePrefix');
 else fail(`sub-types without codePrefix in: ${listsWithoutPrefixes.join(', ')}`);
+
+/* --- 3b. reference-list contract: tier, protected, metaSchema, stage, drift -- */
+
+console.log('\nReference-list contract');
+
+type SeedList = {
+  key: string;
+  tier?: string;
+  protected?: boolean;
+  metaSchema?: { field: string; type: string; required: boolean; unique: boolean }[];
+  items: { value: string; label: string; active: boolean; meta?: Record<string, unknown> }[];
+};
+
+const seedLists = SEED_REFERENCE_LISTS as unknown as SeedList[];
+
+const tierDrift: string[] = [];
+for (const seed of seedLists) {
+  const cat = catalogList(seed.key);
+  if (!cat) {
+    tierDrift.push(`${seed.key}: not in catalog`);
+    continue;
+  }
+  if (seed.tier !== cat.tier) tierDrift.push(`${seed.key}: tier ${seed.tier} ≠ ${cat.tier}`);
+  if (seed.protected !== cat.protected) tierDrift.push(`${seed.key}: protected mismatch`);
+  if (JSON.stringify(seed.metaSchema ?? []) !== JSON.stringify(cat.metaSchema)) {
+    tierDrift.push(`${seed.key}: metaSchema mismatch`);
+  }
+}
+if (tierDrift.length === 0) ok('tier / protected / metaSchema match the catalog for every list');
+else {
+  fail('tier / protected / metaSchema drift vs catalog');
+  for (const d of tierDrift) console.log(`      ${d}`);
+}
+
+const systemLists = seedLists.filter((l) => l.tier === 'system');
+const expectedSystem = ['format', 'stage', 'decision'];
+const systemOk =
+  systemLists.length === expectedSystem.length &&
+  expectedSystem.every((k) => systemLists.some((l) => l.key === k && l.protected === true));
+if (systemOk) ok('format, stage and decision are system + protected');
+else fail(`system lists are [${systemLists.map((l) => l.key).join(', ')}], expected [${expectedSystem.join(', ')}]`);
+
+const metaConformance: string[] = [];
+for (const seed of seedLists) {
+  const schema = seed.metaSchema ?? [];
+  const known = new Set(schema.map((f) => f.field));
+  for (const item of seed.items) {
+    const meta = item.meta ?? {};
+    for (const field of schema) {
+      const raw = meta[field.field];
+      const missing = raw === undefined || raw === null || raw === '';
+      if (missing && field.required) {
+        metaConformance.push(`${seed.key}/${item.value}: missing required '${field.field}'`);
+        continue;
+      }
+      if (missing) continue;
+      const okType =
+        (field.type === 'string' && typeof raw === 'string') ||
+        (field.type === 'number' && typeof raw === 'number' && !Number.isNaN(raw)) ||
+        (field.type === 'boolean' && typeof raw === 'boolean');
+      if (!okType) metaConformance.push(`${seed.key}/${item.value}: '${field.field}' not ${field.type}`);
+      if (field.unique) {
+        // uniqueness checked globally below
+      }
+    }
+    for (const k of Object.keys(meta)) {
+      if (!known.has(k)) metaConformance.push(`${seed.key}/${item.value}: unknown meta field '${k}'`);
+    }
+    for (const field of schema.filter((f) => f.unique)) {
+      const raw = meta[field.field];
+      if (raw === undefined || raw === null || raw === '') continue;
+      const dupe = seed.items.find(
+        (i) => i !== item && (i.meta ?? {})[field.field] !== undefined && String((i.meta ?? {})[field.field]) === String(raw),
+      );
+      if (dupe) metaConformance.push(`${seed.key}: '${field.field}' value '${String(raw)}' is not unique`);
+    }
+  }
+}
+if (metaConformance.length === 0) ok('every seed item conforms to its list metaSchema');
+else {
+  fail('seed items violate metaSchema');
+  for (const m of metaConformance.slice(0, 10)) console.log(`      ${m}`);
+}
+
+const stageList = seedLists.find((l) => l.key === 'stage');
+if (!stageList) {
+  fail('stage list missing from seed');
+} else {
+  const active = stageList.items.filter((i) => i.active);
+  const terminals = active.filter((i) => i.meta?.terminal === true);
+  const boards = active.filter((i) => i.meta?.board === true);
+  const roles = active
+    .map((i) => String(i.meta?.alertRole ?? ''))
+    .filter((r) => r !== '');
+  const offGraph = boards.filter((i) => i.meta?.terminal !== true && i.meta?.inFlight !== true);
+  const stageProblems: string[] = [];
+  if (active.length === 0) stageProblems.push('no active stages');
+  if (terminals.length === 0) stageProblems.push('no active terminal stage');
+  if (boards.length === 0) stageProblems.push('no active board stage');
+  if (offGraph.length > 0) {
+    stageProblems.push(`board not in-flight/terminal: ${offGraph.map((i) => i.value).join(', ')}`);
+  }
+  if (new Set(roles).size !== roles.length) stageProblems.push('alertRole not unique among active');
+  if (stageProblems.length === 0) {
+    ok('stage invariants hold (active, terminal, board ⊆ inFlight ∪ terminal, unique alertRole)');
+  } else {
+    fail(`stage invariants: ${stageProblems.join('; ')}`);
+  }
+}
+
+function seedValues(key: string): string[] {
+  const list = seedLists.find((l) => l.key === key);
+  return (list?.items ?? []).map((i) => i.value);
+}
+
+function assertSameSet(label: string, domain: readonly string[], key: string): void {
+  const a = [...domain].sort();
+  const b = seedValues(key).sort();
+  if (a.length === b.length && a.every((v, i) => v === b[i])) {
+    ok(`${label} ↔ catalog '${key}' in sync`);
+  } else {
+    fail(`${label} drift: domain=[${a.join(', ')}] catalog=[${b.join(', ')}]`);
+  }
+}
+
+assertSameSet('STAGES', STAGES, 'stage');
+assertSameSet('DECISIONS', DECISIONS, 'decision');
+assertSameSet('FORMATS', FORMATS, 'format');
+assertSameSet('DATA_TYPES', DATA_TYPES, 'dataType');
+assertSameSet('ORIGIN_SOURCES', ORIGIN_SOURCES, 'originSource');
+assertSameSet('SCAN_STATUSES', SCAN_STATUSES, 'scanStatus');
+assertSameSet('RETURN_FORMATS', RETURN_FORMATS, 'returnFormat');
+assertSameSet('RETURN_STATUSES', RETURN_STATUSES, 'returnStatus');
+assertSameSet('DISCARD_REASONS', DISCARD_REASONS, 'discardReason');
+assertSameSet('NOT_DIGITIZED_REASONS', NOT_DIGITIZED_REASONS, 'notDigitizedReason');
 
 /* --- 4. internal consistency ---------------------------------------------- */
 

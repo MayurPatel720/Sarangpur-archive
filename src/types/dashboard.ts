@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ACTIVITY_KINDS, STAGES } from '@/lib/domain';
+import { ACTIVITY_KINDS } from '@/lib/domain';
 
 /**
  * The wire contract between the API routes and the React Query hooks.
@@ -49,7 +49,8 @@ export const pipelineSampleSchema = z.object({
 });
 
 export const pipelineStageSchema = z.object({
-  stage: z.enum(STAGES),
+  /** Stage value from the admin `stage` list — plain string (open vocabulary). */
+  stage: z.string(),
   label: z.string(),
   count: z.number(),
   accent: severitySchema,

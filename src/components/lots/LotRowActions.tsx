@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { DISCARD_REASONS, type DiscardReason } from '@/lib/domain';
 import { prettyEnum } from '@/lib/format';
 import type { LotRow } from '@/types/lot';
 import { IconButton } from '@/components/ui/IconButton';
@@ -13,9 +12,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Field, Select, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
 import { useMe } from '@/hooks/useCan';
-
-/** Stages the server allows for discard (operations.confirmDiscard). */
-const DISCARDABLE = new Set(['metadata', 'scanning', 'mls_tag', 'storage']);
+import { useReferenceList } from '@/hooks/useReferenceList';
 
 /**
  * Circular edit + discard actions for lot list rows. Edit opens the lot detail;
@@ -27,19 +24,22 @@ export function LotRowActions({ row }: { row: LotRow }) {
   const me = useMe();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [reason, setReason] = useState<DiscardReason>(DISCARD_REASONS[0] as DiscardReason);
+  const discardReasons = useReferenceList('discardReason');
+  const stages = useReferenceList('stage');
+  const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const canDiscard =
-    (me.data?.grants.includes('discard:confirm') ?? false) && DISCARDABLE.has(row.stage);
+    (me.data?.grants.includes('discard:confirm') ?? false) &&
+    (stages.data?.items ?? []).some((i) => i.value === row.stage && i.meta.discardable === true);
 
   const discard = useMutation({
     mutationFn: async () => {
       const detail = await lotsApi.detail(row.id);
       return lotsApi.confirmDiscard(row.id, {
         confirm: true,
-        reason,
+        reason: reason || (discardReasons.data?.items[0]?.value ?? ''),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         version: detail.lot.version,
       });
@@ -109,12 +109,12 @@ export function LotRowActions({ row }: { row: LotRow }) {
         >
           <Field label="Reason">
             <Select
-              value={reason}
-              onChange={(e) => setReason(e.target.value as DiscardReason)}
+              value={reason || (discardReasons.data?.items[0]?.value ?? '')}
+              onChange={(e) => setReason(e.target.value)}
             >
-              {DISCARD_REASONS.map((r) => (
-                <option key={r} value={r}>
-                  {prettyEnum(r)}
+              {(discardReasons.data?.items ?? []).map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
                 </option>
               ))}
             </Select>

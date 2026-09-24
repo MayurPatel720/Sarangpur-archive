@@ -6,14 +6,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotCreateBody, LotContactInput } from '@/types/lot';
-import {
-  DATA_TYPES,
-  FORMATS,
-  NOT_DIGITIZED_REASONS,
-  NOT_DIGITIZED_REASON_LABELS,
-  ORIGIN_LABELS,
-  ORIGIN_SOURCES,
-} from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { date, dmyToIso, todayDmy } from '@/lib/format';
 import {
   Field,
@@ -112,10 +105,40 @@ export function IntakeForm() {
   const [conditionPhotoUrl, setConditionPhotoUrl] = useState('');
   const [reasonForSending, setReasonForSending] = useState('');
   const [senderRemarks, setSenderRemarks] = useState('');
+  const [photoDate, setPhotoDate] = useState('');
+  const [photoLocation, setPhotoLocation] = useState('');
+  const [photoEvent, setPhotoEvent] = useState('');
+  const [peopleInPhoto, setPeopleInPhoto] = useState('');
+  const [digitalFilePath, setDigitalFilePath] = useState('');
+  const [physicalLabelApplied, setPhysicalLabelApplied] = useState(false);
+  const [containerLabelApplied, setContainerLabelApplied] = useState(false);
+  const [returnRequested, setReturnRequested] = useState(false);
+  const [returnFormat, setReturnFormat] = useState('');
+  const [returnDuration, setReturnDuration] = useState('');
   const [rightsType, setRightsType] = useState('');
   const [deedReference, setDeedReference] = useState('');
   const [rightsNotes, setRightsNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const originSources = useReferenceList('originSource');
+  const formats = useReferenceList('format');
+  const dataTypes = useReferenceList('dataType');
+  const notDigitReasons = useReferenceList('notDigitizedReason');
+  const returnFormatList = useReferenceList('returnFormat');
+  const selectedFormat = formats.data?.items.find((f) => f.value === format);
+  const hasSubtypeList =
+    typeof selectedFormat?.meta.subtypeListKey === 'string' &&
+    selectedFormat.meta.subtypeListKey !== '';
+
+  const labelFor = (
+    list: { items: { value: string; label: string }[] } | undefined,
+    value: string,
+    fallback?: (v: string) => string,
+  ): string => {
+    if (!value) return '';
+    const hit = list?.items.find((i) => i.value === value);
+    return hit?.label ?? (fallback ? fallback(value) : value);
+  };
 
   const create = useMutation({
     mutationFn: (body: LotCreateBody) => lotsApi.create(body),
@@ -275,19 +298,30 @@ export function IntakeForm() {
             },
           }
         : {}),
+      ...(photoDate.trim() ? { photoDate: photoDate.trim() } : {}),
+      ...(photoLocation.trim() ? { photoLocation: photoLocation.trim() } : {}),
+      ...(photoEvent.trim() ? { photoEvent: photoEvent.trim() } : {}),
+      ...(peopleInPhoto.trim() ? { peopleInPhoto: peopleInPhoto.trim() } : {}),
+      ...(digitalFilePath.trim() ? { digitalFilePath: digitalFilePath.trim() } : {}),
+      ...(physicalLabelApplied ? { physicalLabelApplied: true } : {}),
+      ...(containerLabelApplied ? { containerLabelApplied: true } : {}),
+      ...(returnRequested
+        ? {
+            returnRequested: true,
+            ...(returnFormat ? { returnFormat } : {}),
+            ...(returnDuration.trim() ? { returnDuration: returnDuration.trim() } : {}),
+          }
+        : {}),
     };
     create.mutate(body);
   };
 
   const originLabel = originSource
-    ? `${originSource} — ${ORIGIN_LABELS[originSource as keyof typeof ORIGIN_LABELS] ?? ''}`
+    ? labelFor(originSources.data, originSource, (v) => `${v}`)
     : '';
-  const formatLabel = format.charAt(0).toUpperCase() + format.slice(1);
-  const dataTypeLabel = dataType.charAt(0).toUpperCase() + dataType.slice(1);
-  const notDigLabel = notDigitizedReason
-    ? NOT_DIGITIZED_REASON_LABELS[notDigitizedReason as keyof typeof NOT_DIGITIZED_REASON_LABELS] ??
-      notDigitizedReason
-    : '';
+  const formatLabel = labelFor(formats.data, format, (v) => v.charAt(0).toUpperCase() + v.slice(1));
+  const dataTypeLabel = labelFor(dataTypes.data, dataType, (v) => v.charAt(0).toUpperCase() + v.slice(1));
+  const notDigLabel = notDigitizedReason ? labelFor(notDigitReasons.data, notDigitizedReason) : '';
   const contactLine = (c: LotContactInput) =>
     [c.name, c.phone, c.email, c.address].filter(Boolean).join(' · ');
 
@@ -319,9 +353,9 @@ export function IntakeForm() {
               <Field label="Origin source" error={fieldErrors.originSource}>
                 <Select value={originSource} onChange={(e) => setOriginSource(e.target.value)}>
                   <option value="">Select origin…</option>
-                  {ORIGIN_SOURCES.map((o) => (
-                    <option key={o} value={o}>
-                      {o} — {ORIGIN_LABELS[o]}
+                  {(originSources.data?.items ?? []).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
                     </option>
                   ))}
                 </Select>
@@ -413,18 +447,18 @@ export function IntakeForm() {
                     setMediaSubtype('');
                   }}
                 >
-                  {FORMATS.map((f) => (
-                    <option key={f} value={f}>
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
+                  {(formats.data?.items ?? []).map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
                     </option>
                   ))}
                 </Select>
               </Field>
               <Field label="Data type">
                 <Select value={dataType} onChange={(e) => setDataType(e.target.value)}>
-                  {DATA_TYPES.map((d) => (
-                    <option key={d} value={d}>
-                      {d.charAt(0).toUpperCase() + d.slice(1)}
+                  {(dataTypes.data?.items ?? []).map((d) => (
+                    <option key={d.value} value={d.value}>
+                      {d.label}
                     </option>
                   ))}
                 </Select>
@@ -433,7 +467,7 @@ export function IntakeForm() {
                 label="Media sub-type"
                 error={fieldErrors.mediaSubtype}
                 hint={
-                  format === 'photo' || format === 'video' || format === 'audio'
+                  hasSubtypeList
                     ? 'From the managed vocabulary.'
                     : 'Free text for this format.'
                 }
@@ -470,9 +504,9 @@ export function IntakeForm() {
               <Field label="Not-digitized reason">
                 <Select value={notDigitizedReason} onChange={(e) => setNotDigitizedReason(e.target.value)}>
                   <option value="">None</option>
-                  {NOT_DIGITIZED_REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {NOT_DIGITIZED_REASON_LABELS[r]}
+                  {(notDigitReasons.data?.items ?? []).map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
                     </option>
                   ))}
                 </Select>
@@ -529,6 +563,95 @@ export function IntakeForm() {
                 />
               </Field>
             </div>
+
+            <fieldset className="m-0 p-0 border-0 min-w-0">
+              <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+                Photo content metadata (optional)
+              </legend>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Photo date">
+                  <TextInput value={photoDate} onChange={(e) => setPhotoDate(e.target.value)} placeholder="e.g. 1985 or c. 1990" />
+                </Field>
+                <Field label="Photo location">
+                  <TextInput value={photoLocation} onChange={(e) => setPhotoLocation(e.target.value)} placeholder="Optional" />
+                </Field>
+                <Field label="Photo event">
+                  <TextInput value={photoEvent} onChange={(e) => setPhotoEvent(e.target.value)} placeholder="Optional" />
+                </Field>
+                <Field label="People in photo">
+                  <TextInput value={peopleInPhoto} onChange={(e) => setPeopleInPhoto(e.target.value)} placeholder="Optional" />
+                </Field>
+              </div>
+            </fieldset>
+
+            <fieldset className="m-0 p-0 border-0 min-w-0">
+              <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+                Naming &amp; storage (optional)
+              </legend>
+              <Field label="Digital file path">
+                <TextInput
+                  value={digitalFilePath}
+                  onChange={(e) => setDigitalFilePath(e.target.value)}
+                  placeholder="e.g. /archive/2026/LOT-2026-1285"
+                />
+              </Field>
+              <div className="mt-2 flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
+                  <input
+                    type="checkbox"
+                    checked={physicalLabelApplied}
+                    onChange={(e) => setPhysicalLabelApplied(e.target.checked)}
+                    className="h-4 w-4 accent-accent"
+                  />
+                  Physical label applied
+                </label>
+                <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
+                  <input
+                    type="checkbox"
+                    checked={containerLabelApplied}
+                    onChange={(e) => setContainerLabelApplied(e.target.checked)}
+                    className="h-4 w-4 accent-accent"
+                  />
+                  Container label applied
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset className="m-0 p-0 border-0 min-w-0">
+              <legend className="px-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+                Return request (optional)
+              </legend>
+              <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
+                <input
+                  type="checkbox"
+                  checked={returnRequested}
+                  onChange={(e) => setReturnRequested(e.target.checked)}
+                  className="h-4 w-4 accent-accent"
+                />
+                Sender requested return of originals or a digital copy
+              </label>
+              {returnRequested ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Return format">
+                    <Select value={returnFormat} onChange={(e) => setReturnFormat(e.target.value)}>
+                      <option value="">Choose…</option>
+                      {(returnFormatList.data?.items ?? []).map((f) => (
+                        <option key={f.value} value={f.value}>
+                          {f.label}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Return duration">
+                    <TextInput
+                      value={returnDuration}
+                      onChange={(e) => setReturnDuration(e.target.value)}
+                      placeholder="e.g. Within 30 days"
+                    />
+                  </Field>
+                </div>
+              ) : null}
+            </fieldset>
           </>
         ) : null}
 
@@ -596,6 +719,17 @@ export function IntakeForm() {
                 <SummaryRow label="Condition photo" value={conditionPhotoUrl} />
                 <SummaryRow label="Reason for sending" value={reasonForSending} />
                 <SummaryRow label="Sender remarks" value={senderRemarks} />
+                <SummaryRow label="Photo date" value={photoDate} />
+                <SummaryRow label="Photo location" value={photoLocation} />
+                <SummaryRow label="Photo event" value={photoEvent} />
+                <SummaryRow label="People in photo" value={peopleInPhoto} />
+                <SummaryRow label="Digital file path" value={digitalFilePath} />
+                <SummaryRow label="Physical label" value={physicalLabelApplied ? 'Applied' : 'Not applied'} />
+                <SummaryRow label="Container label" value={containerLabelApplied ? 'Applied' : 'Not applied'} />
+                <SummaryRow
+                  label="Return requested"
+                  value={returnRequested ? `Yes${returnFormat ? ` · ${labelFor(returnFormatList.data, returnFormat)}` : ''}${returnDuration ? ` · ${returnDuration}` : ''}` : 'No'}
+                />
               </SummarySection>
             </div>
           </>

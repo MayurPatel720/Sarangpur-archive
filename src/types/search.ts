@@ -1,14 +1,13 @@
 import { z } from 'zod';
-import { DATA_TYPES, DECISIONS, FORMATS, STAGES } from '@/lib/domain';
 import { lotRowSchema } from '@/types/lot';
 
 /** Query for GET /api/search — palette + format/stage chips. pageSize capped at 10. */
 export const searchQuerySchema = z.object({
   q: z.string().trim().min(1).max(120).optional(),
-  stage: z.enum(STAGES).optional(),
-  decision: z.enum(DECISIONS).optional(),
-  format: z.enum(FORMATS).optional(),
-  dataType: z.enum(DATA_TYPES).optional(),
+  stage: z.string().trim().min(1).max(40).optional(),
+  decision: z.string().trim().min(1).max(40).optional(),
+  format: z.string().trim().min(1).max(40).optional(),
+  dataType: z.string().trim().min(1).max(40).optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(10).default(10),
 });

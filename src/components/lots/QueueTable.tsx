@@ -13,6 +13,7 @@ import { DataTable } from '@/components/ui/DataTable';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
 import { useMe } from '@/hooks/useCan';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { LotRowActions } from './LotRowActions';
 
 type Row = LotListResponse['rows'][number];
@@ -95,6 +96,7 @@ function QueueTableInner({
 }) {
   const router = useRouter();
   const me = useMe();
+  const stages = useReferenceList('stage');
   const { page, pageSize, setPage, setPageSize } = useUrlPagination(defaultPageSize);
 
   const queue = useQuery({
@@ -214,7 +216,9 @@ function QueueTableInner({
                   header: 'Stage',
                   render: (r) => (
                     <span className="text-ink-2">
-                      {STAGE_LABELS[r.stage as keyof typeof STAGE_LABELS] ?? r.stage}
+                      {stages.data?.items.find((i) => i.value === r.stage)?.label ??
+                        STAGE_LABELS[r.stage as keyof typeof STAGE_LABELS] ??
+                        r.stage}
                     </span>
                   ),
                 },

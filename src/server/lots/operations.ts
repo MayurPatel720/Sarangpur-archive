@@ -8,8 +8,11 @@ import { FileIndex } from '@/models/FileIndex';
 import { MlsOutbox } from '@/models/MlsOutbox';
 import { can } from '@/server/permissions';
 import { withAudit } from '@/server/audit';
+import { getStageGraph } from '@/server/reference/runtime';
 import { diffReconciliation } from '@/server/reconcile/diff';
 import { isTerminalStage } from '@/server/lots/queries';
+import { assertActive } from '@/server/reference/runtime';
+import { bumpUsage } from '@/server/reference';
 import type {
   ScanBody,
   MlsBody,
@@ -36,12 +39,13 @@ function guardVersion(lot: { __v?: number }, version: number): void {
  * First scan advances metadata → scanning (the digitize queue reads that stage).
  */
 export async function recordScan(lotId: string, body: ScanBody, ctx: MutationContext) {
+  await assertActive('scanStatus', body.scanStatus);
   const outcome = await withAudit({
     lotId,
     actor: { id: ctx.userId, name: ctx.userName },
     kind: body.folderPath ? 'folder_path_recorded' : 'scan_started',
     title: body.folderPath ? 'Folder path recorded' : 'Scan recorded',
-    mutate: async (lot, _session) => {
+    mutate: async (lot, session) => {
       if (!lot.decision) throw new HttpError(500, 'Lot decision block is missing.');
       guardVersion(lot, body.version);
       guardTerminal(lot, ctx);
@@ -53,6 +57,7 @@ export async function recordScan(lotId: string, body: ScanBody, ctx: MutationCon
       lot.set('digitization.scanDate', body.scanDate ? new Date(body.scanDate) : new Date());
       if (body.folderPath !== undefined) lot.set('digitization.folderPath', body.folderPath);
       if (lot.stage === 'metadata') lot.stage = 'scanning';
+      await bumpUsage('scanStatus', body.scanStatus, session ?? undefined);
       return {
         id: String(lot._id),
         lotReference: lot.lotReference,
@@ -143,6 +148,7 @@ export async function tagMls(lotId: string, body: MlsBody, ctx: MutationContext)
       }
       if (body.recordId !== undefined) lot.set('mls.recordId', body.recordId);
       if (body.taggedCount !== undefined) lot.set('mls.taggedCount', body.taggedCount);
+      if (body.tagsApplied !== undefined) lot.set('mls.tagsApplied', body.tagsApplied);
       if (body.dataListAttached !== undefined) lot.set('mls.dataListAttached', body.dataListAttached);
       if (body.markComplete && lot.stage === 'mls_tag') lot.stage = 'storage';
       await MlsOutbox.create(
@@ -173,6 +179,7 @@ export async function tagMls(lotId: string, body: MlsBody, ctx: MutationContext)
 
 /** PATCH mls/duplicate — lead+ resolves a flagged duplicate, outbox row included. */
 export async function resolveDuplicate(lotId: string, body: DuplicateBody, ctx: MutationContext) {
+  await assertActive('duplicateAction', body.duplicateAction);
   const outcome = await withAudit({
     lotId,
     actor: { id: ctx.userId, name: ctx.userName },
@@ -197,6 +204,7 @@ export async function resolveDuplicate(lotId: string, body: DuplicateBody, ctx: 
         ],
         { session },
       );
+      await bumpUsage('duplicateAction', body.duplicateAction, session ?? undefined);
       return { id: String(lot._id), lotReference: lot.lotReference };
     },
   });
@@ -216,12 +224,15 @@ export async function resolveDuplicate(lotId: string, body: DuplicateBody, ctx: 
  * there so the returns queue (status ∈ pending, in_progress) can work it.
  */
 export async function manageReturn(lotId: string, body: ReturnBody, ctx: MutationContext) {
+  if (body.format) await assertActive('returnFormat', body.format);
+  if (body.status) await assertActive('returnStatus', body.status);
+  if (body.method) await assertActive('returnMethod', body.method);
   const outcome = await withAudit({
     lotId,
     actor: { id: ctx.userId, name: ctx.userName },
     kind: body.status === 'returned' ? 'return_completed' : 'return_recorded',
     title: body.status === 'returned' ? 'Return completed' : 'Return updated',
-    mutate: async (lot, _session) => {
+    mutate: async (lot, session) => {
       if (!lot.decision) throw new HttpError(500, 'Lot decision block is missing.');
       guardVersion(lot, body.version);
       guardTerminal(lot, ctx);
@@ -240,6 +251,9 @@ export async function manageReturn(lotId: string, body: ReturnBody, ctx: Mutatio
           lot.stage = 'returned';
         }
       }
+      if (body.format) await bumpUsage('returnFormat', body.format, session ?? undefined);
+      if (body.status) await bumpUsage('returnStatus', body.status, session ?? undefined);
+      if (body.method) await bumpUsage('returnMethod', body.method, session ?? undefined);
       return {
         id: String(lot._id),
         lotReference: lot.lotReference,
@@ -254,16 +268,18 @@ export async function manageReturn(lotId: string, body: ReturnBody, ctx: Mutatio
 
 /** POST discard — reviewer+ confirms; the lot leaves its working stage for discarded. */
 export async function confirmDiscard(lotId: string, body: DiscardBody, ctx: MutationContext) {
+  await assertActive('discardReason', body.reason);
+  const { discardable } = await getStageGraph();
   const outcome = await withAudit({
     lotId,
     actor: { id: ctx.userId, name: ctx.userName },
     kind: 'discard_confirmed',
     title: `Discard confirmed (${body.reason})`,
-    mutate: async (lot, _session) => {
+    mutate: async (lot, session) => {
       if (!lot.decision) throw new HttpError(500, 'Lot decision block is missing.');
       guardVersion(lot, body.version);
       guardTerminal(lot, ctx);
-      if (!['metadata', 'scanning', 'mls_tag', 'storage'].includes(lot.stage)) {
+      if (!discardable.includes(lot.stage)) {
         throw new HttpError(400, 'Only working lots can be discarded.');
       }
       lot.set('discard.reason', body.reason);
@@ -271,6 +287,7 @@ export async function confirmDiscard(lotId: string, body: DiscardBody, ctx: Muta
       lot.set('discard.discardedAt', new Date());
       if (body.notes !== undefined) lot.set('discard.notes', body.notes);
       lot.stage = 'discarded';
+      await bumpUsage('discardReason', body.reason, session ?? undefined);
       return { id: String(lot._id), lotReference: lot.lotReference, stage: lot.stage };
     },
   });

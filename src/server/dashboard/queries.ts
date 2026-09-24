@@ -16,6 +16,8 @@ import {
   type DashboardWindow,
   type Pipeline,
 } from './pipelines';
+import { getSettings } from '@/server/admin/queries';
+import { activeValuesWithFlag, defaultStageGraph, getStageGraph } from '@/server/reference/runtime';
 import type {
   ActivityResponse,
   AlertsResponse,
@@ -41,13 +43,31 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export function buildWindow(now = new Date()): DashboardWindow {
+export interface WindowSettings {
+  decisionPendingDays?: number;
+  scanStuckDays?: number;
+}
+
+export function buildWindow(
+  now = new Date(),
+  settings?: WindowSettings,
+  stages?: import('@/server/reference/runtime').StageGraph,
+  returnOpen?: string[],
+): DashboardWindow {
+  const decisionPendingDays =
+    settings?.decisionPendingDays ?? envInt('ALERT_DECISION_PENDING_DAYS', 5);
+  const scanStuckDays = settings?.scanStuckDays ?? envInt('ALERT_SCAN_STUCK_DAYS', 7);
+  const stageGraph = stages ?? defaultStageGraph();
   return {
     now,
     windowStart: new Date(now.getTime() - 30 * DAY_MS),
     previousWindowStart: new Date(now.getTime() - 60 * DAY_MS),
-    decisionSlaCutoff: new Date(now.getTime() - envInt('ALERT_DECISION_PENDING_DAYS', 5) * DAY_MS),
-    scanSlaCutoff: new Date(now.getTime() - envInt('ALERT_SCAN_STUCK_DAYS', 10) * DAY_MS),
+    decisionSlaCutoff: new Date(now.getTime() - decisionPendingDays * DAY_MS),
+    scanSlaCutoff: new Date(now.getTime() - scanStuckDays * DAY_MS),
+    decisionPendingDays,
+    scanStuckDays,
+    stages: stageGraph,
+    returnOpen: returnOpen && returnOpen.length > 0 ? returnOpen : ['pending', 'in_progress'],
   };
 }
 
@@ -121,11 +141,16 @@ export function shapeSummary(
   const scanFound = scan?.found ?? 0;
   const scanPercent = scanExpected > 0 ? Math.round((scanFound / scanExpected) * 100) : 0;
 
-  const decisionSlaDays = envInt('ALERT_DECISION_PENDING_DAYS', 5);
+  const decisionSlaDays = window.decisionPendingDays;
   const capacityTb = envInt('ARCHIVE_STORAGE_CAPACITY_TB', 96);
   const usedTb = round(storageBytes / TB, 1);
 
-  const activeLotCount = IN_FLIGHT_STAGES.reduce((sum, s) => sum + stageCount(s), 0);
+  const stageCountMany = (keys: string[]) =>
+    keys.reduce((sum, s) => sum + (byStage.get(s as Stage) ?? 0), 0);
+  const activeLotCount = stageCountMany(window.stages?.inFlight ?? [...IN_FLIGHT_STAGES]);
+  const decisionKey = ((window.stages?.decision ?? ['decision'])[0] ?? 'decision') as Stage;
+  const scanKey = ((window.stages?.scan ?? ['scanning'])[0] ?? 'scanning') as Stage;
+  const mlsKey = ((window.stages?.mlsTag ?? ['mls_tag'])[0] ?? 'mls_tag') as Stage;
 
   return {
     generatedAt: window.now.toISOString(),
@@ -150,7 +175,7 @@ export function shapeSummary(
       {
         key: 'awaiting_decision',
         label: 'Awaiting decision',
-        value: stageCount('decision'),
+        value: stageCountMany(window.stages?.decision ?? ['decision']) || stageCount(decisionKey),
         note: decisionOverdue
           ? `${decisionOverdue.n} past the ${decisionSlaDays}-day threshold`
           : 'All within the review threshold',
@@ -159,7 +184,7 @@ export function shapeSummary(
       {
         key: 'in_digitization',
         label: 'In digitization',
-        value: stageCount('scanning'),
+        value: stageCountMany(window.stages?.scan ?? ['scanning']) || stageCount(scanKey),
         note: `${scanExpected.toLocaleString('en-IN')} items · ${scanPercent}% scanned`,
         noteSeverity: 'neutral',
       },
@@ -185,7 +210,12 @@ export function shapeSummary(
 
 export async function getSummary(now = new Date()): Promise<SummaryResponse> {
   await connectToDatabase();
-  const window = buildWindow(now);
+  const [settings, stages, returnOpen] = await Promise.all([
+    getSettings().catch(() => null),
+    getStageGraph(),
+    activeValuesWithFlag('returnStatus', 'open'),
+  ]);
+  const window = buildWindow(now, settings ?? undefined, stages, returnOpen);
   const [facet] = await ArchiveLot.aggregate<LotFacetResult>(asPipeline(lotFacetPipeline(window)));
   if (!facet) throw new Error('Summary aggregation returned no facet document');
   return shapeSummary(facet, window);
@@ -200,8 +230,8 @@ export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow): Ale
   const returnsOverdue = first(facet.returnsOverdue);
   const duplicates = first(facet.mlsDuplicates);
 
-  const decisionDays = envInt('ALERT_DECISION_PENDING_DAYS', 5);
-  const scanDays = envInt('ALERT_SCAN_STUCK_DAYS', 10);
+  const decisionDays = window.decisionPendingDays;
+  const scanDays = window.scanStuckDays;
 
   const candidates: AlertsResponse['alerts'] = [
     {
@@ -263,7 +293,12 @@ export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow): Ale
 
 export async function getAlerts(now = new Date()): Promise<AlertsResponse> {
   await connectToDatabase();
-  const window = buildWindow(now);
+  const [settings, stages, returnOpen] = await Promise.all([
+    getSettings().catch(() => null),
+    getStageGraph(),
+    activeValuesWithFlag('returnStatus', 'open'),
+  ]);
+  const window = buildWindow(now, settings ?? undefined, stages, returnOpen);
   const [facet] = await ArchiveLot.aggregate<LotFacetResult>(asPipeline(lotFacetPipeline(window)));
   if (!facet) throw new Error('Alerts aggregation returned no facet document');
   return shapeAlerts(facet, window);
@@ -354,16 +389,26 @@ function sampleNote(
   }
 }
 
-export function shapeBoard(buckets: BoardBucket[], now: Date): PipelineResponse {
+export function shapeBoard(
+  buckets: BoardBucket[],
+  now: Date,
+  stagesGraph?: import('@/server/reference/runtime').StageGraph,
+): PipelineResponse {
   const byStage = new Map(buckets.map((b) => [b._id, b]));
+  const graph = stagesGraph ?? defaultStageGraph();
+  const boardOrder = graph.board.length > 0 ? graph.board : [...BOARD_STAGES];
+  const inFlightSet = new Set(graph.inFlight);
 
-  const stages = BOARD_STAGES.map((stage) => {
-    const bucket = byStage.get(stage);
+  const stages = boardOrder.map((stage) => {
+    const bucket = byStage.get(stage as Stage);
+    const accent =
+      (STAGE_ACCENT as Record<string, Severity>)[stage] ??
+      ((graph.terminal.includes(stage) ? 'neutral' : 'info') as Severity);
     return {
-      stage,
-      label: STAGE_LABELS[stage],
+      stage: stage as Stage,
+      label: graph.labels[stage] ?? STAGE_LABELS[stage as Stage] ?? stage,
       count: bucket?.count ?? 0,
-      accent: STAGE_ACCENT[stage],
+      accent,
       samples: (bucket?.samples ?? []).map((s) => {
         const { note, severity, progressPercent } = sampleNote(s, now);
         return {
@@ -380,7 +425,7 @@ export function shapeBoard(buckets: BoardBucket[], now: Date): PipelineResponse 
   return {
     // Only the in-flight stages count as 'active' — a lot in storage is finished.
     totalActive: stages
-      .filter((s) => IN_FLIGHT_STAGES.includes(s.stage))
+      .filter((s) => inFlightSet.has(s.stage))
       .reduce((sum, s) => sum + s.count, 0),
     stages,
   };
@@ -388,10 +433,12 @@ export function shapeBoard(buckets: BoardBucket[], now: Date): PipelineResponse 
 
 export async function getPipelineBoard(now = new Date()): Promise<PipelineResponse> {
   await connectToDatabase();
+  const stages = await getStageGraph();
+  const window = buildWindow(now, undefined, stages);
   const buckets = await ArchiveLot.aggregate<BoardBucket>(
-    asPipeline(pipelineBoardPipeline(buildWindow(now))),
+    asPipeline(pipelineBoardPipeline(window)),
   );
-  return shapeBoard(buckets, now);
+  return shapeBoard(buckets, now, stages);
 }
 
 /* ----------------------------------------------------------------- activity */

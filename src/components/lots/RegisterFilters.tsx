@@ -1,14 +1,6 @@
 'use client';
 
-import {
-  DATA_TYPES,
-  DECISIONS,
-  DECISION_LABELS,
-  FORMATS,
-  FORMAT_LABELS,
-  STAGES,
-  STAGE_LABELS,
-} from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { Field, GhostButton, Select, TextInput } from '@/components/ui/Form';
 
 export interface LotFilters {
@@ -17,6 +9,8 @@ export interface LotFilters {
   decision: string;
   format: string;
   dataType: string;
+  receiver: string;
+  returnStatus: string;
   sort: string;
   receivedFrom: string;
   receivedTo: string;
@@ -28,6 +22,8 @@ export const EMPTY_FILTERS: LotFilters = {
   decision: '',
   format: '',
   dataType: '',
+  receiver: '',
+  returnStatus: '',
   sort: '-dateReceived',
   receivedFrom: '',
   receivedTo: '',
@@ -41,12 +37,19 @@ export function RegisterFilters({
   onChange: (next: LotFilters) => void;
 }) {
   const set = (k: keyof LotFilters) => (v: string) => onChange({ ...filters, [k]: v });
+  const stages = useReferenceList('stage');
+  const decisions = useReferenceList('decision');
+  const formats = useReferenceList('format');
+  const dataTypes = useReferenceList('dataType');
+  const returnStatuses = useReferenceList('returnStatus');
   const isActive =
     filters.q !== '' ||
     filters.stage !== '' ||
     filters.decision !== '' ||
     filters.format !== '' ||
     filters.dataType !== '' ||
+    filters.receiver !== '' ||
+    filters.returnStatus !== '' ||
     filters.receivedFrom !== '' ||
     filters.receivedTo !== '';
 
@@ -65,9 +68,9 @@ export function RegisterFilters({
         <Field label="Stage">
           <Select value={filters.stage} onChange={(e) => set('stage')(e.target.value)}>
             <option value="">All stages</option>
-            {STAGES.map((s) => (
-              <option key={s} value={s}>
-                {STAGE_LABELS[s]}
+            {(stages.data?.items ?? []).map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </Select>
@@ -75,31 +78,48 @@ export function RegisterFilters({
         <Field label="Decision">
           <Select value={filters.decision} onChange={(e) => set('decision')(e.target.value)}>
             <option value="">All decisions</option>
-            {DECISIONS.map((d) => (
-              <option key={d} value={d}>
-                {DECISION_LABELS[d] ?? d}
+            {(decisions.data?.items ?? []).map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
               </option>
             ))}
           </Select>
         </Field>
         <Field label="Format">
           <Select value={filters.format} onChange={(e) => set('format')(e.target.value)}>
-              <option value="">All formats</option>
-              {FORMATS.map((f) => (
-                <option key={f} value={f}>
-                  {FORMAT_LABELS[f]}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Data type">
-            <Select value={filters.dataType} onChange={(e) => set('dataType')(e.target.value)}>
-              <option value="">Physical + digital</option>
-              {DATA_TYPES.map((d) => (
-                <option key={d} value={d}>
-                  {d === 'physical' ? 'Physical' : 'Digital'}
-                </option>
-              ))}
+            <option value="">All formats</option>
+            {(formats.data?.items ?? []).map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Data type">
+          <Select value={filters.dataType} onChange={(e) => set('dataType')(e.target.value)}>
+            <option value="">Physical + digital</option>
+            {(dataTypes.data?.items ?? []).map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Receiver" hint="User id from /api/users (admin).">
+          <TextInput
+            value={filters.receiver}
+            onChange={(e) => set('receiver')(e.target.value)}
+            placeholder="e.g. 64f…"
+          />
+        </Field>
+        <Field label="Return status">
+          <Select value={filters.returnStatus} onChange={(e) => set('returnStatus')(e.target.value)}>
+            <option value="">Any return status</option>
+            {(returnStatuses.data?.items ?? []).map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
           </Select>
         </Field>
         <Field label="Received from">

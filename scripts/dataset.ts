@@ -72,7 +72,7 @@ const MEDIA: MediaShape[] = [
   { format: 'photo', subtype: 'Print — Album', prefix: 'PRT', unit: 'pages', bytesPerItem: 110_000_000, min: 20, max: 240 },
   { format: 'photo', subtype: 'Digital', prefix: 'DIG', unit: 'files', bytesPerItem: 12_000_000, min: 200, max: 5000 },
   { format: 'video', subtype: 'VHS', prefix: 'VHS', unit: 'tapes', bytesPerItem: 28_000_000_000, min: 2, max: 20 },
-  { format: 'video', subtype: 'Mini DV', prefix: 'VHS', unit: 'tapes', bytesPerItem: 13_000_000_000, min: 2, max: 18 },
+  { format: 'video', subtype: 'Mini DVs', prefix: 'VHS', unit: 'tapes', bytesPerItem: 13_000_000_000, min: 2, max: 18 },
   { format: 'video', subtype: 'U-matic', prefix: 'VHS', unit: 'tapes', bytesPerItem: 34_000_000_000, min: 1, max: 10 },
   { format: 'audio', subtype: 'Cassettes', prefix: 'AUD', unit: 'cassettes', bytesPerItem: 900_000_000, min: 4, max: 40 },
   { format: 'audio', subtype: 'Spools', prefix: 'AUD', unit: 'spools', bytesPerItem: 2_400_000_000, min: 2, max: 20 },

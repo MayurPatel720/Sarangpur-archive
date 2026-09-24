@@ -92,7 +92,7 @@ export type ReturnFormat = (typeof RETURN_FORMATS)[number];
 export const RETURN_STATUSES = ['not_requested', 'pending', 'in_progress', 'returned'] as const;
 export type ReturnStatus = (typeof RETURN_STATUSES)[number];
 
-export const ROLES = ['volunteer', 'reviewer', 'lead_reviewer', 'admin'] as const;
+export const ROLES = ['volunteer', 'reviewer', 'lead_reviewer', 'admin', 'viewer'] as const;
 export type Role = (typeof ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -100,7 +100,17 @@ export const ROLE_LABELS: Record<Role, string> = {
   reviewer: 'Reviewer',
   lead_reviewer: 'Lead Reviewer',
   admin: 'Admin',
+  viewer: 'Viewer',
 };
+
+/** The four significance questions from the developer brief, in order. */
+export const SIGNIFICANCE_QUESTIONS = [
+  'Does the photo have historical significance — connected to a prasang, or useful for future samaiyos / utsavs / patotsavs / videos / projects / shibirs?',
+  'Does the photo contain Shastriji Maharaj or Yogiji Maharaj?',
+  'Does the photo contain an extraordinary, special, or unique image of Pramukh Swami Maharaj? (Verify uniqueness with MLS search first.)',
+  'Does the photo contain Sadguru and Vadil Santo without the Satpurush — e.g. Yatra, Pardesh Vicharan?',
+] as const;
+export type SignificanceQuestion = (typeof SIGNIFICANCE_QUESTIONS)[number];
 
 export const OVERRIDE_STATUSES = ['none', 'requested', 'approved', 'rejected'] as const;
 export type OverrideStatus = (typeof OVERRIDE_STATUSES)[number];

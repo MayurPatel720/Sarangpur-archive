@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { LotDetailResponse } from '@/types/lot';
-import { DISCARD_REASONS } from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { prettyEnum } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
@@ -15,9 +15,6 @@ type DetailLot = LotDetailResponse['lot'];
 
 const dash = <EmptyValue />;
 
-/** Stages from which a working lot may be discarded (server is source of truth). */
-const DISCARDABLE = ['metadata', 'scanning', 'mls_tag', 'storage'];
-
 export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: () => void }) {
   const me = useMe();
   const toast = useToast();
@@ -25,14 +22,19 @@ export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: 
   const canReverse = me.data ? me.data.grants.includes('discard:reverse') : false;
   const [formError, setFormError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [reason, setReason] = useState<(typeof DISCARD_REASONS)[number]>(DISCARD_REASONS[0] as (typeof DISCARD_REASONS)[number]);
+  const discardReasons = useReferenceList('discardReason');
+  const stages = useReferenceList('stage');
+  const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
+  const discardable = (stages.data?.items ?? [])
+    .filter((i) => i.meta.discardable === true)
+    .map((i) => i.value);
 
   const confirm = useMutation({
     mutationFn: () =>
       lotsApi.confirmDiscard(lot.id, {
         confirm: true,
-        reason,
+        reason: reason || (discardReasons.data?.items[0]?.value ?? ''),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         version: lot.version,
       }),
@@ -86,14 +88,17 @@ export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: 
               </GhostButton>
             </div>
           ) : null
-        ) : canConfirm && DISCARDABLE.includes(lot.stage) ? (
+        ) : canConfirm && discardable.includes(lot.stage) ? (
           confirming ? (
             <div className="flex flex-col gap-3">
               <Field label="Reason">
-                <Select value={reason} onChange={(e) => setReason(e.target.value as (typeof DISCARD_REASONS)[number])}>
-                  {DISCARD_REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {prettyEnum(r)}
+                <Select
+                  value={reason || (discardReasons.data?.items[0]?.value ?? '')}
+                  onChange={(e) => setReason(e.target.value)}
+                >
+                  {(discardReasons.data?.items ?? []).map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
                     </option>
                   ))}
                 </Select>

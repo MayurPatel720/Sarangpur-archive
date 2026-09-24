@@ -4,14 +4,14 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { DecisionBody, LotDetailResponse } from '@/types/lot';
-import { date } from '@/lib/format';
+import { SIGNIFICANCE_QUESTIONS, TERMINAL_STAGES } from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
+import { date, prettyEnum } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea } from '@/components/ui/Form';
 import { Badge, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
 
 type DetailLot = LotDetailResponse['lot'];
-
-const TERMINAL_STAGES = ['returned', 'discarded'];
 
 function YesNo({ value, onChange, label }: { value: '' | 'yes' | 'no'; onChange: (v: 'yes' | 'no') => void; label: string }) {
   return (
@@ -34,7 +34,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
   const canApprove = grants.includes('override:approve');
 
   const recorded = lot.decisionDetail.status !== 'pending';
-  const terminal = TERMINAL_STAGES.includes(lot.stage);
+  const terminal = (TERMINAL_STAGES as string[]).includes(lot.stage);
   const [error, setError] = useState<string | null>(null);
 
   // Checklist state
@@ -43,9 +43,13 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
   const [conditionUsable, setConditionUsable] = useState<'' | 'yes' | 'no'>('');
   const [conditionIssue, setConditionIssue] = useState('');
   const [flags, setFlags] = useState([false, false, false, false]);
+  const [mlsMatchPaths, setMlsMatchPaths] = useState('');
   const [notes, setNotes] = useState('');
   const [disposition, setDisposition] = useState<'' | 'return' | 'discard'>('');
+  const [discardReason, setDiscardReason] = useState('');
+  const [discardNotes, setDiscardNotes] = useState('');
   const [needsDisposition, setNeedsDisposition] = useState(false);
+  const discardReasons = useReferenceList('discardReason');
 
   // Override state
   const [justification, setJustification] = useState('');
@@ -57,8 +61,11 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
     setConditionUsable('');
     setConditionIssue('');
     setFlags([false, false, false, false]);
+    setMlsMatchPaths('');
     setNotes('');
     setDisposition('');
+    setDiscardReason('');
+    setDiscardNotes('');
     setNeedsDisposition(false);
   };
 
@@ -121,14 +128,26 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
       return setError('Describe the condition issue — condition was marked unusable.');
     }
     if (needsDisposition && !disposition) return setError('Choose return or discard.');
+    if (disposition === 'discard' && !discardReason) return setError('Choose a discard reason.');
+    const paths = mlsMatchPaths
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
     const body: DecisionBody = {
       existsInMls: existsInMls === 'yes',
       ...(existsInMls === 'yes' ? { newCopyIsBetter: newCopyIsBetter === 'yes' } : {}),
+      ...(existsInMls === 'yes' && paths.length ? { mlsMatchPaths: paths } : {}),
       conditionUsable: conditionUsable === 'yes',
       ...(conditionUsable === 'no' ? { conditionIssue: conditionIssue.trim() } : {}),
       significanceFlags: [flags[0] ?? false, flags[1] ?? false, flags[2] ?? false, flags[3] ?? false],
       ...(notes.trim() ? { notes: notes.trim() } : {}),
       ...(needsDisposition && disposition ? { disposition } : {}),
+      ...(disposition === 'discard'
+        ? {
+            discardReason: discardReason as NonNullable<DecisionBody['discardReason']>,
+            ...(discardNotes.trim() ? { discardNotes: discardNotes.trim() } : {}),
+          }
+        : {}),
     };
     decideMut.mutate(body);
   };
@@ -181,9 +200,14 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
             </div>
             <div className="text-[13px] text-ink-2">
               In MLS: {d.existsInMls === null ? '—' : d.existsInMls ? 'yes' : 'no'}
+              {d.newCopyIsBetter !== null ? ` · Better copy: ${d.newCopyIsBetter ? 'yes' : 'no'}` : ''}
               {' · '}Condition usable: {d.conditionUsable === null ? '—' : d.conditionUsable ? 'yes' : 'no'}
               {' · '}Significance: {d.significanceFlags === null ? '—' : d.significanceFlags.some(Boolean) ? `${d.significanceFlags.filter(Boolean).length} of 4 criteria met` : 'none met'}
             </div>
+            {d.conditionIssue ? <p className="m-0 text-[13px] text-ink-2">Condition issue: {d.conditionIssue}</p> : null}
+            {d.mlsMatchPaths.length > 0 ? (
+              <p className="m-0 text-[13px] text-ink-2">MLS paths: {d.mlsMatchPaths.join(', ')}</p>
+            ) : null}
             {d.notes ? <p className="m-0 text-[13px] text-ink-2">Notes: {d.notes}</p> : null}
             {d.overrideStatus !== 'none' ? (
               <p className="m-0 text-[13px] text-ink-2">
@@ -217,20 +241,33 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                   </Field>
                 ) : null}
               </div>
+              {existsInMls === 'yes' ? (
+                <Field
+                  label="Matching MLS file paths"
+                  hint="One path per line — where this lot already exists in MLS."
+                >
+                  <Textarea
+                    value={mlsMatchPaths}
+                    onChange={(e) => setMlsMatchPaths(e.target.value)}
+                    rows={3}
+                    placeholder={'e.g.\n/photos/2019/patotsav/\n/negatives/box-12/'}
+                  />
+                </Field>
+              ) : null}
               <fieldset className="m-0 p-0 border-0 min-w-0">
-                <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
+                <legend className="px-0 mb-2 text-[12px] text-ink-3">
                   Significance criteria (any one archives the lot)
                 </legend>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {flags.map((on, i) => (
-                    <label key={i} className="flex items-center gap-2 min-h-[44px] text-[13px] text-ink cursor-pointer">
+                <div className="grid grid-cols-1 gap-2">
+                  {SIGNIFICANCE_QUESTIONS.map((question, i) => (
+                    <label key={i} className="flex items-start gap-2 min-h-[44px] text-[13px] text-ink cursor-pointer">
                       <input
                         type="checkbox"
-                        className="h-4 w-4 accent-[var(--color-accent)]"
-                        checked={on}
+                        className="h-4 w-4 mt-1 accent-[var(--color-accent)]"
+                        checked={flags[i] ?? false}
                         onChange={(e) => setFlags(flags.map((f, j) => (j === i ? e.target.checked : f)))}
                       />
-                      Criterion {i + 1}
+                      <span>{question}</span>
                     </label>
                   ))}
                 </div>
@@ -239,13 +276,32 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                 <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
               </Field>
               {needsDisposition ? (
-                <Field label="Disposition — the checklist points away from the archive">
-                  <Select value={disposition} onChange={(e) => setDisposition(e.target.value as '' | 'return' | 'discard')}>
-                    <option value="">Choose…</option>
-                    <option value="return">Return to sender</option>
-                    <option value="discard">Discard</option>
-                  </Select>
-                </Field>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Disposition — the checklist points away from the archive">
+                    <Select value={disposition} onChange={(e) => setDisposition(e.target.value as '' | 'return' | 'discard')}>
+                      <option value="">Choose…</option>
+                      <option value="return">Return to sender</option>
+                      <option value="discard">Discard</option>
+                    </Select>
+                  </Field>
+                  {disposition === 'discard' ? (
+                    <>
+                      <Field label="Discard reason">
+                        <Select value={discardReason} onChange={(e) => setDiscardReason(e.target.value)}>
+                          <option value="">Choose…</option>
+                          {(discardReasons.data?.items ?? []).map((r) => (
+                            <option key={r.value} value={r.value}>
+                              {r.label}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <Field label="Discard notes" hint="Optional detail for the audit entry.">
+                        <Textarea value={discardNotes} onChange={(e) => setDiscardNotes(e.target.value)} />
+                      </Field>
+                    </>
+                  ) : null}
+                </div>
               ) : null}
               <div>
                 <PrimaryButton disabled={decideMut.isPending} onClick={record}>

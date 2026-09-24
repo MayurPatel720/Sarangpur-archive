@@ -64,8 +64,8 @@ export function ContactFields({
 /* ------------------------------------------------- media sub-type select */
 
 /**
- * Tier-2 vocabulary field. Photo/video/audio offer the admin-managed
- * `mediaSubtype.<format>` list; documents/prasadi are free text (SPEC Q2).
+ * Tier-2 vocabulary field. Reads the format list's `subtypeListKey` meta;
+ * empty means free text (SPEC Q2).
  */
 export function SubtypeField({
   format,
@@ -76,12 +76,13 @@ export function SubtypeField({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const needsList = format === 'photo' || format === 'video' || format === 'audio';
-  const { data, isLoading, isError } = useReferenceList(
-    needsList ? `mediaSubtype.${format}` : 'mediaSubtype.photo',
-  );
+  const formats = useReferenceList('format');
+  const formatItem = formats.data?.items.find((f) => f.value === format);
+  const rawKey = formatItem?.meta.subtypeListKey;
+  const listKey = typeof rawKey === 'string' && rawKey ? rawKey : null;
+  const { data, isLoading, isError } = useReferenceList(listKey ?? 'mediaSubtype.photo');
 
-  if (!needsList) {
+  if (!listKey) {
     return (
       <TextInput
         value={value}
@@ -91,7 +92,7 @@ export function SubtypeField({
     );
   }
 
-  if (isLoading) return <Skeleton className="h-10 w-full" />;
+  if (isLoading || formats.isLoading) return <Skeleton className="h-10 w-full" />;
   if (isError || !data) {
     return (
       <TextInput

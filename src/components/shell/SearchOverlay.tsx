@@ -9,24 +9,15 @@ import { useMe } from '@/hooks/useCan';
 import { useDrawer } from '@/components/shell/drawer-context';
 import { SIDEBAR_OFFSET_CLASS } from '@/lib/shell';
 import { date } from '@/lib/format';
-import {
-  DATA_TYPES,
-  DATA_TYPE_LABELS,
-  DECISIONS,
-  DECISION_LABELS,
-  FORMATS,
-  FORMAT_LABELS,
-  STAGES,
-  STAGE_LABELS,
-} from '@/lib/domain';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { Badge, ErrorState, Skeleton } from '@/components/ui/primitives';
 import { Kbd } from '@/components/ui/Kbd';
 import { IconSearch } from '@/components/ui/icons';
 
-type FormatChip = (typeof FORMATS)[number] | '';
-type StageChip = (typeof STAGES)[number] | '';
-type DecisionChip = (typeof DECISIONS)[number] | '';
-type DataTypeChip = (typeof DATA_TYPES)[number] | '';
+type FormatChip = string;
+type StageChip = string;
+type DecisionChip = string;
+type DataTypeChip = string;
 
 const debounceMs = 200;
 
@@ -140,6 +131,10 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const { data: me } = useMe();
   const { collapsed } = useDrawer();
+  const formats = useReferenceList('format');
+  const dataTypes = useReferenceList('dataType');
+  const stages = useReferenceList('stage');
+  const decisions = useReferenceList('decision');
 
   const [rawQ, setRawQ] = useState('');
   const [q, setQ] = useState('');
@@ -148,6 +143,9 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
   const [stage, setStage] = useState<StageChip>('');
   const [decision, setDecision] = useState<DecisionChip>('');
   const [active, setActive] = useState(0);
+
+  const formatLabel = (value: string): string =>
+    formats.data?.items.find((f) => f.value === value)?.label ?? value;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -274,7 +272,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
               onChange={(v) => setFormat(v as FormatChip)}
               options={[
                 { value: '', label: 'All' },
-                ...FORMATS.map((f) => ({ value: f, label: FORMAT_LABELS[f] })),
+                ...(formats.data?.items ?? []).map((f) => ({ value: f.value, label: f.label })),
               ]}
             />
             <FilterDropdown
@@ -283,7 +281,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
               onChange={(v) => setDataType(v as DataTypeChip)}
               options={[
                 { value: '', label: 'All' },
-                ...DATA_TYPES.map((t) => ({ value: t, label: DATA_TYPE_LABELS[t] })),
+                ...(dataTypes.data?.items ?? []).map((t) => ({ value: t.value, label: t.label })),
               ]}
             />
             <FilterDropdown
@@ -292,7 +290,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
               onChange={(v) => setStage(v as StageChip)}
               options={[
                 { value: '', label: 'All' },
-                ...STAGES.map((s) => ({ value: s, label: STAGE_LABELS[s] })),
+                ...(stages.data?.items ?? []).map((s) => ({ value: s.value, label: s.label })),
               ]}
             />
             <FilterDropdown
@@ -301,7 +299,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
               onChange={(v) => setDecision(v as DecisionChip)}
               options={[
                 { value: '', label: 'All' },
-                ...DECISIONS.map((d) => ({ value: d, label: DECISION_LABELS[d] })),
+                ...(decisions.data?.items ?? []).map((d) => ({ value: d.value, label: d.label })),
               ]}
             />
           </div>
@@ -353,7 +351,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
                     }`}
                   >
                     <span className="w-9 h-9 rounded-[7px] bg-surface-sunken border border-line flex items-center justify-center text-[10px] font-semibold text-ink-3 flex-shrink-0 mt-0.5">
-                      {FORMAT_LABELS[row.format].slice(0, 2).toUpperCase()}
+                      {formatLabel(row.format).slice(0, 2).toUpperCase()}
                     </span>
                     <span className="min-w-0 flex-1 flex flex-col gap-1">
                       <span className="flex items-center gap-2 flex-wrap">
@@ -367,7 +365,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
                       <span className="text-[12px] text-ink-3 truncate">
                         {row.ownerName}
                         {' · '}
-                        {FORMAT_LABELS[row.format]}
+                        {formatLabel(row.format)}
                         {' · '}
                         {date(row.dateReceived)}
                         {row.matchedItems[0] ? (

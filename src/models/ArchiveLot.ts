@@ -1,16 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose';
-import {
-  DATA_TYPES,
-  DECISIONS,
-  DISCARD_REASONS,
-  FORMATS,
-  ORIGIN_SOURCES,
-  OVERRIDE_STATUSES,
-  RETURN_FORMATS,
-  RETURN_STATUSES,
-  SCAN_STATUSES,
-  STAGES,
-} from '@/lib/domain';
+import { OVERRIDE_STATUSES, STAGES } from '@/lib/domain';
 
 /**
  * A lot: one delivery of material from one owner.
@@ -51,7 +40,8 @@ const archiveLotSchema = new Schema(
     lotReference: { type: String, required: true, unique: true, trim: true },
     /** Naming code, issued after the archive decision. Absent until then. */
     namingCode: { type: String, trim: true, index: true, sparse: true },
-    originSource: { type: String, enum: ORIGIN_SOURCES },
+    /** Admin-managed `originSource` list value — not a Mongoose enum (open vocabulary). */
+    originSource: { type: String },
 
     dateReceived: { type: Date, required: true, index: true },
     receiver: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -60,8 +50,8 @@ const archiveLotSchema = new Schema(
     pointsOfContact: { type: [contactSchema], default: [] },
     facilitator: { type: contactSchema, default: null },
 
-    format: { type: String, required: true, enum: FORMATS, index: true },
-    dataType: { type: String, required: true, enum: DATA_TYPES },
+    format: { type: String, required: true, index: true },
+    dataType: { type: String, required: true },
     mediaSubtype: { type: String, required: true, trim: true },
 
     quantity: { type: Number, required: true, min: 0 },
@@ -73,6 +63,17 @@ const archiveLotSchema = new Schema(
     conditionPhotoUrl: { type: String, trim: true },
     reasonForSending: { type: String, trim: true },
     senderRemarks: { type: String, trim: true },
+
+    /** Photo content metadata from the brief's ArchiveItems table. */
+    photoDate: { type: String, trim: true },
+    photoLocation: { type: String, trim: true },
+    photoEvent: { type: String, trim: true },
+    peopleInPhoto: { type: String, trim: true },
+
+    /** Naming & storage (brief §3.05). */
+    digitalFilePath: { type: String, trim: true },
+    physicalLabelApplied: { type: Boolean, default: false },
+    containerLabelApplied: { type: Boolean, default: false },
 
     /**
      * Rights / consent (deed of gift). `type` is validated against the
@@ -90,15 +91,16 @@ const archiveLotSchema = new Schema(
     stageEnteredAt: { type: Date, required: true, index: true },
 
     decision: {
-      status: { type: String, required: true, enum: DECISIONS, default: 'pending', index: true },
+      status: { type: String, required: true, default: 'pending', index: true },
       /** Server-computed verdict (decision-rule.ts). Stored so the UI can show it. */
       verdict: { type: String, enum: ['archive', 'return_or_discard'], default: null },
       decidedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       decidedAt: { type: Date, default: null },
       existsInMls: { type: Boolean, default: null },
-      mlsMatchPaths: { type: [String], default: [] },
       conditionUsable: { type: Boolean, default: null },
-      /** The four significance questions, in brief order. */
+      newCopyIsBetter: { type: Boolean, default: null },
+      conditionIssue: { type: String, trim: true, default: null },
+      mlsMatchPaths: { type: [String], default: [] },
       significanceFlags: {
         type: [Boolean],
         default: undefined,
@@ -119,7 +121,8 @@ const archiveLotSchema = new Schema(
     },
 
     digitization: {
-      scanStatus: { type: String, enum: SCAN_STATUSES, default: 'pending', index: true },
+      /** Admin-managed `scanStatus` list value — open vocabulary (assertActive on write). */
+      scanStatus: { type: String, default: 'pending', index: true },
       scannedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       scanDate: { type: Date, default: null },
       folderPath: { type: String, trim: true, default: null },
@@ -133,8 +136,10 @@ const archiveLotSchema = new Schema(
     mls: {
       recordId: { type: String, trim: true, default: null },
       taggedCount: { type: Number, default: 0, min: 0 },
+      /** Free-text tags applied per the Tagging Guidelines (brief §3.04). */
+      tagsApplied: { type: String, trim: true, default: null },
       duplicatesFound: { type: Number, default: 0, min: 0, index: true },
-      duplicateAction: { type: String, enum: ['retained', 'removed', 'merged', null], default: null },
+      duplicateAction: { type: String, default: null },
       duplicateApprovedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       dataListAttached: { type: Boolean, default: false },
       syncFailures: { type: Number, default: 0, min: 0 },
@@ -142,10 +147,10 @@ const archiveLotSchema = new Schema(
 
     return: {
       requested: { type: Boolean, required: true, default: false, index: true },
-      format: { type: String, enum: RETURN_FORMATS, default: 'none' },
+      format: { type: String, default: 'none' },
       durationText: { type: String, trim: true },
       dueAt: { type: Date, default: null, index: true },
-      status: { type: String, enum: RETURN_STATUSES, default: 'not_requested', index: true },
+      status: { type: String, default: 'not_requested', index: true },
       returnedAt: { type: Date, default: null },
       method: { type: String, trim: true },
       handledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
@@ -154,7 +159,7 @@ const archiveLotSchema = new Schema(
     },
 
     discard: {
-      reason: { type: String, enum: DISCARD_REASONS, default: null },
+      reason: { type: String, default: null },
       discardedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       discardedAt: { type: Date, default: null },
       notes: { type: String, trim: true },

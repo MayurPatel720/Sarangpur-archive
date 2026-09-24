@@ -25,6 +25,7 @@ export async function PATCH(
           expectedRevision: body.expectedRevision,
           ...(body.label !== undefined ? { label: body.label } : {}),
           ...(body.group !== undefined ? { group: body.group } : {}),
+          ...(body.metaSchema !== undefined ? { metaSchema: body.metaSchema } : {}),
           ...(body.items !== undefined
             ? { items: body.items.map((i) => ({ ...i, meta: i.meta ?? {} })) }
             : {}),

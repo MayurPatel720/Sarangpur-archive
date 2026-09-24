@@ -1,6 +1,50 @@
+import type { ClientSession } from 'mongoose';
 import { ReferenceList } from '@/models/ReferenceList';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
+
+/** `items.$.usageCount` bump so delete-in-use guards stay truthful. */
+export async function bumpUsage(
+  key: string,
+  value: string,
+  session?: ClientSession,
+): Promise<void> {
+  await connectToDatabase();
+  await ReferenceList.updateOne(
+    { key, 'items.value': value },
+    { $inc: { 'items.$.usageCount': 1 } },
+    { session },
+  );
+}
+
+/** Decrement `usageCount` when a lot moves off a previous value (min 0). */
+export async function unbumpUsage(
+  key: string,
+  value: string,
+  session?: ClientSession,
+): Promise<void> {
+  await connectToDatabase();
+  await ReferenceList.updateOne(
+    { key, 'items.value': value, 'items.$.usageCount': { $gt: 0 } },
+    { $inc: { 'items.$.usageCount': -1 } },
+    { session },
+  );
+}
+
+/**
+ * Transfer one usage from `from` to `to` when a lot field changes value.
+ * Same value is a no-op; a null/empty `from` only bumps `to`.
+ */
+export async function transferUsage(
+  key: string,
+  from: string | null | undefined,
+  to: string,
+  session?: ClientSession,
+): Promise<void> {
+  if (from === to) return;
+  if (from) await unbumpUsage(key, from, session);
+  await bumpUsage(key, to, session);
+}
 
 /**
  * Server-side access to Tier-2 vocabularies (the `referencelists` collection).

@@ -1,4 +1,5 @@
-import { IN_FLIGHT_STAGES, TERMINAL_STAGES } from '@/lib/domain';
+import type { StageGraph } from '@/server/reference/runtime';
+import { defaultStageGraph } from '@/server/reference/runtime';
 
 /**
  * Aggregation pipelines for the dashboard, as plain data.
@@ -6,6 +7,10 @@ import { IN_FLIGHT_STAGES, TERMINAL_STAGES } from '@/lib/domain';
  * They are deliberately kept free of any Mongoose import so that they can be executed
  * three ways: against MongoDB in the route handlers, against an in-memory query engine
  * in `scripts/verify-pipelines.ts`, and pasted straight into mongosh when debugging.
+ *
+ * Stage membership (in-flight vs terminal, which stage drives which SLA) comes from
+ * `DashboardWindow.stages` — injected by the query layer from the admin `stage` list,
+ * or `defaultStageGraph()` when the list is missing.
  *
  * MongoDB caveat worth stating plainly: because there are no foreign keys, a lot whose
  * `receiver` points at a deleted user still counts here. `src/server/integrity.ts`
@@ -20,10 +25,17 @@ export interface DashboardWindow {
   windowStart: Date;
   /** Start of the preceding window of equal length, for the delta. */
   previousWindowStart: Date;
-  /** Lots in `decision` that entered before this are past the SLA. */
+  /** Lots in a decision-SLA stage that entered before this are past the SLA. */
   decisionSlaCutoff: Date;
-  /** Lots in `scanning` that entered before this are past the SLA. */
+  /** Lots in a scan-SLA stage that entered before this are past the SLA. */
   scanSlaCutoff: Date;
+  /** Alert thresholds — from Settings when available, else env/fallback. */
+  decisionPendingDays: number;
+  scanStuckDays: number;
+  /** Stage graph injected from the admin vocabulary (or domain defaults). */
+  stages: StageGraph;
+  /** Open return statuses (meta.open) injected from the admin `returnStatus` list. */
+  returnOpen: string[];
 }
 
 /**
@@ -34,6 +46,12 @@ export interface DashboardWindow {
  * index can serve — see the index declarations in models/ArchiveLot.ts.
  */
 export function lotFacetPipeline(w: DashboardWindow): Pipeline {
+  const stages = w.stages ?? defaultStageGraph();
+  const decisionStages = stages.decision.length > 0 ? stages.decision : ['decision'];
+  const scanStages = stages.scan.length > 0 ? stages.scan : ['scanning'];
+  const mlsTagStages = stages.mlsTag.length > 0 ? stages.mlsTag : ['mls_tag'];
+  const returnOpen = w.returnOpen.length > 0 ? w.returnOpen : ['pending', 'in_progress'];
+
   return [
     {
       $facet: {
@@ -52,12 +70,12 @@ export function lotFacetPipeline(w: DashboardWindow): Pipeline {
         byStage: [{ $group: { _id: '$stage', n: { $sum: 1 } } }],
 
         decisionOverdue: [
-          { $match: { stage: 'decision', stageEnteredAt: { $lt: w.decisionSlaCutoff } } },
+          { $match: { stage: { $in: decisionStages }, stageEnteredAt: { $lt: w.decisionSlaCutoff } } },
           { $group: { _id: null, n: { $sum: 1 }, oldest: { $min: '$stageEnteredAt' } } },
         ],
 
         scanOverdue: [
-          { $match: { stage: 'scanning', stageEnteredAt: { $lt: w.scanSlaCutoff } } },
+          { $match: { stage: { $in: scanStages }, stageEnteredAt: { $lt: w.scanSlaCutoff } } },
           {
             $group: {
               _id: null,
@@ -75,7 +93,7 @@ export function lotFacetPipeline(w: DashboardWindow): Pipeline {
         ],
 
         scanProgress: [
-          { $match: { stage: 'scanning' } },
+          { $match: { stage: { $in: scanStages } } },
           {
             $group: {
               _id: null,
@@ -102,17 +120,17 @@ export function lotFacetPipeline(w: DashboardWindow): Pipeline {
           },
         ],
 
-        awaitingMlsTag: [{ $match: { stage: 'mls_tag' } }, { $count: 'n' }],
+        awaitingMlsTag: [{ $match: { stage: { $in: mlsTagStages } } }, { $count: 'n' }],
 
         returnsPending: [
-          { $match: { 'return.status': { $in: ['pending', 'in_progress'] } } },
+          { $match: { 'return.status': { $in: returnOpen } } },
           { $count: 'n' },
         ],
 
         returnsOverdue: [
           {
             $match: {
-              'return.status': { $in: ['pending', 'in_progress'] },
+              'return.status': { $in: returnOpen },
               'return.dueAt': { $lt: w.now },
             },
           },
@@ -149,6 +167,9 @@ export function lotFacetPipeline(w: DashboardWindow): Pipeline {
  * $topN (MongoDB 5.2+), which trims as it goes.
  */
 export function pipelineBoardPipeline(w: DashboardWindow): Pipeline {
+  const stages = w.stages ?? defaultStageGraph();
+  const inFlight = stages.inFlight.length > 0 ? stages.inFlight : ['intake'];
+  const terminal = stages.terminal.length > 0 ? stages.terminal : ['storage', 'returned', 'discarded'];
   return [
     {
       // In-flight stages count current occupancy; terminal stages count arrivals inside
@@ -156,8 +177,8 @@ export function pipelineBoardPipeline(w: DashboardWindow): Pipeline {
       // compound index.
       $match: {
         $or: [
-          { stage: { $in: IN_FLIGHT_STAGES } },
-          { stage: { $in: TERMINAL_STAGES }, stageEnteredAt: { $gte: w.windowStart } },
+          { stage: { $in: inFlight } },
+          { stage: { $in: terminal }, stageEnteredAt: { $gte: w.windowStart } },
         ],
       },
     },

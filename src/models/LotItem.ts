@@ -1,5 +1,4 @@
 import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose';
-import { NOT_DIGITIZED_REASONS } from '@/lib/domain';
 
 /**
  * One individual photograph, frame, tape or cassette inside a lot — the thing that
@@ -8,6 +7,9 @@ import { NOT_DIGITIZED_REASONS } from '@/lib/domain';
  * Kept in its own collection rather than embedded in the lot: a lot can hold several
  * thousand of these, the reconciler updates them individually, and archive-wide
  * questions ("how many items are still untagged") need an index across all lots.
+ *
+ * `notDigitizedReason` values come from the admin-managed `notDigitizedReason`
+ * reference list — deliberately not a Mongoose enum (open vocabulary).
  */
 const lotItemSchema = new Schema(
   {
@@ -20,7 +22,7 @@ const lotItemSchema = new Schema(
 
     /** False for items the volunteers excluded at intake. */
     selectedForDigitization: { type: Boolean, required: true, default: true, index: true },
-    notDigitizedReason: { type: String, enum: NOT_DIGITIZED_REASONS, default: null, index: true },
+    notDigitizedReason: { type: String, default: null, index: true },
 
     digitized: { type: Boolean, required: true, default: false, index: true },
     fileName: { type: String, trim: true, default: null },

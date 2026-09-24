@@ -1,15 +1,15 @@
 import { z } from 'zod';
-import {
-  SCAN_STATUSES,
-  RETURN_FORMATS,
-  RETURN_STATUSES,
-  DISCARD_REASONS,
-} from '@/lib/domain';
+
+/**
+ * Operation-write contracts (API.md §5). Vocabulary fields (`scanStatus`,
+ * `returnFormat`, `returnStatus`, `discardReason`, …) are plain strings validated
+ * against admin-managed reference lists on the write path (`assertActive*`).
+ */
 
 /** PATCH /api/lots/[lotId]/scan — volunteer+. Records who scanned, where the files live. */
 export const scanBodySchema = z
   .object({
-    scanStatus: z.enum(SCAN_STATUSES),
+    scanStatus: z.string().trim().min(1).max(40),
     scanDate: z.string().datetime({ offset: true }).optional(),
     folderPath: z.string().trim().min(1).max(500).optional(),
     /** Caller-supplied __v — stale writes get 409. */
@@ -56,15 +56,23 @@ export const mlsBodySchema = z
   .object({
     recordId: z.string().trim().min(1).max(120).optional(),
     taggedCount: z.number().int().min(0).optional(),
+    tagsApplied: z.string().trim().max(2000).nullable().optional(),
     dataListAttached: z.boolean().optional(),
     /** Advance mls_tag → storage when the tagging pass is finished. */
     markComplete: z.boolean().optional(),
     version: z.number().int().min(0),
   })
   .strict()
-  .refine((b) => b.recordId !== undefined || b.taggedCount !== undefined || b.dataListAttached !== undefined, {
-    message: 'Nothing to change: pass recordId, taggedCount, or dataListAttached.',
-  });
+  .refine(
+    (b) =>
+      b.recordId !== undefined ||
+      b.taggedCount !== undefined ||
+      b.tagsApplied !== undefined ||
+      b.dataListAttached !== undefined,
+    {
+      message: 'Nothing to change: pass recordId, taggedCount, tagsApplied, or dataListAttached.',
+    },
+  );
 export type MlsBody = z.infer<typeof mlsBodySchema>;
 
 export const mlsResponseSchema = z
@@ -82,7 +90,7 @@ export type MlsResponse = z.infer<typeof mlsResponseSchema>;
 /** PATCH /api/lots/[lotId]/mls/duplicate — lead_reviewer+. */
 export const duplicateBodySchema = z
   .object({
-    duplicateAction: z.enum(['retained', 'removed', 'merged']),
+    duplicateAction: z.string().trim().min(1).max(40),
     version: z.number().int().min(0),
   })
   .strict();
@@ -103,10 +111,10 @@ export type DuplicateResponse = z.infer<typeof duplicateResponseSchema>;
 export const returnBodySchema = z
   .object({
     requested: z.boolean().optional(),
-    format: z.enum(RETURN_FORMATS).optional(),
+    format: z.string().trim().min(1).max(40).optional(),
     durationText: z.string().trim().max(200).optional().nullable(),
     dueAt: z.string().datetime({ offset: true }).optional().nullable(),
-    status: z.enum(RETURN_STATUSES).optional(),
+    status: z.string().trim().min(1).max(40).optional(),
     method: z.string().trim().max(200).optional().nullable(),
     trackingReference: z.string().trim().max(120).optional().nullable(),
     notes: z.string().trim().max(2000).optional().nullable(),
@@ -142,7 +150,7 @@ export type ReturnResponse = z.infer<typeof returnResponseSchema>;
 export const discardBodySchema = z
   .object({
     confirm: z.literal(true),
-    reason: z.enum(DISCARD_REASONS),
+    reason: z.string().trim().min(1).max(40),
     notes: z.string().trim().max(2000).optional(),
     version: z.number().int().min(0),
   })

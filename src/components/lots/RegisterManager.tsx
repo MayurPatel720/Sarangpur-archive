@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotListResponse } from '@/types/lot';
-import { FORMATS, STAGE_LABELS, STAGES } from '@/lib/domain';
+import { STAGE_LABELS } from '@/lib/domain';
 import { date } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Badge, ErrorState, Panel, PanelHeader } from '@/components/ui/primitives';
@@ -15,6 +15,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
 import { useMe } from '@/hooks/useCan';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { LotRowActions } from './LotRowActions';
 import { EMPTY_FILTERS, RegisterFilters, type LotFilters } from './RegisterFilters';
 
@@ -38,7 +39,8 @@ const DECISION_SEVERITY: Record<string, Severity> = {
   discard: 'critical',
 };
 
-const COLUMNS: Column<LotRow>[] = [
+function columnsFor(stageLabels: (stage: string) => string): Column<LotRow>[] {
+  return [
   {
     key: 'ref',
     header: 'Lot',
@@ -82,7 +84,7 @@ const COLUMNS: Column<LotRow>[] = [
     header: 'Stage',
     render: (r) => (
       <Badge severity={STAGE_SEVERITY[r.stage] ?? 'neutral'}>
-        {STAGE_LABELS[r.stage as keyof typeof STAGE_LABELS] ?? r.stage}
+        {stageLabels(r.stage)}
       </Badge>
     ),
   },
@@ -100,7 +102,8 @@ const COLUMNS: Column<LotRow>[] = [
     header: 'Receiver',
     render: (r) => <span className="whitespace-nowrap">{r.receiverName}</span>,
   },
-];
+  ];
+}
 
 function toParams(filters: LotFilters, page: number, pageSize: number): Record<string, string> {
   const p: Record<string, string> = {
@@ -113,6 +116,8 @@ function toParams(filters: LotFilters, page: number, pageSize: number): Record<s
   if (filters.decision) p.decision = filters.decision;
   if (filters.format) p.format = filters.format;
   if (filters.dataType) p.dataType = filters.dataType;
+  if (filters.receiver.trim()) p.receiver = filters.receiver.trim();
+  if (filters.returnStatus) p.returnStatus = filters.returnStatus;
   const from = filters.receivedFrom.trim();
   const to = filters.receivedTo.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(from)) p.receivedFrom = new Date(`${from}T00:00:00`).toISOString();
@@ -129,16 +134,21 @@ export function RegisterManager({
 } = {}) {
   const router = useRouter();
   const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
-  const cleanStage =
-    initialStage && (STAGES as readonly string[]).includes(initialStage) ? initialStage : '';
-  const cleanFormat =
-    initialFormat && (FORMATS as readonly string[]).includes(initialFormat) ? initialFormat : '';
+  // Initial filters come from URL/dashboard links; strings pass through (server validates against lists).
+  const cleanStage = initialStage ?? '';
+  const cleanFormat = initialFormat ?? '';
   const [filters, setFilters] = useState<LotFilters>({
     ...EMPTY_FILTERS,
     stage: cleanStage,
     format: cleanFormat,
   });
   const me = useMe();
+  const stages = useReferenceList('stage');
+  const stageLabel = (stage: string) =>
+    stages.data?.items.find((i) => i.value === stage)?.label ??
+    STAGE_LABELS[stage as keyof typeof STAGE_LABELS] ??
+    stage;
+  const columns = columnsFor(stageLabel);
   const can = me.data ? me.data.grants.includes('lot:view') : false;
 
   const params = useMemo(() => toParams(filters, page, pageSize), [filters, page, pageSize]);
@@ -160,7 +170,7 @@ export function RegisterManager({
         <PanelHeader title="Lots" />
         <div className="p-3 md:p-4">
           <DataTable<LotRow>
-            columns={COLUMNS}
+            columns={columns}
             rows={[]}
             loading
             emptyMessage=""
@@ -218,7 +228,7 @@ export function RegisterManager({
             />
           ) : (
             <DataTable<LotRow>
-              columns={COLUMNS}
+columns={columns}
               rows={query.data?.rows ?? []}
               loading={query.isLoading}
               emptyMessage="No lots match these filters."

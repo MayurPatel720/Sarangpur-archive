@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import type { LotDetailResponse } from '@/types/lot';
-import { RETURN_FORMATS, RETURN_STATUSES } from '@/lib/domain';
-import { prettyEnum } from '@/lib/format';
+import { useReferenceList } from '@/hooks/useReferenceList';
+import { date, prettyEnum } from '@/lib/format';
 import { Field, FormError, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
@@ -17,10 +17,14 @@ const dash = <EmptyValue />;
 export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: () => void }) {
   const me = useMe();
   const canManage = me.data ? me.data.grants.includes('return:manage') : false;
+  const returnFormats = useReferenceList('returnFormat');
+  const returnStatuses = useReferenceList('returnStatus');
+  const returnMethods = useReferenceList('returnMethod');
   const [formError, setFormError] = useState<string | null>(null);
   const [requested, setRequested] = useState(false);
   const [format, setFormat] = useState('');
   const [status, setStatus] = useState('');
+  const [durationText, setDurationText] = useState('');
   const [method, setMethod] = useState('');
   const [trackingReference, setTrackingReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -29,9 +33,10 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
     mutationFn: () =>
       lotsApi.manageReturn(lot.id, {
         ...(requested ? { requested: true } : {}),
-        ...(format ? { format: format as (typeof RETURN_FORMATS)[number] } : {}),
-        ...(status ? { status: status as (typeof RETURN_STATUSES)[number] } : {}),
-        ...(method.trim() ? { method: method.trim() } : {}),
+        ...(format ? { format } : {}),
+        ...(status ? { status } : {}),
+        ...(durationText.trim() ? { durationText: durationText.trim() } : {}),
+        ...(method ? { method } : {}),
         ...(trackingReference.trim() ? { trackingReference: trackingReference.trim() } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
         version: lot.version,
@@ -41,6 +46,7 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
       setRequested(false);
       setFormat('');
       setStatus('');
+      setDurationText('');
       setMethod('');
       setTrackingReference('');
       setNotes('');
@@ -55,9 +61,15 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
       <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
           <Definition label="Status">{prettyEnum(lot.ops.returnStatus)}</Definition>
+          <Definition label="Requested">{lot.ops.returnRequested ? 'Yes' : 'No'}</Definition>
           <Definition label="Format">
             {lot.ops.returnFormat ? prettyEnum(lot.ops.returnFormat) : dash}
           </Definition>
+          <Definition label="Duration">{lot.ops.returnDuration ?? dash}</Definition>
+          <Definition label="Due">{lot.ops.returnDueAt ? date(lot.ops.returnDueAt) : dash}</Definition>
+          <Definition label="Returned">{lot.ops.returnedAt ? date(lot.ops.returnedAt) : dash}</Definition>
+          <Definition label="Handled by">{lot.ops.returnHandledByName ?? dash}</Definition>
+          <Definition label="Method">{lot.ops.returnMethod ?? dash}</Definition>
         </div>
 
         {canManage ? (
@@ -66,9 +78,9 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
               <Field label="Format">
                 <Select value={format} onChange={(e) => setFormat(e.target.value)}>
                   <option value="">No change</option>
-                  {RETURN_FORMATS.map((f) => (
-                    <option key={f} value={f}>
-                      {prettyEnum(f)}
+                  {(returnFormats.data?.items ?? []).map((f) => (
+                    <option key={f.value} value={f.value}>
+                      {f.label}
                     </option>
                   ))}
                 </Select>
@@ -76,15 +88,29 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
               <Field label="Status">
                 <Select value={status} onChange={(e) => setStatus(e.target.value)}>
                   <option value="">No change</option>
-                  {RETURN_STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {prettyEnum(s)}
+                  {(returnStatuses.data?.items ?? []).map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
                     </option>
                   ))}
                 </Select>
               </Field>
+              <Field label="Duration" hint="Agreed return duration text, e.g. Within 30 days.">
+                <TextInput
+                  value={durationText}
+                  onChange={(e) => setDurationText(e.target.value)}
+                  placeholder="e.g. Within 30 days"
+                />
+              </Field>
               <Field label="Method">
-                <TextInput value={method} onChange={(e) => setMethod(e.target.value)} placeholder="e.g. Hand delivery" />
+                <Select value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <option value="">No change</option>
+                  {(returnMethods.data?.items ?? []).map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </Select>
               </Field>
               <Field label="Tracking reference">
                 <TextInput value={trackingReference} onChange={(e) => setTrackingReference(e.target.value)} placeholder="Optional" />

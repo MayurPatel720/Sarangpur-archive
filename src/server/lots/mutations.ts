@@ -1,35 +1,23 @@
-import { Types, type ClientSession } from 'mongoose';
+import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
 import type { MutationContext } from '@/lib/api';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
-import { ReferenceList } from '@/models/ReferenceList';
 import { can } from '@/server/permissions';
 import { withAudit } from '@/server/audit';
-import { assertActiveReferenceValue, getReferenceList } from '@/server/reference';
+import { assertActiveReferenceValue, getReferenceList, bumpUsage, transferUsage } from '@/server/reference';
+import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
+import { assertActive } from '@/server/reference/runtime';
 import { computeVerdict, type Verdict } from '@/server/lots/decision-rule';
 import { generateItemCodes, generateLotReference, generateNamingCode, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
-import { isTerminalStage, mediaSubtypeListKey } from '@/server/lots/queries';
+import { isTerminalStage } from '@/server/lots/queries';
 import type { Stage } from '@/lib/domain';
 import type { LotCreateBody, LotPatchBody, DecisionBody, DecisionResponse, OverrideRequestBody, OverrideDecideBody } from '@/types/lot';
 
-/** `items.$.usageCount` bump so delete-in-use guards stay truthful. */
-async function bumpUsage(
-  key: string,
-  value: string,
-  session?: ClientSession,
-): Promise<void> {
-  await ReferenceList.updateOne(
-    { key, 'items.value': value },
-    { $inc: { 'items.$.usageCount': 1 } },
-    { session },
-  );
-}
-
 async function subtypeLabel(format: string, value: string): Promise<string> {
-  const key = mediaSubtypeListKey(format);
+  const key = await mediaSubtypeListKeyAsync(format);
   if (!key) return value;
   const items = await getReferenceList(key);
   return items.find((i) => i.value === value)?.label ?? value;
@@ -44,12 +32,20 @@ export async function createIntake(
   body: LotCreateBody,
   ctx: MutationContext,
 ): Promise<{ id: string; lotReference: string; itemsCreated: number }> {
-  const subtypeKey = mediaSubtypeListKey(body.format);
+  // Admin-managed vocabulary — reject retired/unknown values before the transaction.
+  await Promise.all([
+    assertActiveReferenceValue('originSource', body.originSource),
+    assertActiveReferenceValue('format', body.format),
+    assertActiveReferenceValue('dataType', body.dataType),
+    body.returnFormat ? assertActiveReferenceValue('returnFormat', body.returnFormat) : Promise.resolve(),
+    body.notDigitizedReason
+      ? assertActiveReferenceValue('notDigitizedReason', body.notDigitizedReason)
+      : Promise.resolve(),
+    body.rights?.type ? assertActiveReferenceValue('rightsType', body.rights.type) : Promise.resolve(),
+  ]);
+  const subtypeKey = await mediaSubtypeListKeyAsync(body.format);
   if (subtypeKey) {
     await assertActiveReferenceValue(subtypeKey, body.mediaSubtype);
-  }
-  if (body.rights?.type) {
-    await assertActiveReferenceValue('rightsType', body.rights.type);
   }
 
   await connectToDatabase();
@@ -81,10 +77,29 @@ export async function createIntake(
             conditionPhotoUrl: body.conditionPhotoUrl,
             reasonForSending: body.reasonForSending,
             senderRemarks: body.senderRemarks,
+            photoDate: body.photoDate ?? null,
+            photoLocation: body.photoLocation ?? null,
+            photoEvent: body.photoEvent ?? null,
+            peopleInPhoto: body.peopleInPhoto ?? null,
+            digitalFilePath: body.digitalFilePath ?? null,
+            physicalLabelApplied: body.physicalLabelApplied ?? false,
+            containerLabelApplied: body.containerLabelApplied ?? false,
             rights: {
               type: body.rights?.type ?? null,
               deedReference: body.rights?.deedReference ?? null,
               notes: body.rights?.notes ?? null,
+            },
+            return: {
+              requested: body.returnRequested ?? false,
+              format: body.returnFormat ?? 'none',
+              durationText: body.returnDuration ?? null,
+              dueAt: null,
+              status: body.returnRequested ? 'pending' : 'not_requested',
+              returnedAt: null,
+              method: null,
+              handledBy: null,
+              trackingReference: null,
+              notes: null,
             },
             stage: 'intake',
             stageEnteredAt: new Date(),
@@ -110,8 +125,16 @@ export async function createIntake(
         await LotItem.insertMany(docs.slice(i, i + 2000), { session });
       }
 
+      // usageCount for open-list values the lot will never change again.
       if (subtypeKey) await bumpUsage(subtypeKey, body.mediaSubtype, session);
       if (body.rights?.type) await bumpUsage('rightsType', body.rights.type, session);
+      await bumpUsage('originSource', body.originSource, session);
+      await bumpUsage('format', body.format, session);
+      await bumpUsage('dataType', body.dataType, session);
+      if (body.returnFormat) await bumpUsage('returnFormat', body.returnFormat, session);
+      if (body.notDigitizedReason) {
+        await bumpUsage('notDigitizedReason', body.notDigitizedReason, session);
+      }
 
       const label = await subtypeLabel(body.format, body.mediaSubtype);
       await ActivityLog.create(
@@ -146,11 +169,24 @@ export async function patchLot(
   body: LotPatchBody,
   ctx: MutationContext,
 ): Promise<{ id: string; lotReference: string; version: number }> {
+  if (body.originSource) {
+    await assertActiveReferenceValue('originSource', body.originSource);
+  }
+  if (body.format) {
+    await assertActiveReferenceValue('format', body.format);
+  }
+  if (body.dataType) {
+    await assertActiveReferenceValue('dataType', body.dataType);
+  }
+  if (body.notDigitizedReason) {
+    await assertActiveReferenceValue('notDigitizedReason', body.notDigitizedReason);
+  }
   if (body.mediaSubtype) {
-    // Format itself is immutable — validate against the lot's current format.
+    // Format may change in the same PATCH — validate against the NEW format.
     const current = await ArchiveLot.findById(lotId).select('format').lean();
     if (!current) throw new HttpError(404, 'Lot not found.');
-    const key = mediaSubtypeListKey(current.format);
+    const formatForValidation = body.format ?? current.format;
+    const key = await mediaSubtypeListKeyAsync(formatForValidation);
     if (key) await assertActiveReferenceValue(key, body.mediaSubtype);
   }
   if (body.rights?.type) {
@@ -173,7 +209,23 @@ export async function patchLot(
         throw new HttpError(400, 'Quantity to digitize cannot exceed quantity.');
       }
 
+      const prevFormat = lot.format;
+      const prevSubtype = lot.mediaSubtype;
+      const prevOrigin = lot.originSource;
+      const prevDataType = lot.dataType;
+      const prevRightsType = lot.rights?.type ?? null;
+
       if (body.originSource !== undefined) lot.originSource = body.originSource;
+      if (body.format !== undefined) lot.format = body.format;
+      if (body.dataType !== undefined) lot.dataType = body.dataType;
+      if (body.notDigitizedReason !== undefined) {
+        // Items that remain unselected inherit the new reason.
+        await LotItem.updateMany(
+          { lot: lot._id, selectedForDigitization: false },
+          { $set: { notDigitizedReason: body.notDigitizedReason ?? null } },
+          { session: lot.$session() ?? undefined },
+        );
+      }
       if (body.owner !== undefined) lot.owner = body.owner as typeof lot.owner;
       if (body.pointsOfContact !== undefined) lot.pointsOfContact = body.pointsOfContact as typeof lot.pointsOfContact;
       if (body.facilitator !== undefined) lot.facilitator = (body.facilitator ?? null) as typeof lot.facilitator;
@@ -187,12 +239,19 @@ export async function patchLot(
         'conditionNotes',
         'reasonForSending',
         'senderRemarks',
+        'photoDate',
+        'photoLocation',
+        'photoEvent',
+        'peopleInPhoto',
+        'digitalFilePath',
       ];
       for (const field of clearable) {
         if (body[field] !== undefined) {
           (lot as unknown as Record<string, unknown>)[field] = body[field] ?? null;
         }
       }
+      if (body.physicalLabelApplied !== undefined) lot.physicalLabelApplied = body.physicalLabelApplied;
+      if (body.containerLabelApplied !== undefined) lot.containerLabelApplied = body.containerLabelApplied;
       if (body.conditionPhotoUrl !== undefined) lot.conditionPhotoUrl = body.conditionPhotoUrl;
       if (body.rights !== undefined) {
         if (body.rights === null) {
@@ -206,9 +265,25 @@ export async function patchLot(
         }
       }
 
+      const session = lot.$session() ?? undefined;
       if (body.mediaSubtype !== undefined) {
-        const key = mediaSubtypeListKey(lot.format);
-        if (key) await bumpUsage(key, body.mediaSubtype, lot.$session() ?? undefined);
+        const key = await mediaSubtypeListKeyAsync(prevFormat);
+        if (key) await transferUsage(key, prevSubtype, body.mediaSubtype, session);
+        const newKey = await mediaSubtypeListKeyAsync(lot.format);
+        if (newKey && newKey !== key) await bumpUsage(newKey, body.mediaSubtype, session);
+      }
+      if (body.originSource !== undefined) {
+        await transferUsage('originSource', prevOrigin, body.originSource, session);
+      }
+      if (body.format !== undefined) await transferUsage('format', prevFormat, body.format, session);
+      if (body.dataType !== undefined) {
+        await transferUsage('dataType', prevDataType, body.dataType, session);
+      }
+      if (body.notDigitizedReason) {
+        await bumpUsage('notDigitizedReason', body.notDigitizedReason, session);
+      }
+      if (body.rights?.type) {
+        await transferUsage('rightsType', prevRightsType, body.rights.type, session);
       }
 
       return { id: String(lot._id), lotReference: lot.lotReference };
@@ -252,7 +327,7 @@ export async function submitForDecision(
  * free text per SPEC Q2, so there is no item to read).
  */
 async function namingPrefix(format: string, mediaSubtype: string): Promise<string> {
-  const key = mediaSubtypeListKey(format);
+  const key = await mediaSubtypeListKeyAsync(format);
   if (key) {
     const list = await getReferenceList(key);
     const prefix = list.find((i) => i.value === mediaSubtype)?.meta?.codePrefix;
@@ -276,6 +351,9 @@ export async function recordDecision(
   body: DecisionBody,
   ctx: MutationContext,
 ): Promise<DecisionResponse> {
+  if (body.discardReason) {
+    await assertActive('discardReason', body.discardReason);
+  }
   const verdict = computeVerdict({
     existsInMls: body.existsInMls,
     newCopyIsBetter: body.newCopyIsBetter,
@@ -372,8 +450,27 @@ export async function recordDecision(
       lot.decision.existsInMls = body.existsInMls;
       lot.decision.mlsMatchPaths = body.mlsMatchPaths ?? [];
       lot.decision.conditionUsable = body.conditionUsable;
+      lot.decision.newCopyIsBetter =
+        body.newCopyIsBetter === undefined ? null : body.newCopyIsBetter;
+      lot.decision.conditionIssue = body.conditionIssue ?? null;
       lot.set('decision.significanceFlags', [...body.significanceFlags]);
       lot.set('decision.significanceNotes', body.notes ?? null);
+      // Brief side-effects: a return disposition opens the return tracker; a
+      // discard disposition records the reason the checklist chose.
+      if (status === 'return') {
+        lot.set('return.requested', true);
+        if (lot.return?.status === 'not_requested' || !lot.return?.status) {
+          lot.set('return.status', 'pending');
+        }
+      }
+      if (status === 'discard') {
+        const reason = body.discardReason ?? 'other';
+        lot.set('discard.reason', reason);
+        lot.set('discard.notes', body.discardNotes ?? null);
+        lot.set('discard.discardedBy', new Types.ObjectId(ctx.userId));
+        lot.set('discard.discardedAt', new Date());
+        await bumpUsage('discardReason', reason, session);
+      }
       lot.stage = stage;
 
       return {
