@@ -49,11 +49,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
       async authorize(raw) {
         const parsed = credentialsSchema.safeParse(raw);
-        if (!parsed.success) return null;
-        const { verifyCredentials } = await import('@/server/auth-verify');
-        const user = await verifyCredentials(parsed.data.identifier, parsed.data.password);
-        if (!user) return null;
-        return { id: user.id, name: user.name, roleKey: user.roleKey };
+        if (!parsed.success) {
+          console.warn('[auth] credentials payload failed schema', parsed.error.flatten());
+          return null;
+        }
+        try {
+          const { verifyCredentials } = await import('@/server/auth-verify');
+          const user = await verifyCredentials(parsed.data.identifier, parsed.data.password);
+          if (!user) {
+            // Deliberately does not log the password — only the identifier shape.
+            const id = parsed.data.identifier;
+            console.warn(
+              `[auth] CredentialsSignin for identifier="${id.includes('@') ? 'email' : 'username'}" (unknown, inactive, or bad password)`,
+            );
+            return null;
+          }
+          return { id: user.id, name: user.name, roleKey: user.roleKey };
+        } catch (err) {
+          // Surface real failures (Mongo down, missing env) instead of a bare CredentialsSignin.
+          console.error('[auth] authorize threw:', err);
+          throw err;
+        }
       },
     }),
   ],

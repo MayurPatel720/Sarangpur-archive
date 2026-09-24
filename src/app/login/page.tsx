@@ -45,6 +45,24 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Auth.js can bounce back with ?error=… (CSRF, provider, CredentialsSignin).
+  useEffect(() => {
+    const code = searchParams.get('error');
+    if (!code) return;
+    if (code === 'CredentialsSignin') {
+      setError('Wrong username/email or password.');
+    } else if (code === 'AccessDenied') {
+      setError('Your account is inactive. Ask an admin to reactivate it.');
+    } else {
+      setError('Sign-in failed. Try again.');
+    }
+    // Clear the query param so a refresh does not re-show a stale error.
+    const url = new URL(window.location.href);
+    url.searchParams.delete('error');
+    url.searchParams.delete('code');
+    window.history.replaceState({}, '', url);
+  }, [searchParams]);
+
   // Prefill a remembered login (username or email) from this browser.
   useEffect(() => {
     try {
@@ -69,7 +87,12 @@ function LoginForm() {
         redirect: false,
       });
       if (!result || result.error) {
-        setError('Wrong username/email or password.');
+        const code = result?.error ?? 'CredentialsSignin';
+        if (code === 'AccessDenied') {
+          setError('Your account is inactive. Ask an admin to reactivate it.');
+        } else {
+          setError('Wrong username/email or password.');
+        }
         return;
       }
       try {

@@ -13,7 +13,8 @@ import { getToken } from 'next-auth/jwt';
  * - Fine-grained permission gates live in `handleMutation`, not here.
  */
 
-const PUBLIC = [/^\/login$/, /^\/api\/auth\//];
+// Health is unauthenticated so uptime checks and the login screen can poll it.
+const PUBLIC = [/^\/login$/, /^\/api\/auth\//, /^\/api\/health$/];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
