@@ -1,7 +1,10 @@
 'use client';
 
 import { useReferenceList } from '@/hooks/useReferenceList';
+import { useUserPicker } from '@/hooks/useUserPicker';
 import { Field, GhostButton, Select, TextInput } from '@/components/ui/Form';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { Skeleton } from '@/components/ui/primitives';
 
 export interface LotFilters {
   q: string;
@@ -42,6 +45,7 @@ export function RegisterFilters({
   const formats = useReferenceList('format');
   const dataTypes = useReferenceList('dataType');
   const returnStatuses = useReferenceList('returnStatus');
+  const receivers = useUserPicker();
   const isActive =
     filters.q !== '' ||
     filters.stage !== '' ||
@@ -61,7 +65,8 @@ export function RegisterFilters({
             <TextInput
               value={filters.q}
               onChange={(e) => set('q')(e.target.value)}
-              placeholder="Owner, lot ref or naming code…"
+              placeholder="Owner, phone, lot ref, place, remarks…"
+              aria-label="Search lots"
             />
           </Field>
         </div>
@@ -105,12 +110,34 @@ export function RegisterFilters({
             ))}
           </Select>
         </Field>
-        <Field label="Receiver" hint="User id from /api/users (admin).">
-          <TextInput
-            value={filters.receiver}
-            onChange={(e) => set('receiver')(e.target.value)}
-            placeholder="e.g. 64f…"
-          />
+        <Field label="Receiver">
+          {receivers.isLoading ? (
+            <Skeleton className="h-10 w-full" />
+          ) : receivers.isError || !receivers.data || receivers.data.users.length === 0 ? (
+            <TextInput
+              value={filters.receiver}
+              onChange={(e) => set('receiver')(e.target.value)}
+              placeholder="User id"
+              aria-label="Receiver user id"
+            />
+          ) : (
+            <Select
+              value={filters.receiver}
+              onChange={(e) => set('receiver')(e.target.value)}
+              aria-label="Receiver"
+            >
+              <option value="">All receivers</option>
+              {receivers.data.users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+              {filters.receiver &&
+              !receivers.data.users.some((u) => u.id === filters.receiver) ? (
+                <option value={filters.receiver}>{filters.receiver}</option>
+              ) : null}
+            </Select>
+          )}
         </Field>
         <Field label="Return status">
           <Select value={filters.returnStatus} onChange={(e) => set('returnStatus')(e.target.value)}>
@@ -123,18 +150,16 @@ export function RegisterFilters({
           </Select>
         </Field>
         <Field label="Received from">
-          <TextInput
-            type="date"
+          <DatePicker
             value={filters.receivedFrom}
-            onChange={(e) => set('receivedFrom')(e.target.value)}
+            onChange={set('receivedFrom')}
             aria-label="Received from date"
           />
         </Field>
         <Field label="Received to">
-          <TextInput
-            type="date"
+          <DatePicker
             value={filters.receivedTo}
-            onChange={(e) => set('receivedTo')(e.target.value)}
+            onChange={set('receivedTo')}
             aria-label="Received to date"
           />
         </Field>

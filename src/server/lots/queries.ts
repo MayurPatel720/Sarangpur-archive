@@ -32,8 +32,7 @@ function prettify(value: string): string {
     .join(' ');
 }
 
-function returnSeverity(lot: ArchiveLotDoc): 'neutral' | 'info' | 'good' | 'warning' | 'critical' {
-  const status = lot.return?.status ?? 'not_requested';
+function returnSeverity(lot: ArchiveLotDoc): 'neutral' | 'info' | 'good' | 'warning' | 'critical' {  const status = lot.return?.status ?? 'not_requested';
   if (status === 'returned') return 'good';
   if ((status === 'pending' || status === 'in_progress') && lot.return?.dueAt) {
     if (new Date(lot.return.dueAt).getTime() < Date.now()) return 'warning';
@@ -41,6 +40,21 @@ function returnSeverity(lot: ArchiveLotDoc): 'neutral' | 'info' | 'good' | 'warn
   }
   return 'neutral';
 }
+
+/**
+ * Audit kinds that move a lot *into* each stage, latest-wins. Terminal stages
+ * list every kind that can cause the entry (direct-from-decision or later flow).
+ */
+const STAGE_ENTRY_KINDS: Record<string, string[]> = {
+  intake: ['intake_created'],
+  decision: ['submitted_for_decision'],
+  metadata: ['decision_recorded'],
+  scanning: ['scan_started'],
+  mls_tag: ['scan_completed'],
+  storage: ['mls_tagged'],
+  returned: ['return_completed', 'return_recorded', 'decision_recorded'],
+  discarded: ['discard_confirmed', 'decision_recorded'],
+};
 
 const SORT_MAP: Record<string, Record<string, 1 | -1>> = {
   dateReceived: { dateReceived: 1 },
@@ -59,21 +73,144 @@ export function escapeRegex(value: string): string {
 }
 
 /**
- * Text-match clauses for register + global search. Case-insensitive contains.
- * Prefer an anchored uppercase prefix on `LotItem.code` separately when the query
- * looks like an item code — that can use the unique index.
+ * Every text-searchable path on `ArchiveLot`. Contacts include phone/email/address
+ * (not just names); intake notes, photo meta, storage paths, rights, decision,
+ * MLS, return and discard notes are all searchable from the register search box.
+ * Numbers, dates, enums and ObjectIds are deliberately excluded — those have
+ * dedicated filters/sort and regex-matching them causes false hits.
  */
-export function lotTextOr(q: string): Record<string, unknown>[] {
-  const rx = new RegExp(escapeRegex(q), 'i');
-  return [
-    { 'owner.name': rx },
-    { lotReference: rx },
-    { namingCode: rx },
-    { 'pointsOfContact.name': rx },
-    { 'facilitator.name': rx },
-    { 'digitization.folderPath': rx },
-    { 'rights.deedReference': rx },
-  ];
+export const LOT_TEXT_FIELDS: string[] = [
+  'lotReference',
+  'namingCode',
+  'originSource',
+  'owner.name',
+  'owner.phone',
+  'owner.email',
+  'owner.address',
+  'pointsOfContact.name',
+  'pointsOfContact.phone',
+  'pointsOfContact.email',
+  'pointsOfContact.address',
+  'facilitator.name',
+  'facilitator.phone',
+  'facilitator.email',
+  'facilitator.address',
+  'format',
+  'dataType',
+  'mediaSubtype',
+  'quantityRemarks',
+  'conditionNotes',
+  'reasonForSending',
+  'senderRemarks',
+  'photoDate',
+  'photoLocation',
+  'photoEvent',
+  'peopleInPhoto',
+  'digitization.folderPath',
+  'digitalFilePath',
+  'rights.type',
+  'rights.deedReference',
+  'rights.notes',
+  'decision.conditionIssue',
+  'decision.significanceNotes',
+  'decision.mlsMatchPaths',
+  'mls.recordId',
+  'mls.tagsApplied',
+  'return.method',
+  'return.trackingReference',
+  'return.notes',
+  'return.durationText',
+  'discard.reason',
+  'discard.notes',
+];
+
+/** Split free text into match tokens: drop 1-char noise, cap at 6 (regex-DoS guard). */
+export function tokenizeQuery(q: string): string[] {
+  return q
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2)
+    .slice(0, 6);
+}
+
+/**
+ * Text-match clauses for ONE token: case-insensitive contains over every
+ * field in `LOT_TEXT_FIELDS`.
+ */
+export function lotTextOr(token: string): Record<string, unknown>[] {
+  const rx = new RegExp(escapeRegex(token), 'i');
+  return LOT_TEXT_FIELDS.map((path) => ({ [path]: rx }));
+}
+
+/** One `{ $or }` clause per token — a lot matches when EVERY token hits ANY field. */
+export function buildTokenClauses(q: string): Record<string, unknown>[] {
+  return tokenizeQuery(q).map((tok) => ({ $or: lotTextOr(tok) }));
+}
+
+/**
+ * Merge per-token text clauses with id-based alternatives (receiver `_id`,
+ * item-hit lot `_id`s). Single-token queries flatten into one `$or` so the
+ * selective indexes stay usable; multi-token queries OR the whole text-AND
+ * against each id alternative.
+ */
+export function mergeTextWithIdClauses(
+  tokenClauses: Record<string, unknown>[],
+  idClauses: Record<string, unknown>[],
+): Record<string, unknown> | null {
+  if (tokenClauses.length === 0 && idClauses.length === 0) return null;
+  if (tokenClauses.length === 0) {
+    return idClauses.length === 1 ? idClauses[0]! : { $or: idClauses };
+  }
+  if (idClauses.length === 0) {
+    return tokenClauses.length === 1 ? tokenClauses[0]! : { $and: tokenClauses };
+  }
+  if (tokenClauses.length === 1) {
+    return { $or: [...(tokenClauses[0]!.$or as Record<string, unknown>[]), ...idClauses] };
+  }
+  return { $or: [{ $and: tokenClauses }, ...idClauses] };
+}
+
+/** Receiver `_id`s whose name matches ANY token (bounded; no `$lookup` on read paths). */
+export async function findReceiverIdsForQuery(q: string, limit = 20): Promise<Types.ObjectId[]> {
+  const tokens = tokenizeQuery(q);
+  if (tokens.length === 0) return [];
+  const or = tokens.map((tok) => ({ name: new RegExp(escapeRegex(tok), 'i') }));
+  const users = await User.find({ $or: or }).select('_id').limit(limit).lean();
+  return users.map((u) => u._id as Types.ObjectId);
+}
+
+function valueAtPath(doc: unknown, path: string): unknown {
+  let cur: unknown = doc;
+  for (const part of path.split('.')) {
+    if (cur == null) return undefined;
+    if (Array.isArray(cur)) {
+      const rest = path.slice(path.indexOf(part));
+      return cur.flatMap((el) => {
+        const v = valueAtPath(el, rest);
+        return Array.isArray(v) ? v : [v];
+      });
+    }
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return cur;
+}
+
+/**
+ * Client of `matchedVia`: true when EVERY token hits ANY text field on the lot
+ * doc (mirrors `buildTokenClauses` without a database). Arrays (POCs,
+ * `mlsMatchPaths`) count when any element matches.
+ */
+export function lotSideMatches(doc: unknown, q: string): boolean {
+  const tokens = tokenizeQuery(q);
+  if (tokens.length === 0) return true;
+  return tokens.every((tok) => {
+    const rx = new RegExp(escapeRegex(tok), 'i');
+    return LOT_TEXT_FIELDS.some((path) => {
+      const v = valueAtPath(doc, path);
+      const values = Array.isArray(v) ? v.flat(Infinity) : [v];
+      return values.some((el) => typeof el === 'string' && rx.test(el));
+    });
+  });
 }
 
 export type LotFilterInput = {
@@ -90,15 +227,25 @@ export type LotFilterInput = {
 
 /**
  * Shared find() filter for register, queues and global search.
- * Pass `textOr` to replace the default `q` clauses (search merges item lot-ids).
+ * `q` becomes an AND of per-token `$or` clauses (every word must appear in
+ * some text field). Pass `textOr` to replace the default `q` clauses (search
+ * merges item lot-ids) — legacy path, kept for compatibility.
  */
 export function buildLotFilter(
   query: LotFilterInput,
   textOr?: Record<string, unknown>[],
 ): Record<string, unknown> {
   const filter: Record<string, unknown> = {};
-  const or = textOr ?? (query.q ? lotTextOr(query.q) : null);
-  if (or && or.length > 0) filter.$or = or;
+  if (textOr) {
+    if (textOr.length > 0) filter.$or = textOr;
+  } else if (query.q) {
+    const tokenClauses = buildTokenClauses(query.q);
+    if (tokenClauses.length === 1) {
+      filter.$or = tokenClauses[0]!.$or as Record<string, unknown>[];
+    } else if (tokenClauses.length > 1) {
+      filter.$and = tokenClauses;
+    }
+  }
   if (query.stage) filter.stage = query.stage;
   if (query.decision) filter['decision.status'] = query.decision;
   if (query.format) filter.format = query.format;
@@ -124,7 +271,19 @@ export function buildLotFilter(
 export async function listLots(query: LotListQuery): Promise<LotListResponse> {
   await connectToDatabase();
 
-  const filter = buildLotFilter(query);
+  // Chips first; text (with receiver-name alternative) merges on top so the
+  // receiver's name is searchable even though only the ObjectId is stored.
+  const { q, ...chipQuery } = query;
+  const filter = buildLotFilter(chipQuery);
+  if (q) {
+    const tokenClauses = buildTokenClauses(q);
+    const receiverIds = await findReceiverIdsForQuery(q);
+    const textFilter = mergeTextWithIdClauses(
+      tokenClauses,
+      receiverIds.length > 0 ? [{ receiver: { $in: receiverIds } }] : [],
+    );
+    if (textFilter) Object.assign(filter, textFilter);
+  }
 
   const skip = (query.page - 1) * query.pageSize;
   const [docs, total] = await Promise.all([
@@ -182,7 +341,14 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
     doc.return?.handledBy,
     doc.discard?.discardedBy,
   ].filter((id): id is Types.ObjectId => id != null);
-  const [mediaSubtypeLabel, rightsTypeLabel, users, counts, attachmentCount] =
+  /**
+   * Who moved the lot into its current stage. Every stage transition writes an
+   * audit entry through withAudit(); the latest entry of the kind that caused
+   * the entry carries the actor. `actorName` is denormalised on the entry, so
+   * this is one indexed range read — no $lookup.
+   */
+  const entryKinds: string[] = STAGE_ENTRY_KINDS[doc.stage] ?? [];
+  const [mediaSubtypeLabel, rightsTypeLabel, users, counts, attachmentCount, stageTrail] =
     await Promise.all([
       subtypeKey ? resolveReferenceLabel(subtypeKey, doc.mediaSubtype) : doc.mediaSubtype,
       doc.rights?.type ? resolveReferenceLabel('rightsType', doc.rights.type) : null,
@@ -202,7 +368,13 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
         },
       ]),
       Attachment.countDocuments({ lot: doc._id }),
+      ActivityLog.find({ lot: doc._id, kind: { $in: entryKinds } })
+        .select('kind actorName at')
+        .sort({ at: -1 })
+        .limit(5)
+        .lean(),
     ]);
+  const stageEnteredByName = stageTrail[0]?.actorName ?? null;
 
   const c = counts[0] ?? { total: 0, selected: 0, digitized: 0, tagged: 0, duplicates: 0 };
   const nameById = new Map(users.map((u) => [String(u._id), u.name as string]));
@@ -256,6 +428,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       },
       stage: doc.stage,
       stageEnteredAt: doc.stageEnteredAt.toISOString(),
+      stageEnteredByName,
       decision: doc.decision?.status ?? 'pending',
       decisionDetail: {
         status: doc.decision?.status ?? 'pending',

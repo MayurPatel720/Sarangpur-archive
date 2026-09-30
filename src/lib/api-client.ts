@@ -36,8 +36,10 @@ import {
   type SettingsResponse,
   type UserCreateBody,
   type UserPatchBody,
+  type UserPickerResponse,
   type UserResponse,
   type UsersResponse,
+  userPickerResponseSchema,
 } from '@/types/admin';
 import {
   decisionResponseSchema,
@@ -212,6 +214,8 @@ export const referenceApi = {
 
 export const usersApi = {
   me: () => getJson<MeResponse>('/api/users/me', meResponseSchema),
+  picker: () =>
+    getJson<UserPickerResponse>('/api/users/picker', userPickerResponseSchema),
 };
 
 export const lotsApi = {

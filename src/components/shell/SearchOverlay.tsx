@@ -249,7 +249,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
             type="text"
             value={rawQ}
             onChange={(e) => setRawQ(e.target.value)}
-            placeholder="Search lots, item codes, owners, paths…"
+            placeholder="Search owner, phone, lot ref, place, remarks, item code…"
             className="search-overlay-input flex-1 h-full bg-transparent border-0 text-[15px] text-ink placeholder:text-ink-4 outline-none focus:outline-none focus-visible:outline-none"
             autoComplete="off"
             spellCheck={false}
@@ -314,7 +314,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
         >
           {showHint ? (
             <div className="px-4 py-8 text-[12.5px] text-ink-4 text-center">
-              Type a lot ref, owner, or item code — or pick filters above.
+              Type a name, phone, lot ref, place, remark, or item code — or pick filters above.
             </div>
           ) : results.isPending && enabled ? (
             <div className="p-3 flex flex-col gap-2">

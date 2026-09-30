@@ -186,6 +186,18 @@ export type UsersResponse = z.infer<typeof usersResponseSchema>;
 export const userResponseSchema = z.object({ user: adminUserSchema });
 export type UserResponse = z.infer<typeof userResponseSchema>;
 
+/** Lightweight names for dropdowns (register Receiver filter). Session-only — not admin management. */
+export const userPickerItemSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+export type UserPickerItem = z.infer<typeof userPickerItemSchema>;
+
+export const userPickerResponseSchema = z.object({
+  users: z.array(userPickerItemSchema),
+});
+export type UserPickerResponse = z.infer<typeof userPickerResponseSchema>;
+
 export const userCreateBodySchema = z.object({
   name: z.string().trim().min(1).max(80),
   username: z.string().trim().min(1).max(40),

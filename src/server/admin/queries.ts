@@ -81,6 +81,16 @@ export async function listUsers(): Promise<AdminUser[]> {
   return docs.map(serializeUser);
 }
 
+/** Active users for dropdowns (no email/username). Session-only, not `user:manage`. */
+export async function listUserPicker(): Promise<{ id: string; name: string }[]> {
+  await connectToDatabase();
+  const docs = await User.find({ active: true })
+    .sort({ name: 1 })
+    .select('name')
+    .lean();
+  return docs.map((d) => ({ id: String(d._id), name: d.name }));
+}
+
 export function serializeList(doc: {
   key: string;
   label: string;

@@ -28,6 +28,7 @@ export const queryKeys = {
   session: {
     all: ['session'] as const,
     me: () => [...queryKeys.session.all, 'me'] as const,
+    usersPicker: () => [...queryKeys.session.all, 'users', 'picker'] as const,
   },
   lots: {
     all: ['lots'] as const,

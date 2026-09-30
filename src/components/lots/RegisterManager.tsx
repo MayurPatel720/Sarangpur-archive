@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
@@ -8,7 +8,7 @@ import { lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotListResponse } from '@/types/lot';
 import { STAGE_LABELS } from '@/lib/domain';
-import { date } from '@/lib/format';
+import { date, dmyToIso } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Badge, ErrorState, Panel, PanelHeader } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -120,8 +120,11 @@ function toParams(filters: LotFilters, page: number, pageSize: number): Record<s
   if (filters.returnStatus) p.returnStatus = filters.returnStatus;
   const from = filters.receivedFrom.trim();
   const to = filters.receivedTo.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(from)) p.receivedFrom = new Date(`${from}T00:00:00`).toISOString();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) p.receivedTo = new Date(`${to}T23:59:59`).toISOString();
+  // DatePicker emits ISO YYYY-MM-DD; also accept dd/mm/yyyy if ever seeded as text.
+  const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : dmyToIso(from);
+  const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : dmyToIso(to);
+  if (fromIso) p.receivedFrom = new Date(`${fromIso}T00:00:00`).toISOString();
+  if (toIso) p.receivedTo = new Date(`${toIso}T23:59:59`).toISOString();
   return p;
 }
 
@@ -151,7 +154,18 @@ export function RegisterManager({
   const columns = columnsFor(stageLabel);
   const can = me.data ? me.data.grants.includes('lot:view') : false;
 
-  const params = useMemo(() => toParams(filters, page, pageSize), [filters, page, pageSize]);
+  // Debounce free text so every keystroke doesn't fire a request; dropdowns
+  // and dates still apply instantly.
+  const [debouncedQ, setDebouncedQ] = useState(filters.q);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQ(filters.q), 300);
+    return () => window.clearTimeout(t);
+  }, [filters.q]);
+
+  const params = useMemo(
+    () => toParams({ ...filters, q: debouncedQ }, page, pageSize),
+    [filters, debouncedQ, page, pageSize],
+  );
   const key = useMemo(() => JSON.stringify(params), [params]);
   const query = useQuery({
     queryKey: queryKeys.lots.list(key),

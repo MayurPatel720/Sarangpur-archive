@@ -196,6 +196,7 @@ const lotDetailSchema = z.object({
   }),
   stage: z.string(),
   stageEnteredAt: z.string(),
+  stageEnteredByName: z.string().nullable(),
   decision: z.string(),
   decisionDetail: z.object({
     status: z.string(),

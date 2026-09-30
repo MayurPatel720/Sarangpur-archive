@@ -3,7 +3,15 @@ import { connectToDatabase } from '@/lib/mongo';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { User } from '@/models/User';
-import { buildLotFilter, escapeRegex, lotTextOr } from '@/server/lots/queries';
+import {
+  buildLotFilter,
+  buildTokenClauses,
+  escapeRegex,
+  findReceiverIdsForQuery,
+  lotSideMatches,
+  mergeTextWithIdClauses,
+  tokenizeQuery,
+} from '@/server/lots/queries';
 import type { SearchQuery, SearchResponse } from '@/types/search';
 
 const ITEM_SCAN_LIMIT = 500;
@@ -70,13 +78,13 @@ function mapRow(
 }
 
 /** Prefer anchored uppercase prefix on item codes so the unique index can help. */
-function itemTextOr(q: string): Record<string, unknown>[] {
-  const upper = q.toUpperCase();
+function itemTextOr(token: string): Record<string, unknown>[] {
+  const upper = token.toUpperCase();
   const clauses: Record<string, unknown>[] = [];
-  if (/^[A-Z0-9][A-Z0-9-]*$/.test(upper) && q.length >= 2) {
+  if (/^[A-Z0-9][A-Z0-9-]*$/.test(upper) && token.length >= 2) {
     clauses.push({ code: { $regex: `^${escapeRegex(upper)}` } });
   }
-  const rx = new RegExp(escapeRegex(q), 'i');
+  const rx = new RegExp(escapeRegex(token), 'i');
   clauses.push({ code: rx }, { fileName: rx });
   return clauses;
 }
@@ -98,10 +106,16 @@ export async function searchLots(query: SearchQuery): Promise<SearchResponse> {
   const matchedByLot = new Map<string, MatchedItem[]>();
 
   if (query.q) {
-    const items = await LotItem.find({ $or: itemTextOr(query.q) })
-      .limit(ITEM_SCAN_LIMIT)
-      .select('code lot fileName')
-      .lean();
+    // Item codes carry no spaces: a multi-word query matches when ANY token
+    // looks like the code, so "ram NEG-MUM-014" still finds the item.
+    const itemOr = tokenizeQuery(query.q).flatMap((tok) => itemTextOr(tok));
+    const items =
+      itemOr.length > 0
+        ? await LotItem.find({ $or: itemOr })
+            .limit(ITEM_SCAN_LIMIT)
+            .select('code lot fileName')
+            .lean()
+        : [];
 
     for (const it of items) {
       const lotId = String(it.lot);
@@ -116,13 +130,24 @@ export async function searchLots(query: SearchQuery): Promise<SearchResponse> {
     }
   }
 
-  const textOr: Record<string, unknown>[] = query.q ? lotTextOr(query.q) : [];
-  const itemLotIds = [...matchedByLot.keys()];
-  if (itemLotIds.length > 0) {
-    textOr.push({ _id: { $in: itemLotIds.map((id) => new Types.ObjectId(id)) } });
+  // Chips first; text (lot fields AND-tokens, item-hit ids, receiver ids)
+  // merges on top. No $lookup — items resolve first, lot ids merge in.
+  const { q: textQ, ...chipQuery } = query;
+  const filter = buildLotFilter(chipQuery);
+  if (textQ) {
+    const tokenClauses = buildTokenClauses(textQ);
+    const idClauses: Record<string, unknown>[] = [];
+    const itemLotIds = [...matchedByLot.keys()];
+    if (itemLotIds.length > 0) {
+      idClauses.push({ _id: { $in: itemLotIds.map((id) => new Types.ObjectId(id)) } });
+    }
+    const receiverIds = await findReceiverIdsForQuery(textQ);
+    if (receiverIds.length > 0) {
+      idClauses.push({ receiver: { $in: receiverIds } });
+    }
+    const textFilter = mergeTextWithIdClauses(tokenClauses, idClauses);
+    if (textFilter) Object.assign(filter, textFilter);
   }
-
-  const filter = buildLotFilter(query, query.q ? textOr : undefined);
 
   const skip = (query.page - 1) * query.pageSize;
   const [docs, total] = await Promise.all([
@@ -143,18 +168,7 @@ export async function searchLots(query: SearchQuery): Promise<SearchResponse> {
   const rows: SearchRow[] = docs.map((d) => {
     const id = String(d._id);
     const matchedItems = matchedByLot.get(id) ?? [];
-    let lotSide = false;
-    if (query.q) {
-      const rx = new RegExp(escapeRegex(query.q), 'i');
-      lotSide =
-        rx.test(d.owner.name) ||
-        rx.test(d.lotReference) ||
-        (d.namingCode != null && rx.test(d.namingCode)) ||
-        (d.pointsOfContact ?? []).some((p) => rx.test(p.name)) ||
-        (d.facilitator != null && rx.test(d.facilitator.name)) ||
-        (d.digitization?.folderPath != null && rx.test(d.digitization.folderPath)) ||
-        (d.rights?.deedReference != null && rx.test(d.rights.deedReference));
-    }
+    const lotSide = query.q ? lotSideMatches(d, query.q) : true;
 
     const matchedVia: 'lot' | 'item' | 'both' =
       lotSide && matchedItems.length > 0

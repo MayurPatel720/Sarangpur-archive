@@ -3,7 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { dateTime, prettyEnum } from '@/lib/format';
+import { ACTIVITY_SEVERITY, type ActivityKind } from '@/lib/domain';
+import { dateTime12, prettyEnum, severityMark } from '@/lib/format';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
@@ -18,7 +19,7 @@ export function ActivityPanel({ lotId }: { lotId: string }) {
 }
 
 function ActivityPanelInner({ lotId }: { lotId: string }) {
-  const { page, pageSize, setPage, setPageSize } = useUrlPagination(25);
+  const { page, pageSize, setPage, setPageSize } = useUrlPagination(25, 'activity');
   const activity = useQuery({
     queryKey: queryKeys.lots.activity(lotId, page, pageSize),
     queryFn: () => lotsApi.activity(lotId, page, pageSize),
@@ -39,19 +40,31 @@ function ActivityPanelInner({ lotId }: { lotId: string }) {
         ) : activity.isError ? (
           <ErrorState message="Could not load activity." onRetry={() => activity.refetch()} />
         ) : activity.data && activity.data.rows.length > 0 ? (
-          <ul className="flex flex-col gap-2.5 m-0 p-0 list-none">
-            {activity.data.rows.map((row) => (
-              <li key={row.id} className="flex flex-col gap-0.5 min-w-0 border-b border-line pb-2.5 last:border-0 last:pb-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Badge severity="info">{prettyEnum(row.kind)}</Badge>
-                  <span className="text-[11px] text-ink-3">{dateTime(row.at)}</span>
-                </div>
-                <span className="text-[13px] text-ink break-words">{row.title}</span>
-                {row.detail ? <span className="text-[12px] text-ink-2 break-words">{row.detail}</span> : null}
-                <span className="text-[11px] text-ink-3">{row.actorName}</span>
-              </li>
-            ))}
-          </ul>
+          <ol className="relative flex flex-col m-0 p-0 list-none">
+            {activity.data.rows.map((row, i) => {
+              const severity =
+                ACTIVITY_SEVERITY[row.kind as ActivityKind] ?? 'info';
+              const last = i === activity.data!.rows.length - 1;
+              return (
+                <li key={row.id} className="relative pl-7 pb-5 last:pb-0 min-w-0">
+                  {!last ? (
+                    <span aria-hidden className="absolute left-[7px] top-5 bottom-0 w-px bg-line-soft" />
+                  ) : null}
+                  <span
+                    aria-hidden
+                    className={`absolute left-[3px] top-[5px] w-2 h-2 rounded-full ${severityMark[severity]}`}
+                  />
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge severity={severity}>{prettyEnum(row.kind)}</Badge>
+                    <span className="text-[11px] text-ink-3">{dateTime12(row.at)}</span>
+                  </div>
+                  <span className="block mt-1 text-[13px] font-medium text-ink break-words">{row.title}</span>
+                  {row.detail ? <span className="block text-[12px] text-ink-2 break-words">{row.detail}</span> : null}
+                  <span className="block text-[11px] text-ink-3">{row.actorName}</span>
+                </li>
+              );
+            })}
+          </ol>
         ) : (
           <p className="text-[13px] text-ink-3">No activity yet.</p>
         )}

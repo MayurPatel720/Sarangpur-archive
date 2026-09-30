@@ -15,7 +15,8 @@
     "verify:seed": "tsx scripts/verify-seed.ts",
     "verify:decision-rule": "tsx scripts/verify-decision-rule.ts",
     "verify:reconcile": "tsx scripts/verify-reconcile.ts",
-    "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile",
+    "verify:search": "tsx scripts/verify-search.ts",
+    "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile && npm run verify:search",
     "db:check": "tsx scripts/check-db.ts"
   },
   "dependencies": {

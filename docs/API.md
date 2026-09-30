@@ -48,8 +48,12 @@ aggregation — eleven sub-pipelines over a single pass.
 Server-side pagination. Never return the whole collection.
 
 **Query:** `page` (1) · `pageSize` (25, max 100) · `sort` (`dateReceived`|`stage`|`quantity`,
-prefix `-` for desc, default `-dateReceived`) · `q` (owner name, lot ref, naming code,
-POC, facilitator, folder path, deed ref) ·
+prefix `-` for desc, default `-dateReceived`) · `q` (free text over every textable
+lot field — refs, owner/POC/facilitator name+phone+email+address, origin, format /
+data type / subtype, intake + sender remarks, photo date/place/event/people,
+folder + file paths, rights, decision notes, MLS record/tags, return tracking +
+notes, discard notes — plus the receiver's name; multi-word queries AND tokens,
+so every word must appear in some field) ·
 `stage` · `decision` · `format` · `dataType` · `receiver` · `returnStatus` ·
 `receivedFrom` / `receivedTo` (ISO dates)
 
@@ -214,6 +218,7 @@ in `src/lib/api.ts`), never the JWT. Response envelopes: `{ roles }`, `{ lists }
 | PATCH/DELETE | `/api/admin/lists/[key]` | `lists:manage` — PATCH body optional `{ label?, group?, metaSchema?, items?, expectedRevision }`; `items[]` = `{ value, label, active, sortOrder?, meta? }` (usageCount server-owned); DELETE refuses protected seed keys + in-use items |
 | GET | `/api/reference/[key]` | session only — active items for dropdowns (label-fallback client-side) |
 | GET/POST | `/api/users` | `user:manage` — duplicate username/email → 409 |
+| GET | `/api/users/picker` | session only — `{ users: [{ id, name }] }` active users for dropdowns (register Receiver) |
 | GET | `/api/users/me` | session only — `{ id, name, roleKey, grants }` for `useCan` gating |
 | PATCH | `/api/users/[userId]` | `user:manage` — no DELETE (deactivate only); self role-change/deactivation → 403 |
 | GET/PATCH | `/api/admin/settings` | `settings:manage` — revision-guarded; upsert-on-read from seed defaults |

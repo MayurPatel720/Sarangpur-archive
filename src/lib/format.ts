@@ -63,6 +63,20 @@ export function dateTime(value: string | Date | null | undefined): string {
   return `${date(d)}, ${clockOf(d)}`;
 }
 
+/**
+ * `dd/mm/yyyy, h:mm AM` — 12-hour clock for the lot record page
+ * (e.g. `03/08/2026, 2:45 PM`). Hour has no leading zero, meridiem uppercase.
+ */
+export function dateTime12(value: string | Date | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const d = toDate(value);
+  if (!d) return '—';
+  const h24 = d.getHours();
+  const meridiem = h24 < 12 ? 'AM' : 'PM';
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${date(d)}, ${h12}:${pad2(d.getMinutes())} ${meridiem}`;
+}
+
 function toDate(value: string | Date): Date | null {
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? null : value;

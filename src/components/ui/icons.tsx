@@ -327,3 +327,10 @@ export const IconX = (p: IconProps) => (
     <path d="M6 6l12 12M18 6L6 18" />
   </Icon>
 );
+
+export const IconCalendar = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+    <path d="M3.5 10h17M8 3.5v3M16 3.5v3" />
+  </Icon>
+);

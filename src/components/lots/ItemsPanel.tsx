@@ -33,7 +33,7 @@ export function ItemsPanel({ lotId }: { lotId: string }) {
 }
 
 function ItemsPanelInner({ lotId }: { lotId: string }) {
-  const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
+  const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25, 'items');
   const [digitized, setDigitized] = useState('');
   const [tagged, setTagged] = useState('');
   const [dup, setDup] = useState('');
