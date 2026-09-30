@@ -236,7 +236,10 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                 ) : null}
                 <YesNo label="Condition usable?" value={conditionUsable} onChange={setConditionUsable} />
                 {conditionUsable === 'no' ? (
-                  <Field label="Condition issue">
+                  <Field
+                    label="Condition issue"
+                    hint="Describe what's wrong — e.g. blurry, moldy, torn, faded or distorted."
+                  >
                     <Textarea value={conditionIssue} onChange={(e) => setConditionIssue(e.target.value)} />
                   </Field>
                 ) : null}

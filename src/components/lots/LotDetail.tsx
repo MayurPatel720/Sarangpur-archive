@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -10,7 +10,7 @@ import { STAGE_LABELS } from '@/lib/domain';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { date, dateTime12, num, prettyEnum, severityMark } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
-import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea, TextInput } from '@/components/ui/Form';
+import { Field, FormError, GhostButton, PrimaryButton, Textarea, TextInput } from '@/components/ui/Form';
 import {
   Badge,
   Definition,
@@ -24,14 +24,25 @@ import {
   Tabs,
 } from '@/components/ui/primitives';
 import { IconChevronLeft } from '@/components/ui/icons';
+import { EditableTable } from '@/components/ui/EditableTable';
+import { RefSelect } from '@/components/ui/RefSelect';
+import { FormSection, StepBlocks } from '@/components/ui/FormSection';
 import { useMe } from '@/hooks/useCan';
 import { useUrlTab } from '@/lib/useUrlTab';
-import { ContactFields, EMPTY_CONTACT, RightsTypeField, SubtypeField } from './lot-form-fields';
+import {
+  EMPTY_CONTACT,
+  RightsTypeField,
+  SubtypeField,
+  makeContactColumns,
+  type ContactRow,
+} from './lot-form-fields';
 import { DecisionSection } from './DecisionSection';
 import { ScanSection } from './ScanSection';
 import { MlsSection } from './MlsSection';
 import { ReturnSection } from './ReturnSection';
 import { DiscardSection } from './DiscardSection';
+import { FilePathSection } from './FilePathSection';
+import { MediaLinesPanel } from './MediaLinesPanel';
 import { ItemsPanel } from './ItemsPanel';
 import { ActivityPanel } from './ActivityPanel';
 
@@ -49,7 +60,14 @@ const TAB_LABELS: Record<TabId, string> = {
   activity: 'Activity',
 };
 
-/** The working path a lot walks; returned / discarded branch off the end. */
+/** Sticky in-page jumps for the five workflow sections (the hand-sketch rail). */
+const WORKFLOW_JUMPS = [
+  { id: 'wf-decision', label: 'Decision' },
+  { id: 'wf-scan', label: 'Scan' },
+  { id: 'wf-tag', label: 'Tag' },
+  { id: 'wf-return', label: 'Return' },
+  { id: 'wf-discard', label: 'Discard' },
+] as const;
 const MAIN_PATH = ['intake', 'decision', 'metadata', 'scanning', 'mls_tag', 'storage'] as const;
 
 const STAGE_SEVERITY: Record<string, Severity> = {
@@ -672,9 +690,12 @@ function LotDetailInner({ lotId }: { lotId: string }) {
 
   // Edit state (initialised when entering edit mode)
   const [originSource, setOriginSource] = useState('');
-  const [owner, setOwner] = useState<LotContactInput>({ ...EMPTY_CONTACT });
-  const [pocs, setPocs] = useState<LotContactInput[]>([]);
-  const [facilitator, setFacilitator] = useState<LotContactInput | null>(null);
+  const [owner, setOwner] = useState<ContactRow>({ ...EMPTY_CONTACT, id: 'owner' });
+  const [pocs, setPocs] = useState<ContactRow[]>([]);
+  /** `null` = no facilitator; `id` is always `'fac'` (single row). */
+  const [facilitator, setFacilitator] = useState<ContactRow | null>(null);
+  const editRowN = useRef(0);
+  const newEditRowId = () => `e${editRowN.current++}`;
   const [mediaSubtype, setMediaSubtype] = useState('');
   const [quantityToDigitize, setQuantityToDigitize] = useState('');
   const [quantityRemarks, setQuantityRemarks] = useState('');
@@ -729,9 +750,10 @@ function LotDetailInner({ lotId }: { lotId: string }) {
 
   const startEdit = () => {
     setOriginSource(lot.originSource ?? '');
-    setOwner(contactToInput(lot.owner));
-    setPocs(lot.pointsOfContact.map(contactToInput));
-    setFacilitator(lot.facilitator ? contactToInput(lot.facilitator) : null);
+    setOwner({ ...contactToInput(lot.owner), id: 'owner' });
+    editRowN.current = 0;
+    setPocs(lot.pointsOfContact.map((p) => ({ ...contactToInput(p), id: newEditRowId() })));
+    setFacilitator(lot.facilitator ? { ...contactToInput(lot.facilitator), id: 'fac' } : null);
     setMediaSubtype(lot.mediaSubtype);
     setQuantityToDigitize(String(lot.quantityToDigitize));
     setQuantityRemarks(lot.quantityRemarks ?? '');
@@ -824,6 +846,16 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     .filter(Boolean)
     .join('  ·  ');
 
+  const updatePoc = (id: string, patch: Partial<ContactRow>) =>
+    setPocs((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const updateFac = (id: string, patch: Partial<ContactRow>) =>
+    setFacilitator((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+  const updateOwner = (_id: string, patch: Partial<ContactRow>) =>
+    setOwner((prev) => ({ ...prev, ...patch }));
+  const ownerColumns = makeContactColumns(updateOwner);
+  const pocColumns = makeContactColumns(updatePoc);
+  const facColumns = makeContactColumns(updateFac);
+
   if (editing) {
     return (
       <div className="flex flex-col gap-3.5 md:gap-4">
@@ -843,130 +875,133 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <Panel>
           <PanelHeader title="Edit intake record" />
           <div className="p-3 md:p-4 flex flex-col gap-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Origin source">
-                <Select value={originSource} onChange={(e) => setOriginSource(e.target.value)}>
-                  <option value="">Choose…</option>
-                  {(originList.data?.items ?? []).map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Media sub-type">
-                <SubtypeField format={lot.format} value={mediaSubtype} onChange={setMediaSubtype} />
-              </Field>
-            </div>
-
-            <ContactFields legend="Owner" value={owner} onChange={setOwner} />
-
-            <fieldset className="m-0 p-0 border-0 min-w-0">
-              <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
-                Points of contact {pocs.length > 0 ? `(${pocs.length})` : ''}
-              </legend>
-              <div className="flex flex-col gap-4">
-                {pocs.map((p, i) => (
-                  <div key={i} className="border border-line-soft rounded-[6px] p-3 flex flex-col gap-3">
-                    <ContactFields
-                      legend={`Contact ${i + 1}`}
-                      value={p}
-                      onChange={(next) => setPocs(pocs.map((old, j) => (j === i ? next : old)))}
+            <StepBlocks>
+              <FormSection legend="Media &amp; origin">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Origin source">
+                    <RefSelect
+                      listKey="originSource"
+                      value={originSource}
+                      onChange={setOriginSource}
+                      placeholder="Choose…"
+                      createLabel="origin"
                     />
-                    <div>
-                      <GhostButton onClick={() => setPocs(pocs.filter((_, j) => j !== i))}>
-                        Remove contact
-                      </GhostButton>
-                    </div>
-                  </div>
-                ))}
-                {pocs.length < 5 ? (
-                  <div>
-                    <GhostButton onClick={() => setPocs([...pocs, { ...EMPTY_CONTACT }])}>
-                      Add contact
-                    </GhostButton>
-                  </div>
-                ) : null}
-              </div>
-            </fieldset>
-
-            <fieldset className="m-0 p-0 border-0 min-w-0">
-              <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
-                Facilitator
-              </legend>
-              {facilitator === null ? (
-                <GhostButton onClick={() => setFacilitator({ ...EMPTY_CONTACT })}>
-                  Add facilitator
-                </GhostButton>
-              ) : (
-                <div className="border border-line-soft rounded-[6px] p-3 flex flex-col gap-3">
-                  <ContactFields legend="Facilitator" value={facilitator} onChange={setFacilitator} />
-                  <div>
-                    <GhostButton onClick={() => setFacilitator(null)}>Remove facilitator</GhostButton>
-                  </div>
+                  </Field>
+                  <Field label="Media sub-type">
+                    <SubtypeField format={lot.format} value={mediaSubtype} onChange={setMediaSubtype} />
+                  </Field>
                 </div>
-              )}
-            </fieldset>
+              </FormSection>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Quantity to digitize">
-                <TextInput
-                  inputMode="numeric"
-                  value={quantityToDigitize}
-                  onChange={(e) => setQuantityToDigitize(e.target.value)}
-                />
-              </Field>
-              <Field label="Condition photo">
-                <TextInput
-                  value={conditionPhotoUrl}
-                  onChange={(e) => setConditionPhotoUrl(e.target.value)}
-                />
-              </Field>
-              <Field label="Quantity remarks">
-                <Textarea value={quantityRemarks} onChange={(e) => setQuantityRemarks(e.target.value)} />
-              </Field>
-              <Field label="Condition notes">
-                <Textarea value={conditionNotes} onChange={(e) => setConditionNotes(e.target.value)} />
-              </Field>
-              <Field label="Reason for sending">
-                <Textarea value={reasonForSending} onChange={(e) => setReasonForSending(e.target.value)} />
-              </Field>
-              <Field label="Sender remarks">
-                <Textarea value={senderRemarks} onChange={(e) => setSenderRemarks(e.target.value)} />
-              </Field>
-            </div>
-
-            <fieldset className="m-0 p-0 border-0 min-w-0">
-              <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
-                Rights
-              </legend>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Field label="Rights type">
-                  <RightsTypeField value={rightsType} onChange={setRightsType} />
-                </Field>
-                <Field label="Deed reference">
-                  <TextInput value={deedReference} onChange={(e) => setDeedReference(e.target.value)} />
-                </Field>
-                <Field label="Rights notes">
-                  <TextInput value={rightsNotes} onChange={(e) => setRightsNotes(e.target.value)} />
-                </Field>
-              </div>
-            </fieldset>
-
-            <div className="flex items-center gap-2">
-              <PrimaryButton disabled={patch.isPending} onClick={save}>
-                {patch.isPending ? 'Saving…' : 'Save changes'}
-              </PrimaryButton>
-              <GhostButton
-                disabled={patch.isPending}
-                onClick={() => {
-                  setEditing(false);
-                  setFormError(null);
-                }}
+              <FormSection
+                legend="Owner"
+                description="Legal owner of the originals — the person, family or trust the media belongs to."
               >
-                Cancel
-              </GhostButton>
-            </div>
+                <EditableTable
+                  columns={ownerColumns}
+                  rows={[owner]}
+                  getRowId={(o) => o.id}
+                  onChange={(next) => setOwner(next[0] ?? owner)}
+                  minRows={1}
+                  maxRows={1}
+                  allowDelete={false}
+                  rowName={() => 'Owner'}
+                  emptyMessage="Owner is required."
+                />
+              </FormSection>
+
+              <FormSection
+                legend={`Points of contact ${pocs.length > 0 ? `(${pocs.length})` : ''}`}
+              >
+                <EditableTable
+                  columns={pocColumns}
+                  rows={pocs}
+                  getRowId={(p) => p.id}
+                  onChange={setPocs}
+                  createRow={() => ({ ...EMPTY_CONTACT, id: newEditRowId() })}
+                  cloneRow={(p) => ({ ...p, id: newEditRowId() })}
+                  minRows={0}
+                  maxRows={5}
+                  addLabel="Add contact"
+                  rowName={(i) => `Contact ${i + 1}`}
+                  emptyMessage="No points of contact yet."
+                />
+              </FormSection>
+
+              <FormSection legend="Facilitator">
+                <EditableTable
+                  columns={facColumns}
+                  rows={facilitator ? [facilitator] : []}
+                  getRowId={(f) => f.id}
+                  onChange={(next) => setFacilitator(next[0] ?? null)}
+                  createRow={() => ({ ...EMPTY_CONTACT, id: 'fac' })}
+                  minRows={0}
+                  maxRows={1}
+                  addLabel="Add facilitator"
+                  rowName={() => 'Facilitator'}
+                  emptyMessage="No facilitator added."
+                />
+              </FormSection>
+
+              <FormSection legend="Condition &amp; quantities">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Quantity to digitize">
+                    <TextInput
+                      inputMode="numeric"
+                      value={quantityToDigitize}
+                      onChange={(e) => setQuantityToDigitize(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Condition photo">
+                    <TextInput
+                      value={conditionPhotoUrl}
+                      onChange={(e) => setConditionPhotoUrl(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Quantity remarks">
+                    <Textarea value={quantityRemarks} onChange={(e) => setQuantityRemarks(e.target.value)} />
+                  </Field>
+                  <Field label="Condition notes">
+                    <Textarea value={conditionNotes} onChange={(e) => setConditionNotes(e.target.value)} />
+                  </Field>
+                  <Field label="Reason for sending">
+                    <Textarea value={reasonForSending} onChange={(e) => setReasonForSending(e.target.value)} />
+                  </Field>
+                  <Field label="Sender remarks">
+                    <Textarea value={senderRemarks} onChange={(e) => setSenderRemarks(e.target.value)} />
+                  </Field>
+                </div>
+              </FormSection>
+
+              <FormSection legend="Rights">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Field label="Rights type">
+                    <RightsTypeField value={rightsType} onChange={setRightsType} />
+                  </Field>
+                  <Field label="Deed reference">
+                    <TextInput value={deedReference} onChange={(e) => setDeedReference(e.target.value)} />
+                  </Field>
+                  <Field label="Rights notes">
+                    <TextInput value={rightsNotes} onChange={(e) => setRightsNotes(e.target.value)} />
+                  </Field>
+                </div>
+              </FormSection>
+
+              <div className="flex items-center gap-2">
+                <PrimaryButton disabled={patch.isPending} onClick={save}>
+                  {patch.isPending ? 'Saving…' : 'Save changes'}
+                </PrimaryButton>
+                <GhostButton
+                  disabled={patch.isPending}
+                  onClick={() => {
+                    setEditing(false);
+                    setFormError(null);
+                  }}
+                >
+                  Cancel
+                </GhostButton>
+              </div>
+            </StepBlocks>
           </div>
         </Panel>
       </div>
@@ -1014,6 +1049,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
 
       <TabPanel id="overview" active={tab === 'overview'}>
         <MaterialSection lot={lot} />
+        <MediaLinesPanel lot={lot} />
         <ConditionSection lot={lot} />
         <ProgressSection lot={lot} />
         <JourneyPanel lot={lot} stageLabel={stageLabel} />
@@ -1021,11 +1057,36 @@ function LotDetailInner({ lotId }: { lotId: string }) {
       </TabPanel>
 
       <TabPanel id="workflow" active={tab === 'workflow'}>
-        <DecisionSection lot={lot} onChanged={onChanged} />
-        <ScanSection lot={lot} onChanged={onChanged} />
-        <MlsSection lot={lot} onChanged={onChanged} />
-        <ReturnSection lot={lot} onChanged={onChanged} />
-        <DiscardSection lot={lot} onChanged={onChanged} />
+        <nav
+          aria-label="Workflow sections"
+          className="sticky top-0 z-10 -my-1 py-2 bg-surface/95 backdrop-blur flex gap-1.5 overflow-x-auto"
+        >
+          {WORKFLOW_JUMPS.map((j) => (
+            <a
+              key={j.id}
+              href={`#${j.id}`}
+              className="flex-shrink-0 h-8 px-3 rounded-full bg-surface-sunken border border-line text-[12.5px] font-medium text-ink-2 no-underline flex items-center hover:text-ink hover:border-line-strong"
+            >
+              {j.label}
+            </a>
+          ))}
+        </nav>
+        <div id="wf-decision" className="scroll-mt-16">
+          <DecisionSection lot={lot} onChanged={onChanged} />
+        </div>
+        <div id="wf-scan" className="scroll-mt-16">
+          <ScanSection lot={lot} onChanged={onChanged} />
+        </div>
+        <div id="wf-tag" className="scroll-mt-16">
+          <MlsSection lot={lot} onChanged={onChanged} />
+        </div>
+        <div id="wf-return" className="scroll-mt-16">
+          <ReturnSection lot={lot} onChanged={onChanged} />
+        </div>
+        <div id="wf-discard" className="scroll-mt-16">
+          <DiscardSection lot={lot} onChanged={onChanged} />
+        </div>
+        <FilePathSection lot={lot} onChanged={onChanged} />
       </TabPanel>
 
       <TabPanel id="record" active={tab === 'record'}>

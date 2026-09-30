@@ -12,10 +12,17 @@ export interface StepDef {
 export function Stepper({
   steps,
   current,
+  done,
   onJump,
 }: {
   steps: readonly StepDef[];
   current: number;
+  /**
+   * Per-step completion. When supplied, a step shows ✓ only if actually
+   * completed — a step that sits behind the current one but was never filled
+   * in renders as upcoming. Falls back to position-based state when omitted.
+   */
+  done?: readonly boolean[];
   onJump?: (index: number) => void;
 }) {
   const step = steps[current];
@@ -24,8 +31,11 @@ export function Stepper({
       {/* Desktop: full rail */}
       <ol className="hidden sm:flex m-0 p-0 list-none items-center gap-2">
         {steps.map((s, i) => {
-          const state = i < current ? 'done' : i === current ? 'active' : 'todo';
-          const clickable = Boolean(onJump) && i < current;
+          const complete = done ? !!done[i] : i < current;
+          const state = complete ? 'done' : i === current ? 'active' : 'todo';
+          // Any step is jumpable — IntakeForm validates the step being left
+          // and asks for its details before navigating away.
+          const clickable = Boolean(onJump);
           const body = (
             <>
               <span

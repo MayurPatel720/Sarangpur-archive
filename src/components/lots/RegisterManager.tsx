@@ -131,19 +131,23 @@ function toParams(filters: LotFilters, page: number, pageSize: number): Record<s
 export function RegisterManager({
   initialStage,
   initialFormat,
+  initialDataType,
 }: {
   initialStage?: string;
   initialFormat?: string;
+  initialDataType?: string;
 } = {}) {
   const router = useRouter();
   const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
   // Initial filters come from URL/dashboard links; strings pass through (server validates against lists).
   const cleanStage = initialStage ?? '';
   const cleanFormat = initialFormat ?? '';
+  const cleanDataType = initialDataType ?? '';
   const [filters, setFilters] = useState<LotFilters>({
     ...EMPTY_FILTERS,
     stage: cleanStage,
     format: cleanFormat,
+    dataType: cleanDataType,
   });
   const me = useMe();
   const stages = useReferenceList('stage');

@@ -15,6 +15,12 @@ import { ACTIVITY_KINDS } from '@/lib/domain';
  *
  *  2. `actor` is null for events the system raised itself (code issuance, duplicate
  *     detection, reconciliation).
+ *
+ *  3. `mediaSubtype` / `mediaLineIndex` tag entries that belong to one media
+ *     line of a multi-line lot (e.g. each line's `intake_created` entry), so
+ *     the activity tab can group the trail per media type. Lot-wide events
+ *     leave both null and render under "General". Like `actorName`/`lotCode`
+ *     they are written once and never back-filled.
  */
 const activityLogSchema = new Schema(
   {
@@ -24,6 +30,10 @@ const activityLogSchema = new Schema(
     kind: { type: String, required: true, enum: ACTIVITY_KINDS, index: true },
     title: { type: String, required: true, trim: true },
     detail: { type: String, trim: true },
+
+    /** Denormalised media tag for per-media-type activity grouping. Null = lot-wide. */
+    mediaSubtype: { type: String, trim: true, default: null, index: true },
+    mediaLineIndex: { type: Number, default: null },
 
     actor: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     actorName: { type: String, required: true, trim: true, default: 'System' },

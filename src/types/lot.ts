@@ -31,13 +31,15 @@ const rightsSchema = z.object({
   notes: z.string().trim().max(1000).optional(),
 });
 
-export const lotCreateBodySchema = z
+/**
+ * One row of the intake media table: a format/data-type/sub-type combination
+ * with its quantity. The intake form no longer captures the digitization
+ * split, so a shortfall is the normal state here — the reason rule lives on
+ * the later per-line selection update, not on intake. The `<=` guards stay so
+ * a future caller can still pass an explicit split.
+ */
+const mediaLineInputSchema = z
   .object({
-    dateReceived: z.string().datetime({ offset: true }),
-    originSource: z.string().trim().min(1).max(40),
-    owner: contactSchema,
-    pointsOfContact: z.array(contactSchema).max(5).default([]),
-    facilitator: contactSchema.nullable().optional(),
     format: z.string().trim().min(1).max(40),
     dataType: z.string().trim().min(1).max(40),
     mediaSubtype: z.string().trim().min(1, 'Media sub-type is required.').max(120),
@@ -46,9 +48,64 @@ export const lotCreateBodySchema = z
     quantityAlreadyDigitized: z.number().int().min(0).default(0),
     notDigitizedReason: z.string().trim().min(1).max(80).nullable().optional(),
     quantityRemarks: z.string().trim().max(1000).optional(),
+  })
+  .refine((l) => l.quantityToDigitize <= l.quantity, {
+    message: 'Quantity to digitize cannot exceed quantity.',
+    path: ['quantityToDigitize'],
+  })
+  .refine((l) => l.quantityAlreadyDigitized <= l.quantity, {
+    message: 'Already-digitized quantity cannot exceed quantity.',
+    path: ['quantityAlreadyDigitized'],
+  })
+  .refine((l) => l.quantityToDigitize + l.quantityAlreadyDigitized <= l.quantity, {
+    message: 'Digitize + already-digitized quantities cannot exceed quantity.',
+    path: ['quantityToDigitize'],
+  });
+export type MediaLineInput = z.input<typeof mediaLineInputSchema>;
+
+/** One stored media line, as returned by the detail endpoint. */
+const mediaLineSchema = z.object({
+  format: z.string(),
+  dataType: z.string(),
+  mediaSubtype: z.string(),
+  mediaSubtypeLabel: z.string(),
+  quantity: z.number(),
+  quantityToDigitize: z.number(),
+  quantityAlreadyDigitized: z.number(),
+  notDigitizedReason: z.string().nullable(),
+  quantityRemarks: z.string().nullable(),
+});
+export type MediaLine = z.output<typeof mediaLineSchema>;
+
+/** Per-line item counters backing the per-media-type progress table. */
+const lineStatSchema = z.object({
+  lineIndex: z.number(),
+  total: z.number(),
+  selected: z.number(),
+  digitized: z.number(),
+  tagged: z.number(),
+});
+export type LineStat = z.output<typeof lineStatSchema>;
+
+export const lotCreateBodySchema = z
+  .object({
+    dateReceived: z.string().datetime({ offset: true }),
+    originSource: z.string().trim().min(1).max(40),
+    owner: contactSchema,
+    pointsOfContact: z.array(contactSchema).max(5).default([]),
+    facilitator: contactSchema.nullable().optional(),
+    /**
+     * Expandable media table — one row per format/sub-type. The server derives
+     * the legacy top-level fields from these (primary = first line, quantities
+     * = across-lines sums) so every existing pipeline keeps working.
+     */
+    mediaLines: z
+      .array(mediaLineInputSchema)
+      .min(1, 'Add at least one media line.')
+      .max(20, 'No more than 20 media lines per lot.'),
     conditionNotes: z.string().trim().max(2000).optional(),
-    /** Required (API.md §3) — upload arrives later; for now a URL or file reference. */
-    conditionPhotoUrl: z.string().trim().min(1, 'A condition photo is required.').max(500),
+    /** Optional (API.md §3) — a URL or file reference; the upload itself arrives later. */
+    conditionPhotoUrl: z.string().trim().min(1).max(500).optional(),
     reasonForSending: z.string().trim().max(1000).optional(),
     senderRemarks: z.string().trim().max(2000).optional(),
     photoDate: z.string().trim().max(80).optional(),
@@ -62,20 +119,17 @@ export const lotCreateBodySchema = z
     returnRequested: z.boolean().optional(),
     returnFormat: z.string().trim().min(1).max(40).optional(),
     returnDuration: z.string().trim().max(200).optional(),
+    /** Calendar due date for the return, ISO datetime with offset. */
+    returnDueAt: z.string().datetime({ offset: true }).optional(),
     rights: rightsSchema.optional(),
   })
-  .refine((b) => b.quantityToDigitize <= b.quantity, {
-    message: 'Quantity to digitize cannot exceed quantity.',
-    path: ['quantityToDigitize'],
-  })
-  .refine((b) => b.quantityAlreadyDigitized <= b.quantity, {
-    message: 'Already-digitized quantity cannot exceed quantity.',
-    path: ['quantityAlreadyDigitized'],
-  })
-  .refine((b) => b.quantityToDigitize + b.quantityAlreadyDigitized <= b.quantity, {
-    message: 'Digitize + already-digitized quantities cannot exceed quantity.',
-    path: ['quantityToDigitize'],
-  });
+  .refine(
+    (b) => b.mediaLines.reduce((sum, l) => sum + l.quantity, 0) <= 20000,
+    {
+      message: 'Total quantity across media lines cannot exceed 20000.',
+      path: ['mediaLines'],
+    },
+  );
 export type LotCreateBody = z.input<typeof lotCreateBodySchema>;
 
 export const lotCreateResponseSchema = z.object({
@@ -177,6 +231,9 @@ const lotDetailSchema = z.object({
   quantityToDigitize: z.number(),
   quantityAlreadyDigitized: z.number(),
   quantityRemarks: z.string().nullable(),
+  /** Per-media-type breakdown + per-line item counters (F2). */
+  mediaLines: z.array(mediaLineSchema),
+  lineStats: z.array(lineStatSchema),
   conditionNotes: z.string().nullable(),
   conditionPhotoUrl: z.string().nullable(),
   reasonForSending: z.string().nullable(),

@@ -1,16 +1,20 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { dashboardApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { useCan } from '@/hooks/useCan';
 import { longDate, num } from '@/lib/format';
 import { Skeleton } from '@/components/ui/primitives';
+import { IconPlus } from '@/components/ui/icons';
 
 export function PageHeading() {
   const { data } = useQuery({
     queryKey: queryKeys.dashboard.summary(),
     queryFn: dashboardApi.summary,
   });
+  const canCreate = useCan('lot:create');
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
@@ -29,6 +33,15 @@ export function PageHeading() {
       </div>
 
       <div className="flex gap-2.5 sm:ml-auto">
+        {canCreate && (
+          <Link
+            href="/register/new"
+            className="h-10 px-3.5 bg-accent rounded-[6px] shadow-control text-[13px] font-semibold text-white no-underline flex items-center gap-1.5"
+          >
+            <IconPlus size={15} />
+            New Intake
+          </Link>
+        )}
         <select
           aria-label="Reporting period"
           defaultValue="30"

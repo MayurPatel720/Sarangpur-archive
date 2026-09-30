@@ -12,6 +12,7 @@
     "verify:pipelines": "tsx scripts/verify-pipelines.ts",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
+    "db:backfill-media-lines": "tsx scripts/backfill-media-lines.ts",
     "verify:seed": "tsx scripts/verify-seed.ts",
     "verify:decision-rule": "tsx scripts/verify-decision-rule.ts",
     "verify:reconcile": "tsx scripts/verify-reconcile.ts",

@@ -18,11 +18,8 @@ import {
   IconChevronRight,
   IconClipboardList,
   IconDashboard,
-  IconFileAudio,
-  IconFileImage,
-  IconFileVideo,
+  IconIntake,
   IconSettings,
-  IconStorage,
   IconDecision,
   IconScan,
   IconTag,
@@ -34,15 +31,9 @@ type NavItem = { icon: React.ElementType; label: string; href: string };
 
 const WORKFLOW_ITEMS = [
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard', perm: 'dashboard:view' },
-  { icon: IconClipboardList, label: 'Register', href: '/register', perm: 'lot:view' },
+  { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
+  { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconAlertTriangle, label: 'Alerts', href: '/alerts', perm: null },
-] as const;
-
-const MEDIA_ITEMS = [
-  { icon: IconFileImage, label: 'Photos', href: '/register?format=photo', perm: 'lot:view' },
-  { icon: IconFileVideo, label: 'Video', href: '/register?format=video', perm: 'lot:view' },
-  { icon: IconFileAudio, label: 'Audio', href: '/register?format=audio', perm: 'lot:view' },
-  { icon: IconStorage, label: 'Storage', href: '/register?stage=storage', perm: 'lot:view' },
 ] as const;
 
 const QUEUE_ITEMS = [
@@ -134,6 +125,15 @@ export function Sidebar() {
   const ready = me !== undefined;
   const grants = me?.grants;
   const can = (p: Permission) => grants?.includes(p) ?? false;
+
+  /**
+   * Simplified sidebar: operation queues are shown only to Admin /
+   * Lead Reviewer. Everyone else gets Dashboard + Master List +
+   * New Intake + Alerts, and reaches queues through the dashboard KPI boxes.
+   * While `me` loads only the workflow rows render, so privileged rows
+   * appear once and never flash out.
+   */
+  const privileged = ready && (me?.roleKey === 'admin' || me?.roleKey === 'lead_reviewer');
 
   /** Core rows: optimistic while `/api/users/me` loads (system roles always have them). */
   const showCore = (perm: Permission | null) => !ready || perm === null || can(perm);
@@ -227,29 +227,15 @@ export function Sidebar() {
       item,
       active:
         item.href === '/register'
-          ? onRegister && !formatParam && !stageParam
+          ? onRegister && pathname !== '/register/new' && !formatParam && !stageParam
           : pathname === item.href,
       badge: item.href === '/alerts' && alertBadge > 0 ? alertBadge : null,
       badgeTitle: item.href === '/alerts' ? `${alertBadge} open alerts` : undefined,
     });
   }
 
-  for (const item of MEDIA_ITEMS) {
-    if (!showCore(item.perm)) continue;
-    rows.push({
-      item,
-      active:
-        onRegister &&
-        ((item.href === '/register?format=photo' && formatParam === 'photo') ||
-          (item.href === '/register?format=video' && formatParam === 'video') ||
-          (item.href === '/register?format=audio' && formatParam === 'audio') ||
-          (item.href === '/register?stage=storage' && stageParam === 'storage')),
-      badge: null,
-    });
-  }
-
   for (const q of QUEUE_ITEMS) {
-    if (!showGated(q.perm)) continue;
+    if (!privileged || !showGated(q.perm)) continue;
     const badge = q.kpi ? kpiValue(q.kpi) : null;
     rows.push({
       item: { icon: q.icon, label: q.label, href: q.href },

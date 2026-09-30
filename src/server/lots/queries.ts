@@ -7,7 +7,7 @@ import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { Attachment } from '@/models/Attachment';
 import { User } from '@/models/User';
-import { resolveReferenceLabel } from '@/server/reference';
+import { resolveReferenceLabel, getReferenceList } from '@/server/reference';
 import { subtypeListKeyForFormat, subtypeListKeySync } from '@/server/reference/runtime';
 import type { LotDetailResponse, LotListQuery, LotListResponse } from '@/types/lot';
 import type { ItemsQuery, ItemsResponse, ActivityQuery, ActivityResponse } from '@/types/ops';
@@ -348,7 +348,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
    * this is one indexed range read — no $lookup.
    */
   const entryKinds: string[] = STAGE_ENTRY_KINDS[doc.stage] ?? [];
-  const [mediaSubtypeLabel, rightsTypeLabel, users, counts, attachmentCount, stageTrail] =
+  const [mediaSubtypeLabel, rightsTypeLabel, users, counts, lineStatRows, attachmentCount, stageTrail] =
     await Promise.all([
       subtypeKey ? resolveReferenceLabel(subtypeKey, doc.mediaSubtype) : doc.mediaSubtype,
       doc.rights?.type ? resolveReferenceLabel('rightsType', doc.rights.type) : null,
@@ -367,6 +367,19 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
           },
         },
       ]),
+      // Per-media-type progress (F2): same counters as above, grouped by line.
+      LotItem.aggregate<{ _id: number | null; total: number; selected: number; digitized: number; tagged: number }>([
+        { $match: { lot: doc._id } },
+        {
+          $group: {
+            _id: '$lineIndex',
+            total: { $sum: 1 },
+            selected: { $sum: { $cond: ['$selectedForDigitization', 1, 0] } },
+            digitized: { $sum: { $cond: ['$digitized', 1, 0] } },
+            tagged: { $sum: { $cond: ['$taggedInMls', 1, 0] } },
+          },
+        },
+      ]),
       Attachment.countDocuments({ lot: doc._id }),
       ActivityLog.find({ lot: doc._id, kind: { $in: entryKinds } })
         .select('kind actorName at')
@@ -377,6 +390,53 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
   const stageEnteredByName = stageTrail[0]?.actorName ?? null;
 
   const c = counts[0] ?? { total: 0, selected: 0, digitized: 0, tagged: 0, duplicates: 0 };
+  const lineStats = lineStatRows
+    .map((s) => ({
+      lineIndex: s._id ?? 0,
+      total: s.total,
+      selected: s.selected,
+      digitized: s.digitized,
+      tagged: s.tagged,
+    }))
+    .sort((a, b) => a.lineIndex - b.lineIndex);
+  /**
+   * Per-line sub-type labels. Lines are grouped by their format's list key so
+   * each reference list is read once, not once per line.
+   */
+  const rawLines = (doc.mediaLines ?? []) as {
+    format: string;
+    dataType: string;
+    mediaSubtype: string;
+    quantity: number;
+    quantityToDigitize: number;
+    quantityAlreadyDigitized: number;
+    notDigitizedReason?: string | null;
+    quantityRemarks?: string | null;
+  }[];
+  const keyByIndex = rawLines.map((l) => mediaSubtypeListKey(l.format));
+  const distinctKeys = [...new Set(keyByIndex.filter((k): k is string => k != null))];
+  const labelByKeyValue = new Map<string, string>();
+  await Promise.all(
+    distinctKeys.map(async (key) => {
+      const items = await getReferenceList(key);
+      for (const item of items) labelByKeyValue.set(`${key}::${item.value}`, item.label);
+    }),
+  );
+  const mediaLines = rawLines.map((l, i) => {
+    const key = keyByIndex[i];
+    return {
+      format: l.format,
+      dataType: l.dataType,
+      mediaSubtype: l.mediaSubtype,
+      mediaSubtypeLabel:
+        (key ? labelByKeyValue.get(`${key}::${l.mediaSubtype}`) : undefined) ?? l.mediaSubtype,
+      quantity: l.quantity,
+      quantityToDigitize: l.quantityToDigitize,
+      quantityAlreadyDigitized: l.quantityAlreadyDigitized,
+      notDigitizedReason: l.notDigitizedReason ?? null,
+      quantityRemarks: l.quantityRemarks ?? null,
+    };
+  });
   const nameById = new Map(users.map((u) => [String(u._id), u.name as string]));
   const userName = (id: Types.ObjectId | null | undefined): string | null =>
     id == null ? null : (nameById.get(String(id)) ?? 'Unknown');
@@ -409,6 +469,8 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       quantityToDigitize: doc.quantityToDigitize,
       quantityAlreadyDigitized: doc.quantityAlreadyDigitized,
       quantityRemarks: doc.quantityRemarks ?? null,
+      mediaLines,
+      lineStats,
       conditionNotes: doc.conditionNotes ?? null,
       conditionPhotoUrl: doc.conditionPhotoUrl ?? null,
       reasonForSending: doc.reasonForSending ?? null,
@@ -521,6 +583,7 @@ export async function listItems(
       code: d.code,
       groupNo: d.groupNo,
       itemNo: d.itemNo,
+      lineIndex: d.lineIndex ?? 0,
       selectedForDigitization: d.selectedForDigitization,
       digitized: d.digitized,
       taggedInMls: d.taggedInMls,
@@ -554,6 +617,8 @@ export async function listActivity(
       detail: d.detail ?? null,
       actorName: d.actorName,
       at: d.at.toISOString(),
+      mediaSubtype: d.mediaSubtype ?? null,
+      mediaLineIndex: d.mediaLineIndex ?? null,
     })),
     total,
     page: query.page,

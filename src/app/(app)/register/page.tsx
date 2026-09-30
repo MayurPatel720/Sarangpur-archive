@@ -9,12 +9,12 @@ export const metadata: Metadata = {
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ stage?: string; format?: string }>;
+  searchParams: Promise<{ stage?: string; format?: string; dataType?: string }>;
 }) {
-  const { stage, format } = await searchParams;
+  const { stage, format, dataType } = await searchParams;
   return (
     <Suspense fallback={null}>
-      <RegisterManager initialStage={stage} initialFormat={format} />
+      <RegisterManager initialStage={stage} initialFormat={format} initialDataType={dataType} />
     </Suspense>
   );
 }

@@ -19,6 +19,12 @@ const lotItemSchema = new Schema(
     /** Group within the lot — a film roll, a tape, an album. */
     groupNo: { type: Number, required: true, min: 1 },
     itemNo: { type: Number, required: true, min: 1 },
+    /**
+     * Position of this item's media line in the lot's `mediaLines` array
+     * (0 for single-line lots and everything created before lines existed).
+     * Lets the lot page break scan/tag progress down per media type.
+     */
+    lineIndex: { type: Number, required: true, min: 0, default: 0, index: true },
 
     /** False for items the volunteers excluded at intake. */
     selectedForDigitization: { type: Boolean, required: true, default: true, index: true },
@@ -37,6 +43,7 @@ const lotItemSchema = new Schema(
 );
 
 lotItemSchema.index({ lot: 1, groupNo: 1, itemNo: 1 });
+lotItemSchema.index({ lot: 1, lineIndex: 1 }); // per-media-type progress
 lotItemSchema.index({ lot: 1, digitized: 1 }); // per-lot scan progress
 lotItemSchema.index({ selectedForDigitization: 1, notDigitizedReason: 1 }); // exclusion report
 

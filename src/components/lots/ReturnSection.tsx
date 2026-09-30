@@ -25,6 +25,7 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
   const [format, setFormat] = useState('');
   const [status, setStatus] = useState('');
   const [durationText, setDurationText] = useState('');
+  const [dueDate, setDueDate] = useState('');
   const [method, setMethod] = useState('');
   const [trackingReference, setTrackingReference] = useState('');
   const [notes, setNotes] = useState('');
@@ -36,6 +37,7 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
         ...(format ? { format } : {}),
         ...(status ? { status } : {}),
         ...(durationText.trim() ? { durationText: durationText.trim() } : {}),
+        ...(dueDate ? { dueAt: new Date(`${dueDate}T00:00:00`).toISOString() } : {}),
         ...(method ? { method } : {}),
         ...(trackingReference.trim() ? { trackingReference: trackingReference.trim() } : {}),
         ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -47,6 +49,7 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
       setFormat('');
       setStatus('');
       setDurationText('');
+      setDueDate('');
       setMethod('');
       setTrackingReference('');
       setNotes('');
@@ -100,6 +103,13 @@ export function ReturnSection({ lot, onChanged }: { lot: DetailLot; onChanged: (
                   value={durationText}
                   onChange={(e) => setDurationText(e.target.value)}
                   placeholder="e.g. Within 30 days"
+                />
+              </Field>
+              <Field label="Due date" hint="Calendar due date for the return.">
+                <TextInput
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
                 />
               </Field>
               <Field label="Method">

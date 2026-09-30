@@ -9,6 +9,7 @@ import { Panel, PanelHeader, Skeleton, ErrorState, Badge } from '@/components/ui
 import { Dialog } from '@/components/ui/Dialog';
 import { useToast } from '@/components/ui/Toast';
 import { Field, TextInput, Select, Checkbox, PrimaryButton, GhostButton, FormError } from '@/components/ui/Form';
+import { EditableTable, type EditableColumn } from '@/components/ui/EditableTable';
 import type { AdminReferenceList, AdminListItem, ListCreateBody, ListMetaField } from '@/types/admin';
 
 type EditableItem = {
@@ -272,6 +273,87 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
     setMetaSchema((arr) => arr.map((f) => (f.field === field ? { ...f, ...patch } : f)));
   };
 
+  const itemColumns: EditableColumn<EditableItem>[] = [
+    {
+      key: 'value',
+      header: 'Value',
+      className: 'min-w-[150px]',
+      render: ({ row }) => (
+        <div className="flex flex-col gap-1 min-w-0">
+          <span className="text-[12.5px] font-semibold text-ink break-all" title={row.value}>
+            {row.value}
+          </span>
+          {(usageByValue.get(row.value) ?? 0) > 0 ? (
+            <Badge severity="info">Used ×{usageByValue.get(row.value) ?? 0}</Badge>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      key: 'label',
+      header: 'Label',
+      className: 'min-w-[170px]',
+      render: ({ row }) => (
+        <TextInput
+          aria-label={`Label for ${row.value}`}
+          value={row.label}
+          onChange={(e) => patchItem(row.value, { label: e.target.value })}
+          maxLength={120}
+        />
+      ),
+    },
+    {
+      key: 'sortOrder',
+      header: 'Sort',
+      className: 'w-[90px]',
+      render: ({ row }) => (
+        <TextInput
+          aria-label={`Sort order for ${row.value}`}
+          type="number"
+          value={row.sortOrder}
+          onChange={(e) => patchItem(row.value, { sortOrder: Number(e.target.value) })}
+          className="text-right tabular-nums"
+        />
+      ),
+    },
+    {
+      key: 'active',
+      header: 'Active',
+      className: 'w-[70px]',
+      render: ({ row }) => (
+        <input
+          type="checkbox"
+          checked={row.active}
+          onChange={(e) => patchItem(row.value, { active: e.target.checked })}
+          className="w-4 h-4 accent-accent cursor-pointer"
+          aria-label={`Active ${row.value}`}
+        />
+      ),
+    },
+    ...metaSchema.map<EditableColumn<EditableItem>>((f) => ({
+      key: `meta.${f.field}`,
+      header: metaLabel(f.field),
+      className: 'min-w-[130px]',
+      render: ({ row }) =>
+        f.type === 'boolean' ? (
+          <input
+            type="checkbox"
+            checked={row.meta[f.field] === true}
+            onChange={(e) => patchItemMeta(row.value, f.field, e.target.checked ? 'true' : '', 'boolean')}
+            className="w-4 h-4 accent-accent cursor-pointer"
+            aria-label={`${metaLabel(f.field)} for ${row.value}`}
+          />
+        ) : (
+          <TextInput
+            aria-label={`${metaLabel(f.field)} for ${row.value}`}
+            type={f.type === 'number' ? 'number' : 'text'}
+            value={metaRaw(row.meta, f.field)}
+            onChange={(e) => patchItemMeta(row.value, f.field, e.target.value, f.type)}
+          />
+        ),
+    })),
+  ];
+
   return (
     <Panel className="flex-1 w-full min-w-0">
       <PanelHeader title={list.label}>
@@ -353,67 +435,15 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
 
         <div className="flex flex-col gap-2">
           <span className="text-[12px] font-semibold text-ink-2">Items · {items.length}</span>
-          {items.map((i) => (
-            <div key={i.value} className="border border-line-soft rounded-[6px] px-3 py-2 flex flex-col gap-2">
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                <div className="sm:w-[180px] flex-shrink-0 min-w-0">
-                  <p className="m-0 text-[12.5px] font-semibold text-ink truncate" title={i.value}>{i.value}</p>
-                </div>
-                <TextInput
-                  aria-label={`Label for ${i.value}`}
-                  value={i.label}
-                  onChange={(e) => patchItem(i.value, { label: e.target.value })}
-                  maxLength={120}
-                  className="flex-1"
-                />
-                <TextInput
-                  aria-label={`Sort order for ${i.value}`}
-                  type="number"
-                  value={i.sortOrder}
-                  onChange={(e) => patchItem(i.value, { sortOrder: Number(e.target.value) })}
-                  className="sm:w-[90px]"
-                />
-                <label className="flex items-center gap-2 cursor-pointer flex-shrink-0 min-h-[44px] sm:min-h-0">
-                  <input
-                    type="checkbox"
-                    checked={i.active}
-                    onChange={(e) => patchItem(i.value, { active: e.target.checked })}
-                    className="w-4 h-4 accent-accent cursor-pointer"
-                  />
-                  <span className="text-[12.5px] text-ink-2">Active</span>
-                </label>
-                {(usageByValue.get(i.value) ?? 0) > 0 && (
-                  <Badge severity="info">Used ×{usageByValue.get(i.value) ?? 0}</Badge>
-                )}
-              </div>
-              {metaSchema.length > 0 && (
-                <div className="flex flex-wrap gap-2 pl-1">
-                  {metaSchema.map((f) => (
-                    <label key={f.field} className="flex items-center gap-1.5 min-w-[140px]">
-                      <span className="text-[11px] text-ink-3 w-[90px] shrink-0">{metaLabel(f.field)}</span>
-                      {f.type === 'boolean' ? (
-                        <input
-                          type="checkbox"
-                          checked={i.meta[f.field] === true}
-                          onChange={(e) => patchItemMeta(i.value, f.field, e.target.checked ? 'true' : '', 'boolean')}
-                          className="w-4 h-4 accent-accent cursor-pointer"
-                          aria-label={`${metaLabel(f.field)} for ${i.value}`}
-                        />
-                      ) : (
-                        <TextInput
-                          aria-label={`${metaLabel(f.field)} for ${i.value}`}
-                          type={f.type === 'number' ? 'number' : 'text'}
-                          value={metaRaw(i.meta, f.field)}
-                          onChange={(e) => patchItemMeta(i.value, f.field, e.target.value, f.type)}
-                          className="flex-1"
-                        />
-                      )}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+          <EditableTable
+            columns={itemColumns}
+            rows={items}
+            getRowId={(r) => r.value}
+            onChange={setItems}
+            allowDelete={false}
+            rowName={(i) => `Item ${i + 1}`}
+            emptyMessage="No items yet — add one below."
+          />
         </div>
 
         {!isSystem && (

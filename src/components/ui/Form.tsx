@@ -6,16 +6,29 @@ export function Field({
   label,
   hint,
   error,
+  required,
   children,
 }: {
   label: string;
   hint?: string;
   error?: string;
+  required?: boolean;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5 w-full min-w-0">
-      <span className="block text-[12px] font-semibold text-left text-ink-2">{label}</span>
+      <span className="block text-[12px] font-semibold text-left text-ink-2">
+        {label}
+        {required ? (
+          <>
+            <span aria-hidden="true" className="text-danger">
+              {' '}
+              *
+            </span>
+            <span className="sr-only"> (required)</span>
+          </>
+        ) : null}
+      </span>
       <div className="w-full min-w-0">{children}</div>
       {error ? (
         <span role="alert" className="block text-[11.5px] font-medium text-danger">

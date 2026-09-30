@@ -1,117 +1,121 @@
 'use client';
 
 import type { LotContactInput } from '@/types/lot';
-import { useReferenceList } from '@/hooks/useReferenceList';
-import { Field, Select, TextInput } from '@/components/ui/Form';
-import { Skeleton } from '@/components/ui/primitives';
+import { TextInput } from '@/components/ui/Form';
+import type { EditableColumn } from '@/components/ui/EditableTable';
+import { RefSelect, SubtypeCell } from '@/components/ui/RefSelect';
 
 export const EMPTY_CONTACT: LotContactInput = { name: '' };
 
-/* ---------------------------------------------------------- contact block */
+/**
+ * A contact row for the shared `EditableTable`: the wire shape plus a
+ * client-only stable id so add/delete never remounts sibling rows.
+ */
+export type ContactRow = LotContactInput & { id: string };
 
-export function ContactFields({
-  legend,
-  value,
-  onChange,
-}: {
-  legend: string;
-  value: LotContactInput;
-  onChange: (next: LotContactInput) => void;
-}) {
-  const set = (k: keyof LotContactInput) => (v: string) =>
-    onChange({ ...value, [k]: v });
-  return (
-    <fieldset className="m-0 p-0 border-0 min-w-0">
-      <legend className="px-0 mb-2 text-[12px] font-semibold text-ink-3">
-        {legend}
-      </legend>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Name">
-          <TextInput
-            value={value.name}
-            onChange={(e) => set('name')(e.target.value)}
-            placeholder="Full name"
-          />
-        </Field>
-        <Field label="Phone">
-          <TextInput
-            value={value.phone ?? ''}
-            onChange={(e) => set('phone')(e.target.value)}
-            placeholder="Optional"
-            inputMode="tel"
-          />
-        </Field>
-        <Field label="Email">
-          <TextInput
-            value={value.email ?? ''}
-            onChange={(e) => set('email')(e.target.value)}
-            placeholder="Optional"
-            inputMode="email"
-          />
-        </Field>
-        <Field label="Address">
-          <TextInput
-            value={value.address ?? ''}
-            onChange={(e) => set('address')(e.target.value)}
-            placeholder="Optional"
-          />
-        </Field>
-      </div>
-    </fieldset>
-  );
+/* ------------------------------------------------- contact columns ----- */
+
+/**
+ * Contact columns for the shared `EditableTable` (intake + lot edit).
+ * `update(rowId, patch)` applies a cell edit in the owning form's state.
+ */
+export function makeContactColumns(
+  update: (id: string, patch: Partial<ContactRow>) => void,
+): EditableColumn<ContactRow>[] {
+  return [
+    {
+      key: 'name',
+      header: 'Name',
+      className: 'min-w-[160px]',
+      required: true,
+      render: ({ row, rowId, rowLabel, error, autoFocus }) => (
+        <TextInput
+          aria-label={`${rowLabel}, name`}
+          aria-invalid={Boolean(error)}
+          autoFocus={autoFocus}
+          value={row.name}
+          onChange={(e) => update(rowId, { name: e.target.value })}
+          placeholder="Full name"
+        />
+      ),
+    },
+    {
+      key: 'phone',
+      header: 'Phone',
+      className: 'min-w-[128px]',
+      render: ({ row, rowId, rowLabel, autoFocus }) => (
+        <TextInput
+          aria-label={`${rowLabel}, phone`}
+          autoFocus={autoFocus}
+          inputMode="tel"
+          value={row.phone ?? ''}
+          onChange={(e) => update(rowId, { phone: e.target.value })}
+          placeholder="Optional"
+        />
+      ),
+    },
+    {
+      key: 'email',
+      header: 'Email',
+      className: 'min-w-[180px]',
+      render: ({ row, rowId, rowLabel, autoFocus }) => (
+        <TextInput
+          aria-label={`${rowLabel}, email`}
+          autoFocus={autoFocus}
+          inputMode="email"
+          value={row.email ?? ''}
+          onChange={(e) => update(rowId, { email: e.target.value })}
+          placeholder="Optional"
+        />
+      ),
+    },
+    {
+      key: 'address',
+      header: 'Address',
+      className: 'min-w-[180px]',
+      render: ({ row, rowId, rowLabel, autoFocus }) => (
+        <TextInput
+          aria-label={`${rowLabel}, address`}
+          autoFocus={autoFocus}
+          value={row.address ?? ''}
+          onChange={(e) => update(rowId, { address: e.target.value })}
+          placeholder="Optional"
+        />
+      ),
+    },
+  ];
 }
-
-/* ------------------------------------------------- media sub-type select */
 
 /**
  * Tier-2 vocabulary field. Reads the format list's `subtypeListKey` meta;
- * empty means free text (SPEC Q2).
+ * empty means free text (SPEC Q2). Thin wrapper over `SubtypeCell` — the
+ * admin-only inline create button lives there.
  */
 export function SubtypeField({
   format,
   value,
   onChange,
+  id,
+  ariaLabel,
+  autoFocus,
 }: {
   format: string;
   value: string;
   onChange: (v: string) => void;
+  /** Passed through to the underlying control (table cells have no Field wrapper). */
+  id?: string;
+  ariaLabel?: string;
+  autoFocus?: boolean;
 }) {
-  const formats = useReferenceList('format');
-  const formatItem = formats.data?.items.find((f) => f.value === format);
-  const rawKey = formatItem?.meta.subtypeListKey;
-  const listKey = typeof rawKey === 'string' && rawKey ? rawKey : null;
-  const { data, isLoading, isError } = useReferenceList(listKey ?? 'mediaSubtype.photo');
-
-  if (!listKey) {
-    return (
-      <TextInput
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. Manuscript bundle"
-      />
-    );
-  }
-
-  if (isLoading || formats.isLoading) return <Skeleton className="h-10 w-full" />;
-  if (isError || !data) {
-    return (
-      <TextInput
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Type the sub-type"
-      />
-    );
-  }
-
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">Select a sub-type…</option>
-      {data.items.map((item) => (
-        <option key={item.value} value={item.value}>
-          {item.label}
-        </option>
-      ))}
-    </Select>
+    <SubtypeCell
+      format={format}
+      value={value}
+      onChange={onChange}
+      id={id}
+      ariaLabel={ariaLabel}
+      autoFocus={autoFocus}
+    />
   );
 }
 
@@ -124,27 +128,13 @@ export function RightsTypeField({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const { data, isLoading, isError } = useReferenceList('rightsType');
-
-  if (isLoading) return <Skeleton className="h-10 w-full" />;
-  if (isError || !data || data.items.length === 0) {
-    return (
-      <TextInput
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. Deed of gift"
-      />
-    );
-  }
-
   return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">Select a rights type…</option>
-      {data.items.map((item) => (
-        <option key={item.value} value={item.value}>
-          {item.label}
-        </option>
-      ))}
-    </Select>
+    <RefSelect
+      listKey="rightsType"
+      value={value}
+      onChange={onChange}
+      placeholder="Select a rights type…"
+      createLabel="rights type"
+    />
   );
 }

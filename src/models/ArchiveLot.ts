@@ -59,6 +59,33 @@ const archiveLotSchema = new Schema(
     quantityAlreadyDigitized: { type: Number, required: true, min: 0, default: 0 },
     quantityRemarks: { type: String, trim: true },
 
+    /**
+     * Per-media-type breakdown (one row per format/sub-type combination from
+     * the intake table). The top-level `format`/`dataType`/`mediaSubtype` hold
+     * the FIRST line's values (the lot's primary media) and
+     * `quantity`/`quantityToDigitize`/`quantityAlreadyDigitized` hold the
+     * across-lines sums, so every existing pipeline and filter keeps working.
+     * Single-line lots carry exactly one entry mirroring the top level.
+     */
+    mediaLines: {
+      type: [
+        new Schema(
+          {
+            format: { type: String, required: true },
+            dataType: { type: String, required: true },
+            mediaSubtype: { type: String, required: true, trim: true },
+            quantity: { type: Number, required: true, min: 0 },
+            quantityToDigitize: { type: Number, required: true, min: 0, default: 0 },
+            quantityAlreadyDigitized: { type: Number, required: true, min: 0, default: 0 },
+            notDigitizedReason: { type: String, trim: true, default: null },
+            quantityRemarks: { type: String, trim: true, default: null },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+
     conditionNotes: { type: String, trim: true },
     conditionPhotoUrl: { type: String, trim: true },
     reasonForSending: { type: String, trim: true },

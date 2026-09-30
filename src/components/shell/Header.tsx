@@ -10,9 +10,11 @@ import { THEME_OPTIONS, useTheme } from '@/hooks/useTheme';
 import {
   IconBell,
   IconChevronDown,
+  IconLogout,
   IconMenu,
   IconRefresh,
   IconSearch,
+  IconSettings,
 } from '@/components/ui/icons';
 import { useDrawer } from '@/components/shell/drawer-context';
 import { SearchOverlay } from '@/components/shell/SearchOverlay';
@@ -39,11 +41,22 @@ function isApplePlatform(): boolean {
   return /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 }
 
+/** Deep-link Settings to the first admin screen the user can actually open. */
+function settingsHrefFor(grants: readonly string[] | undefined): string {
+  if (!grants) return '/admin';
+  if (grants.includes('settings:manage')) return '/admin/settings';
+  if (grants.includes('user:manage')) return '/admin/users';
+  if (grants.includes('roles:manage')) return '/admin/roles';
+  if (grants.includes('lists:manage')) return '/admin/lists';
+  return '/admin';
+}
+
 export function Header({ page }: { page: string }) {
   const queryClient = useQueryClient();
   const { toggle } = useDrawer();
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const { data: me } = useMe();
   const { theme, setTheme } = useTheme();
 
@@ -58,8 +71,25 @@ export function Header({ page }: { page: string }) {
 
   const openAlerts = alerts.data?.totalOpen ?? 0;
 
-  // Page-agnostic: refetch everything (dashboard + admin + session), not just dashboard.
-  const refreshAll = () => queryClient.invalidateQueries();
+  const showSettings =
+    me !== undefined &&
+    (me.grants.includes('settings:manage') ||
+      me.grants.includes('user:manage') ||
+      me.grants.includes('roles:manage') ||
+      me.grants.includes('lists:manage'));
+
+  // Manual refresh: refetch every active query and keep the button in a
+  // visible "working" state until the round-trip settles, so the click
+  // always produces feedback — even when the data comes back unchanged.
+  const refreshAll = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await queryClient.refetchQueries();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // Global ⌘/Ctrl+K opens the search overlay (Spotlight convention).
   useEffect(() => {
@@ -128,12 +158,13 @@ export function Header({ page }: { page: string }) {
       <div className="flex items-center gap-2 md:gap-2.5 ml-auto md:ml-2 lg:ml-auto relative z-10">
         <button
           type="button"
-          onClick={refreshAll}
-          aria-label="Refresh data"
-          title="Refresh"
-          className="w-10 h-10 bg-surface border border-line rounded-[6px] shadow-control text-ink-2 flex items-center justify-center cursor-pointer"
+          onClick={() => void refreshAll()}
+          disabled={refreshing}
+          aria-label={refreshing ? 'Refreshing data…' : 'Refresh data'}
+          title={refreshing ? 'Refreshing…' : 'Refresh'}
+          className="w-10 h-10 bg-surface border border-line rounded-[6px] shadow-control text-ink-2 flex items-center justify-center cursor-pointer transition hover:bg-surface-sunken hover:text-ink active:scale-95 disabled:opacity-60 disabled:cursor-wait disabled:hover:bg-surface disabled:hover:text-ink-2 disabled:active:scale-100"
         >
-          <IconRefresh size={16} />
+          <IconRefresh size={16} className={refreshing ? 'animate-spin' : undefined} />
         </button>
 
         <a
@@ -225,12 +256,23 @@ export function Header({ page }: { page: string }) {
                   </div>
                 </div>
                 <div className="h-px bg-line mx-1.5 my-1" />
+                {showSettings && (
+                  <a
+                    role="menuitem"
+                    href={settingsHrefFor(me?.grants)}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-[6px] text-[12.5px] font-medium text-ink hover:bg-surface-sunken cursor-pointer"
+                  >
+                    <IconSettings size={15} className="text-ink-4" />
+                    Settings
+                  </a>
+                )}
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => void signOut({ callbackUrl: '/login' })}
-                  className="w-full text-left px-2.5 py-2 rounded-[6px] text-[12.5px] font-medium text-ink hover:bg-surface-sunken cursor-pointer border-0 bg-transparent"
+                  className="w-full flex items-center gap-2 text-left px-2.5 py-2 rounded-[6px] text-[12.5px] font-medium text-ink hover:bg-surface-sunken cursor-pointer border-0 bg-transparent"
                 >
+                  <IconLogout size={15} className="text-ink-4" />
                   Sign out
                 </button>
               </div>

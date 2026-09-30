@@ -25,28 +25,53 @@ async function subtypeLabel(format: string, value: string): Promise<string> {
 
 /**
  * Creates an intake in ONE transaction (SPEC §4.4): allocates the lotReference,
- * inserts the lot, bulk-inserts `quantity` LotItems (first `quantityToDigitize`
- * selected), bumps vocabulary usage, writes the `intake_created` audit entry.
+ * inserts the lot, bulk-inserts one LotItem per unit of quantity (each line's
+ * first `quantityToDigitize` items selected, carrying that line's
+ * `lineIndex`), bumps vocabulary usage, and writes one `intake_created` audit
+ * entry per media line (tagged with the line's sub-type for per-media-type
+ * activity grouping).
+ *
+ * The legacy top-level media fields are derived — primary = first line,
+ * quantities = across-lines sums — so every existing pipeline keeps working.
  */
 export async function createIntake(
   body: LotCreateBody,
   ctx: MutationContext,
 ): Promise<{ id: string; lotReference: string; itemsCreated: number }> {
   // Admin-managed vocabulary — reject retired/unknown values before the transaction.
+  const lines = body.mediaLines.map((l) => ({
+    format: l.format,
+    dataType: l.dataType,
+    mediaSubtype: l.mediaSubtype,
+    quantity: l.quantity,
+    quantityToDigitize: l.quantityToDigitize ?? 0,
+    quantityAlreadyDigitized: l.quantityAlreadyDigitized ?? 0,
+    notDigitizedReason: l.notDigitizedReason ?? null,
+    quantityRemarks: l.quantityRemarks ?? null,
+  }));
   await Promise.all([
     assertActiveReferenceValue('originSource', body.originSource),
-    assertActiveReferenceValue('format', body.format),
-    assertActiveReferenceValue('dataType', body.dataType),
     body.returnFormat ? assertActiveReferenceValue('returnFormat', body.returnFormat) : Promise.resolve(),
-    body.notDigitizedReason
-      ? assertActiveReferenceValue('notDigitizedReason', body.notDigitizedReason)
-      : Promise.resolve(),
     body.rights?.type ? assertActiveReferenceValue('rightsType', body.rights.type) : Promise.resolve(),
+    ...lines.flatMap((l) => [
+      assertActiveReferenceValue('format', l.format),
+      assertActiveReferenceValue('dataType', l.dataType),
+      ...(l.notDigitizedReason
+        ? [assertActiveReferenceValue('notDigitizedReason', l.notDigitizedReason)]
+        : []),
+    ]),
   ]);
-  const subtypeKey = await mediaSubtypeListKeyAsync(body.format);
-  if (subtypeKey) {
-    await assertActiveReferenceValue(subtypeKey, body.mediaSubtype);
-  }
+  const subtypeKeys = await Promise.all(lines.map((l) => mediaSubtypeListKeyAsync(l.format)));
+  await Promise.all(
+    lines.map((l, i) =>
+      subtypeKeys[i] ? assertActiveReferenceValue(subtypeKeys[i]!, l.mediaSubtype) : Promise.resolve(),
+    ),
+  );
+
+  const primary = lines[0]!;
+  const totalQuantity = lines.reduce((sum, l) => sum + l.quantity, 0);
+  const totalToDigitize = lines.reduce((sum, l) => sum + l.quantityToDigitize, 0);
+  const totalAlreadyDigitized = lines.reduce((sum, l) => sum + l.quantityAlreadyDigitized, 0);
 
   await connectToDatabase();
   const session = await ArchiveLot.startSession();
@@ -66,13 +91,14 @@ export async function createIntake(
             owner: body.owner,
             pointsOfContact: body.pointsOfContact ?? [],
             facilitator: body.facilitator ?? null,
-            format: body.format,
-            dataType: body.dataType,
-            mediaSubtype: body.mediaSubtype,
-            quantity: body.quantity,
-            quantityToDigitize: body.quantityToDigitize ?? 0,
-            quantityAlreadyDigitized: body.quantityAlreadyDigitized ?? 0,
-            quantityRemarks: body.quantityRemarks,
+            format: primary.format,
+            dataType: primary.dataType,
+            mediaSubtype: primary.mediaSubtype,
+            quantity: totalQuantity,
+            quantityToDigitize: totalToDigitize,
+            quantityAlreadyDigitized: totalAlreadyDigitized,
+            quantityRemarks: primary.quantityRemarks,
+            mediaLines: lines,
             conditionNotes: body.conditionNotes,
             conditionPhotoUrl: body.conditionPhotoUrl,
             reasonForSending: body.reasonForSending,
@@ -93,7 +119,7 @@ export async function createIntake(
               requested: body.returnRequested ?? false,
               format: body.returnFormat ?? 'none',
               durationText: body.returnDuration ?? null,
-              dueAt: null,
+              dueAt: body.returnDueAt ? new Date(body.returnDueAt) : null,
               status: body.returnRequested ? 'pending' : 'not_requested',
               returnedAt: null,
               method: null,
@@ -107,54 +133,75 @@ export async function createIntake(
         ],
         { session },
       );
-      lot!.set('digitization.expectedFileCount', body.quantityToDigitize ?? 0);
+      lot!.set('digitization.expectedFileCount', totalToDigitize);
       await lot!.save({ session });
       lotId = String(lot!._id);
 
-      const codes = generateItemCodes(lotReference, body.quantity);
-      const docs = codes.map((c, idx) => ({
-        lot: lot!._id,
-        code: c.code,
-        groupNo: c.groupNo,
-        itemNo: c.itemNo,
-        selectedForDigitization: idx < (body.quantityToDigitize ?? 0),
-        notDigitizedReason:
-          idx < (body.quantityToDigitize ?? 0) ? null : (body.notDigitizedReason ?? null),
-      }));
+      // One contiguous code run, sliced per line so group/item numbers stay
+      // unique across the lot; each line's head run is selected for digitizing.
+      const codes = generateItemCodes(lotReference, totalQuantity);
+      const docs: Record<string, unknown>[] = [];
+      let offset = 0;
+      lines.forEach((line, lineIndex) => {
+        const slice = codes.slice(offset, offset + line.quantity);
+        offset += line.quantity;
+        slice.forEach((c, idx) => {
+          const selected = idx < line.quantityToDigitize;
+          docs.push({
+            lot: lot!._id,
+            code: c.code,
+            groupNo: c.groupNo,
+            itemNo: c.itemNo,
+            lineIndex,
+            selectedForDigitization: selected,
+            notDigitizedReason: selected ? null : line.notDigitizedReason,
+          });
+        });
+      });
       for (let i = 0; i < docs.length; i += 2000) {
         await LotItem.insertMany(docs.slice(i, i + 2000), { session });
       }
 
       // usageCount for open-list values the lot will never change again.
-      if (subtypeKey) await bumpUsage(subtypeKey, body.mediaSubtype, session);
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i]!;
+        if (subtypeKeys[i]) await bumpUsage(subtypeKeys[i]!, line.mediaSubtype, session);
+      }
       if (body.rights?.type) await bumpUsage('rightsType', body.rights.type, session);
       await bumpUsage('originSource', body.originSource, session);
-      await bumpUsage('format', body.format, session);
-      await bumpUsage('dataType', body.dataType, session);
+      for (const value of new Set(lines.map((l) => l.format))) {
+        await bumpUsage('format', value, session);
+      }
+      for (const value of new Set(lines.map((l) => l.dataType))) {
+        await bumpUsage('dataType', value, session);
+      }
       if (body.returnFormat) await bumpUsage('returnFormat', body.returnFormat, session);
-      if (body.notDigitizedReason) {
-        await bumpUsage('notDigitizedReason', body.notDigitizedReason, session);
+      for (const value of new Set(lines.map((l) => l.notDigitizedReason).filter((r): r is string => r != null))) {
+        await bumpUsage('notDigitizedReason', value, session);
       }
 
-      const label = await subtypeLabel(body.format, body.mediaSubtype);
+      const actorId = new Types.ObjectId(ctx.userId);
+      const now = new Date();
       await ActivityLog.create(
-        [
-          {
+        await Promise.all(
+          lines.map(async (line, i) => ({
             lot: lot!._id,
             lotCode: lotReference,
             kind: 'intake_created',
-            title: 'Intake created',
-            detail: `${body.quantity} items · ${label}. Condition photo attached.`,
-            actor: new Types.ObjectId(ctx.userId),
+            title: lines.length > 1 ? `Intake created — line ${i + 1}` : 'Intake created',
+            detail: `${line.quantity} items · ${await subtypeLabel(line.format, line.mediaSubtype)}${lines.length > 1 ? ` (${i + 1} of ${lines.length})` : ''}. Condition photo attached.`,
+            mediaSubtype: line.mediaSubtype,
+            mediaLineIndex: i,
+            actor: actorId,
             actorName: ctx.userName,
-            at: new Date(),
+            at: now,
             changes: [],
-          },
-        ],
+          })),
+        ),
         { session },
       );
     });
-    return { id: lotId, lotReference, itemsCreated: body.quantity };
+    return { id: lotId, lotReference, itemsCreated: totalQuantity };
   } finally {
     await session.endSession();
   }

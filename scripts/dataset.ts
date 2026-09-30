@@ -220,6 +220,8 @@ export function buildDataset(now = new Date()): Dataset {
 
       const excluded = rng() < 0.55 ? int(0, Math.floor(quantity * 0.35)) : 0;
       const toDigitize = Math.max(0, quantity - excluded);
+      const quantityRemarks =
+        rng() < 0.3 ? `${int(2, 12)} ${media.unit} per container` : undefined;
       let found = 0;
       if (stage === 'scanning') found = int(0, toDigitize);
       else if (['mls_tag', 'storage', 'returned'].includes(stage)) found = toDigitize;
@@ -290,7 +292,19 @@ export function buildDataset(now = new Date()): Dataset {
         quantity,
         quantityToDigitize: toDigitize,
         quantityAlreadyDigitized: 0,
-        quantityRemarks: rng() < 0.3 ? `${int(2, 12)} ${media.unit} per container` : undefined,
+        quantityRemarks,
+        mediaLines: [
+          {
+            format: media.format,
+            dataType: media.subtype === 'Digital' ? 'digital' : 'physical',
+            mediaSubtype: media.subtype,
+            quantity,
+            quantityToDigitize: toDigitize,
+            quantityAlreadyDigitized: 0,
+            notDigitizedReason: null,
+            quantityRemarks: quantityRemarks ?? null,
+          },
+        ],
         conditionNotes:
           rng() < 0.7
             ? 'Stored in sleeves, generally clean. Minor surface scratching on some items.'
@@ -392,6 +406,7 @@ export function buildDataset(now = new Date()): Dataset {
           code: itemCode,
           groupNo: g,
           itemNo: i,
+          lineIndex: 0,
           selectedForDigitization: selected,
           notDigitizedReason: selected ? null : pick(NOT_DIGITIZED_POOL),
           digitized,

@@ -5,7 +5,9 @@ export const KPI_HREF: Record<string, string> = {
   awaiting_decision: '/queues/decision',
   in_digitization: '/queues/digitize',
   awaiting_mls_tag: '/queues/mls',
+  returns_pending: '/queues/returns',
   returns_overdue: '/queues/returns',
+  discarded: '/queues/discards',
 };
 
 export const ALERT_HREF: Record<string, string> = {

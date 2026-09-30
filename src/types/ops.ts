@@ -184,6 +184,8 @@ const lotItemSchema = z
     code: z.string(),
     groupNo: z.number(),
     itemNo: z.number(),
+    /** Position in the lot's `mediaLines` array. 0 for pre-lines items. */
+    lineIndex: z.number(),
     selectedForDigitization: z.boolean(),
     digitized: z.boolean(),
     taggedInMls: z.boolean(),
@@ -220,6 +222,9 @@ export const activityResponseSchema = z
           detail: z.string().nullable(),
           actorName: z.string(),
           at: z.string(),
+          /** Media tag for per-media-type grouping (F4). Null = lot-wide. */
+          mediaSubtype: z.string().nullable(),
+          mediaLineIndex: z.number().nullable(),
         })
         .strict(),
     ),

@@ -187,6 +187,8 @@ check('KPI awaiting decision', [kpi('awaiting_decision')?.value, kpi('awaiting_d
 check('KPI in digitization', [kpi('in_digitization')?.value, kpi('in_digitization')?.note], [2, '300 items · 80% scanned']);
 check('KPI awaiting MLS tag', [kpi('awaiting_mls_tag')?.value, kpi('awaiting_mls_tag')?.note], [1, '2 duplicates flagged for review']);
 check('KPI returns overdue', [kpi('returns_overdue')?.value, kpi('returns_overdue')?.note], [1, 'of 2 returns pending']);
+check('KPI returns pending', [kpi('returns_pending')?.value, kpi('returns_pending')?.note], [2, '1 overdue']);
+check('KPI discarded', [kpi('discarded')?.value], [1]);
 
 /* --- 3. alerts ------------------------------------------------------------ */
 

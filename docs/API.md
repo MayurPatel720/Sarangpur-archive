@@ -99,8 +99,8 @@ the text `$or`. No `$lookup`.
 Role: `volunteer`+. Runs in **one transaction** (`SPEC.md` §4.4): allocate `lotReference`,
 insert the lot, generate `quantity` × `LotItem`, write the `intake_created` audit entry.
 
-Body mirrors the intake form; `quantityToDigitize ≤ quantity` and `conditionPhotoUrl` are
-required. → `201 { id, lotReference, itemsCreated }`
+Body mirrors the intake form; per-line quantity guards apply and `conditionPhotoUrl` is
+optional. → `201 { id, lotReference, itemsCreated }`
 
 ### `GET /api/lots/[lotId]` — DONE
 Full record for the detail screen: lot, resolved user names, attachment list, item-profile

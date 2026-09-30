@@ -114,7 +114,10 @@ function round(value: number, places = 1): number {
 
 function daysSince(value: Date | string, now: Date): number {
   const then = value instanceof Date ? value : new Date(value);
-  return Math.max(0, Math.floor((now.getTime() - then.getTime()) / DAY_MS));
+  // Calendar days, not elapsed 24h blocks — stage dates are jittered into working
+  // hours, so counting midnights keeps "day 11" stable at any hour of the day.
+  const dayKey = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.max(0, Math.floor((dayKey(now) - dayKey(then)) / DAY_MS));
 }
 
 /* ------------------------------------------------------------------ summary */
@@ -144,6 +147,7 @@ export function shapeSummary(
   const decisionSlaDays = window.decisionPendingDays;
   const capacityTb = envInt('ARCHIVE_STORAGE_CAPACITY_TB', 96);
   const usedTb = round(storageBytes / TB, 1);
+  const returnsOverdueN = returnsOverdue?.n ?? 0;
 
   const stageCountMany = (keys: string[]) =>
     keys.reduce((sum, s) => sum + (byStage.get(s as Stage) ?? 0), 0);
@@ -198,11 +202,30 @@ export function shapeSummary(
         noteSeverity: duplicates ? 'warning' : 'neutral',
       },
       {
+        key: 'returns_pending',
+        label: 'Returns pending',
+        value: returnsPending,
+        note:
+          returnsPending === 0
+            ? 'Nothing awaiting return'
+            : returnsOverdueN > 0
+              ? `${returnsOverdueN} overdue`
+              : 'All within agreed duration',
+        noteSeverity: returnsOverdueN > 0 ? 'critical' : 'neutral',
+      },
+      {
         key: 'returns_overdue',
         label: 'Returns overdue',
         value: returnsOverdue?.n ?? 0,
         note: `of ${returnsPending} return${returnsPending === 1 ? '' : 's'} pending`,
         noteSeverity: (returnsOverdue?.n ?? 0) > 0 ? 'critical' : 'neutral',
+      },
+      {
+        key: 'discarded',
+        label: 'Discarded',
+        value: stageCount('discarded'),
+        note: 'Removed from circulation · held for record',
+        noteSeverity: 'neutral',
       },
     ],
   };
