@@ -278,9 +278,45 @@ textarea {
 }
 
 /*
- * Thin scrollbar for the sidebar nav (dark rail). Firefox uses
- * scrollbar-width; Chromium needs the pseudo-elements. Colours come
- * from the theme tokens, never raw values.
+ * Global scrollbars — slim, token-coloured, theme-aware (the vars flip with
+ * [data-theme], so one rule covers light and dark). Chromium needs the
+ * pseudo-elements; Firefox reads the standard properties. The transparent
+ * 2px border + padding-box insets a 6px rounded core from the track edges,
+ * and arrow buttons are dropped.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-4) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-ink-4);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-3);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+}
+
+/*
+ * Rail-only override for the sidebar nav (dark in both themes).
+ * Colours come from the theme tokens, never raw values.
+ * Specificity beats the global rule above.
  */
 .scrollbar-thin {
   scrollbar-width: thin;
