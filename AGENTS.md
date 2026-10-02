@@ -25,7 +25,9 @@ servers; the database holds metadata only).
 
 **Do not add** a component library (MUI, shadcn, Ant), a state manager (Redux, Zustand),
 an ORM other than Mongoose, or a CSS-in-JS library. The primitives in
-`src/components/ui/primitives.tsx` cover the design system.
+`src/components/ui/primitives.tsx` cover the design system. Exception: AG Grid
+(`ag-grid-community` + `ag-grid-react`, via `src/components/ui/AgGridShell.tsx`) is the
+approved grid library for data-heavy tables; `DataTable` stays as the default elsewhere.
 
 ---
 

@@ -5,10 +5,15 @@
 export const queryKeys = {
   dashboard: {
     all: ['dashboard'] as const,
-    summary: () => [...queryKeys.dashboard.all, 'summary'] as const,
-    pipeline: () => [...queryKeys.dashboard.all, 'pipeline'] as const,
-    alerts: () => [...queryKeys.dashboard.all, 'alerts'] as const,
-    activity: (limit: number) => [...queryKeys.dashboard.all, 'activity', limit] as const,
+    blocks: () => [...queryKeys.dashboard.all, 'blocks'] as const,
+    summary: (format?: string) =>
+      [...queryKeys.dashboard.all, 'summary', format ?? 'all'] as const,
+    pipeline: (format?: string) =>
+      [...queryKeys.dashboard.all, 'pipeline', format ?? 'all'] as const,
+    alerts: (format?: string) =>
+      [...queryKeys.dashboard.all, 'alerts', format ?? 'all'] as const,
+    activity: (limit: number, format?: string) =>
+      [...queryKeys.dashboard.all, 'activity', limit, format ?? 'all'] as const,
   },
   health: {
     all: ['health'] as const,
@@ -37,22 +42,30 @@ export const queryKeys = {
     items: (id: string, params: string) => [...queryKeys.lots.all, 'items', id, params] as const,
     activity: (id: string, page: number, pageSize: number) =>
       [...queryKeys.lots.all, 'activity', id, page, pageSize] as const,
+    triage: (id: string) => [...queryKeys.lots.all, 'triage', id] as const,
   },
   queues: {
     all: ['queues'] as const,
-    decision: (page: number, pageSize: number) =>
-      [...queryKeys.queues.all, 'decision', page, pageSize] as const,
-    digitize: (page: number, pageSize: number) =>
-      [...queryKeys.queues.all, 'digitize', page, pageSize] as const,
-    mls: (page: number, pageSize: number) =>
-      [...queryKeys.queues.all, 'mls', page, pageSize] as const,
-    returns: (page: number, pageSize: number) =>
-      [...queryKeys.queues.all, 'returns', page, pageSize] as const,
-    discards: (page: number, pageSize: number) =>
-      [...queryKeys.queues.all, 'discards', page, pageSize] as const,
+    decision: (page: number, pageSize: number, format?: string) =>
+      [...queryKeys.queues.all, 'decision', page, pageSize, format ?? 'all'] as const,
+    digitize: (page: number, pageSize: number, format?: string) =>
+      [...queryKeys.queues.all, 'digitize', page, pageSize, format ?? 'all'] as const,
+    mls: (page: number, pageSize: number, format?: string) =>
+      [...queryKeys.queues.all, 'mls', page, pageSize, format ?? 'all'] as const,
+    returns: (page: number, pageSize: number, format?: string) =>
+      [...queryKeys.queues.all, 'returns', page, pageSize, format ?? 'all'] as const,
+    discards: (page: number, pageSize: number, format?: string) =>
+      [...queryKeys.queues.all, 'discards', page, pageSize, format ?? 'all'] as const,
   },
   search: {
     all: ['search'] as const,
     query: (params: string) => [...queryKeys.search.all, 'query', params] as const,
+  },
+  projects: {
+    all: ['projects'] as const,
+    list: (params: string) => [...queryKeys.projects.all, 'list', params] as const,
+    detail: (id: string) => [...queryKeys.projects.all, 'detail', id] as const,
+    lotProjects: (lotId: string) =>
+      [...queryKeys.projects.all, 'lot-projects', lotId] as const,
   },
 } as const;

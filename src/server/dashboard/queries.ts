@@ -4,12 +4,14 @@ import { ActivityLog, ArchiveLot } from '@/models';
 import {
   ACTIVITY_SEVERITY,
   BOARD_STAGES,
+  FORMATS,
   IN_FLIGHT_STAGES,
   STAGE_LABELS,
   type ActivityKind,
   type Stage,
 } from '@/lib/domain';
 import {
+  formatBlocksPipeline,
   lotFacetPipeline,
   pipelineBoardPipeline,
   recentActivityPipeline,
@@ -18,9 +20,11 @@ import {
 } from './pipelines';
 import { getSettings } from '@/server/admin/queries';
 import { activeValuesWithFlag, defaultStageGraph, getStageGraph } from '@/server/reference/runtime';
+import { can } from '@/server/permissions';
 import type {
   ActivityResponse,
   AlertsResponse,
+  BlocksResponse,
   PipelineResponse,
   Severity,
   SummaryResponse,
@@ -231,7 +235,7 @@ export function shapeSummary(
   };
 }
 
-export async function getSummary(now = new Date()): Promise<SummaryResponse> {
+export async function getSummary(now = new Date(), format?: string): Promise<SummaryResponse> {
   await connectToDatabase();
   const [settings, stages, returnOpen] = await Promise.all([
     getSettings().catch(() => null),
@@ -239,7 +243,9 @@ export async function getSummary(now = new Date()): Promise<SummaryResponse> {
     activeValuesWithFlag('returnStatus', 'open'),
   ]);
   const window = buildWindow(now, settings ?? undefined, stages, returnOpen);
-  const [facet] = await ArchiveLot.aggregate<LotFacetResult>(asPipeline(lotFacetPipeline(window)));
+  const [facet] = await ArchiveLot.aggregate<LotFacetResult>(
+    asPipeline(lotFacetPipeline(window, format)),
+  );
   if (!facet) throw new Error('Summary aggregation returned no facet document');
   return shapeSummary(facet, window);
 }
@@ -314,7 +320,7 @@ export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow): Ale
   };
 }
 
-export async function getAlerts(now = new Date()): Promise<AlertsResponse> {
+export async function getAlerts(now = new Date(), format?: string): Promise<AlertsResponse> {
   await connectToDatabase();
   const [settings, stages, returnOpen] = await Promise.all([
     getSettings().catch(() => null),
@@ -322,7 +328,9 @@ export async function getAlerts(now = new Date()): Promise<AlertsResponse> {
     activeValuesWithFlag('returnStatus', 'open'),
   ]);
   const window = buildWindow(now, settings ?? undefined, stages, returnOpen);
-  const [facet] = await ArchiveLot.aggregate<LotFacetResult>(asPipeline(lotFacetPipeline(window)));
+  const [facet] = await ArchiveLot.aggregate<LotFacetResult>(
+    asPipeline(lotFacetPipeline(window, format)),
+  );
   if (!facet) throw new Error('Alerts aggregation returned no facet document');
   return shapeAlerts(facet, window);
 }
@@ -454,12 +462,15 @@ export function shapeBoard(
   };
 }
 
-export async function getPipelineBoard(now = new Date()): Promise<PipelineResponse> {
+export async function getPipelineBoard(
+  now = new Date(),
+  format?: string,
+): Promise<PipelineResponse> {
   await connectToDatabase();
   const stages = await getStageGraph();
   const window = buildWindow(now, undefined, stages);
   const buckets = await ArchiveLot.aggregate<BoardBucket>(
-    asPipeline(pipelineBoardPipeline(window)),
+    asPipeline(pipelineBoardPipeline(window, format)),
   );
   return shapeBoard(buckets, now, stages);
 }
@@ -471,7 +482,8 @@ export interface ActivityRow {
   kind: ActivityKind;
   title: string;
   detail?: string | null;
-  lotCode: string;
+  lotCode?: string | null;
+  projectCode?: string | null;
   actorName: string;
   at: Date | string;
 }
@@ -483,7 +495,8 @@ export function shapeActivity(rows: ActivityRow[]): ActivityResponse {
       kind: r.kind,
       title: r.title,
       detail: r.detail ?? '',
-      lotCode: r.lotCode,
+      lotCode: r.lotCode ?? null,
+      projectCode: r.projectCode ?? null,
       actorName: r.actorName,
       at: (r.at instanceof Date ? r.at : new Date(r.at)).toISOString(),
       severity: ACTIVITY_SEVERITY[r.kind] ?? 'neutral',
@@ -491,8 +504,61 @@ export function shapeActivity(rows: ActivityRow[]): ActivityResponse {
   };
 }
 
-export async function getRecentActivity(limit = 8): Promise<ActivityResponse> {
+export async function getRecentActivity(
+  limit = 8,
+  format?: string,
+): Promise<ActivityResponse> {
   await connectToDatabase();
-  const rows = await ActivityLog.aggregate<ActivityRow>(asPipeline(recentActivityPipeline(limit)));
+  const rows = await ActivityLog.aggregate<ActivityRow>(
+    asPipeline(recentActivityPipeline(limit, format)),
+  );
   return shapeActivity(rows);
+}
+
+/* ------------------------------------------------------------------ blocks */
+
+interface FormatBlockRow {
+  _id: string;
+  lots: number;
+  inFlight: number;
+  awaitingDecision: number;
+}
+
+/**
+ * Pure shaping for the hub: fills in formats that have no lots (zeros) and nulls
+ * the counts of any format the caller's grants do not include (`format:*`), so
+ * the lock state is decided here and no locked format's numbers reach the
+ * browser. Kept separate from the query so verify-pipelines can run it.
+ */
+export function shapeFormatBlocks(
+  rows: FormatBlockRow[],
+  grants: readonly string[],
+): BlocksResponse {
+  const byFormat = new Map(rows.map((r) => [r._id, r]));
+
+  const blocks = FORMATS.map((format) => {
+    const granted = can(grants, `format:${format}`);
+    const row = byFormat.get(format);
+    return {
+      format: format as string,
+      lots: granted ? (row?.lots ?? 0) : null,
+      inFlight: granted ? (row?.inFlight ?? 0) : null,
+      awaitingDecision: granted ? (row?.awaitingDecision ?? 0) : null,
+    };
+  });
+  return { blocks };
+}
+
+/**
+ * The dashboard hub: one $group over the collection, shaped against the
+ * caller's live grants.
+ */
+export async function getFormatBlocks(grants: readonly string[]): Promise<BlocksResponse> {
+  await connectToDatabase();
+  const stages = await getStageGraph();
+  const window = buildWindow(new Date(), undefined, stages);
+  const rows = await ArchiveLot.aggregate<FormatBlockRow>(
+    asPipeline(formatBlocksPipeline(window)),
+  );
+  return shapeFormatBlocks(rows, grants);
 }

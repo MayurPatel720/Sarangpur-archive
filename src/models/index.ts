@@ -20,3 +20,4 @@ export {
 } from './MlsOutbox';
 export { ReferenceList, type ReferenceListDoc } from './ReferenceList';
 export { Role, type RoleDoc } from './Role';
+export { Project, type ProjectDoc } from './Project';

@@ -1,13 +1,22 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { ALERT_HREF } from '@/lib/dashboard-links';
+import { ALERT_HREF, scopedHref } from '@/lib/dashboard-links';
+import { FORMATS, type Format } from '@/lib/domain';
 import { num, severityChip, severityText } from '@/lib/format';
 import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
-import { IconAlertTriangle, IconClock, IconCopy, IconReturn, IconStar } from '@/components/ui/icons';
+import {
+  IconAlertTriangle,
+  IconChevronLeft,
+  IconClock,
+  IconCopy,
+  IconReturn,
+  IconStar,
+} from '@/components/ui/icons';
 import type { Severity } from '@/types/dashboard';
 
 const ALERT_ICON: Record<string, typeof IconAlertTriangle> = {
@@ -27,9 +36,16 @@ const ICON_TILE: Record<Severity, string> = {
 };
 
 export function AlertsManager() {
+  const searchParams = useSearchParams();
+  const rawFormat = searchParams.get('format');
+  const format =
+    rawFormat && (FORMATS as readonly string[]).includes(rawFormat)
+      ? (rawFormat as Format)
+      : undefined;
+
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: queryKeys.dashboard.alerts(),
-    queryFn: dashboardApi.alerts,
+    queryKey: queryKeys.dashboard.alerts(format),
+    queryFn: () => dashboardApi.alerts(format),
   });
 
   if (error) {
@@ -44,6 +60,15 @@ export function AlertsManager() {
   return (
     <div className="flex flex-col gap-4 md:gap-5">
       <div className="flex flex-col gap-1.5 min-w-0">
+        {format && (
+          <Link
+            href="/dashboard"
+            className="w-fit text-[12px] font-semibold text-ink-4 no-underline hover:text-ink flex items-center gap-1"
+          >
+            <IconChevronLeft size={13} />
+            All formats
+          </Link>
+        )}
         <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">
           Alerts &amp; escalations
         </h1>
@@ -74,7 +99,7 @@ export function AlertsManager() {
                 return (
                   <Link
                     key={alert.key}
-                    href={ALERT_HREF[alert.key] ?? '/dashboard'}
+                    href={scopedHref(ALERT_HREF[alert.key] ?? '/dashboard', format)}
                     className={`flex items-center gap-3 px-4 py-3 no-underline ${
                       i < data.alerts.length - 1 ? 'border-b border-line-row' : ''
                     }`}

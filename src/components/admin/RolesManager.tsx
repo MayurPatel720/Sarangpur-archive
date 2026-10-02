@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useCan } from '@/hooks/useCan';
-import { PERMISSIONS } from '@/server/permissions';
+import { ALL_PERMISSIONS } from '@/server/permissions';
 import { dateTime } from '@/lib/format';
 import type { Permission } from '@/server/permissions';
 import { Panel, PanelHeader, Skeleton, ErrorState, Badge } from '@/components/ui/primitives';
@@ -131,7 +131,7 @@ function RoleDetail({ role, onSaved }: { role: AdminRole | null; onSaved: () => 
 
   const groups = useMemo(() => {
     const map = new Map<string, Permission[]>();
-    for (const p of PERMISSIONS) {
+    for (const p of ALL_PERMISSIONS) {
       const group = p.split(':')[0] ?? p;
       const list = map.get(group) ?? [];
       list.push(p);
@@ -180,7 +180,7 @@ function RoleDetail({ role, onSaved }: { role: AdminRole | null; onSaved: () => 
 
         <div className="flex flex-col gap-3">
           <span className="text-[12px] font-semibold text-ink-2">
-            Permissions · {grants.length} of {PERMISSIONS.length}
+            Permissions · {grants.length} of {ALL_PERMISSIONS.length}
           </span>
           {groups.map(([group, perms]) => (
             <div key={group} className="border border-line-soft rounded-[6px] px-3 py-1">
@@ -256,7 +256,7 @@ function CreateRoleDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
         </Field>
         <Field label={`Permissions · ${grants.length} selected`}>
           <div className="border border-line-soft rounded-[6px] px-3 py-1 max-h-[240px] overflow-auto grid grid-cols-1 gap-x-4">
-            {PERMISSIONS.map((p) => (
+            {ALL_PERMISSIONS.map((p) => (
               <Checkbox
                 key={p}
                 label={p}

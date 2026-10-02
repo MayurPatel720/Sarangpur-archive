@@ -5,13 +5,14 @@ import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { relativeStamp, severityMark } from '@/lib/format';
 import { ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
+import type { Format } from '@/lib/domain';
 
 const LIMIT = 8;
 
-export function ActivityFeed() {
+export function ActivityFeed({ format }: { format?: Format }) {
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: queryKeys.dashboard.activity(LIMIT),
-    queryFn: () => dashboardApi.activity(LIMIT),
+    queryKey: queryKeys.dashboard.activity(LIMIT, format),
+    queryFn: () => dashboardApi.activity(LIMIT, format),
   });
 
   if (error) {

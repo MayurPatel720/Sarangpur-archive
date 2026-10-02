@@ -103,15 +103,6 @@ export const ROLE_LABELS: Record<Role, string> = {
   viewer: 'Viewer',
 };
 
-/** The four significance questions from the developer brief, in order. */
-export const SIGNIFICANCE_QUESTIONS = [
-  'Does the photo have historical significance — connected to a prasang, or useful for future samaiyos / utsavs / patotsavs / videos / projects / shibirs?',
-  'Does the photo contain Shastriji Maharaj or Yogiji Maharaj?',
-  'Does the photo contain an extraordinary, special, or unique image of Pramukh Swami Maharaj? (Verify uniqueness with MLS search first.)',
-  'Does the photo contain Sadguru and Vadil Santo without the Satpurush — e.g. Yatra, Pardesh Vicharan?',
-] as const;
-export type SignificanceQuestion = (typeof SIGNIFICANCE_QUESTIONS)[number];
-
 export const OVERRIDE_STATUSES = ['none', 'requested', 'approved', 'rejected'] as const;
 export type OverrideStatus = (typeof OVERRIDE_STATUSES)[number];
 
@@ -160,6 +151,11 @@ export const ACTIVITY_KINDS = [
   'duplicate_resolved',
   'discard_confirmed',
   'discard_reversed',
+  'project_created',
+  'project_updated',
+  'project_lot_added',
+  'project_lot_removed',
+  'item_created',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -185,6 +181,11 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   duplicate_resolved: 'info',
   discard_confirmed: 'critical',
   discard_reversed: 'warning',
+  project_created: 'info',
+  project_updated: 'neutral',
+  project_lot_added: 'info',
+  project_lot_removed: 'warning',
+  item_created: 'neutral',
 };
 
 /**

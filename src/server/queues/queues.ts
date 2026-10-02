@@ -37,6 +37,9 @@ export async function runQueue(
   key: string,
   page: number,
   pageSize: number,
+  /** Format scope from `?format=` — validated + grant-checked by the route via
+   * `requireFormatScope` before it reaches here. */
+  format?: string,
 ): Promise<LotListResponse> {
   const config = QUEUES[key];
   if (!config) throw new HttpError(404, `Unknown queue '${key}'.`);
@@ -55,5 +58,6 @@ export async function runQueue(
     sort: config.sort,
     ...(config.stage ? { stage: config.stage } : {}),
     ...(returnStatus ? { returnStatus } : {}),
+    ...(format ? { format } : {}),
   });
 }

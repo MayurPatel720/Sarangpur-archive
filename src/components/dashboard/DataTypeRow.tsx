@@ -1,11 +1,14 @@
 import Link from 'next/link';
+import { scopedHref } from '@/lib/dashboard-links';
+import type { Format } from '@/lib/domain';
 import { IconBox, IconDatabase } from '@/components/ui/icons';
 import { Panel } from '@/components/ui/primitives';
 
 /**
  * Data-type shortcut row. Links land on the Master List pre-filtered by
  * dataType (see RegisterManager initialDataType) — the same deep-link
- * pattern the pipeline board uses for stages.
+ * pattern the pipeline board uses for stages. `format` keeps the drill-down
+ * inside the caller's format block.
  */
 const CELLS = [
   {
@@ -22,12 +25,12 @@ const CELLS = [
   },
 ] as const;
 
-export function DataTypeRow() {
+export function DataTypeRow({ format }: { format?: Format } = {}) {
   return (
     <div className="grid grid-cols-2 gap-3 md:gap-3.5">
       {CELLS.map(({ label, hint, href, Icon }) => (
         <Panel key={href} className="px-4 py-3">
-          <Link href={href} className="flex items-center gap-3 no-underline">
+          <Link href={scopedHref(href, format)} className="flex items-center gap-3 no-underline">
             <span className="w-9 h-9 rounded-md bg-accent/15 text-accent flex items-center justify-center flex-shrink-0">
               <Icon size={17} />
             </span>

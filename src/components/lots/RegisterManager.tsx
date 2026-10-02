@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { scopedHref } from '@/lib/dashboard-links';
 import type { LotListResponse } from '@/types/lot';
 import { STAGE_LABELS } from '@/lib/domain';
 import { date, dmyToIso } from '@/lib/format';
@@ -143,6 +144,8 @@ export function RegisterManager({
   const cleanStage = initialStage ?? '';
   const cleanFormat = initialFormat ?? '';
   const cleanDataType = initialDataType ?? '';
+  // URL-validated by the page component; present only inside a format block.
+  const lockedFormat = cleanFormat || undefined;
   const [filters, setFilters] = useState<LotFilters>({
     ...EMPTY_FILTERS,
     stage: cleanStage,
@@ -225,7 +228,7 @@ export function RegisterManager({
         </div>
         <div className="sm:ml-auto">
           <Link
-            href="/register/new"
+            href={scopedHref('/register/new', lockedFormat)}
             className="inline-flex items-center justify-center h-10 px-4 bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold no-underline"
           >
             New intake
@@ -233,7 +236,7 @@ export function RegisterManager({
         </div>
       </div>
 
-      <RegisterFilters filters={filters} onChange={applyFilters} />
+      <RegisterFilters filters={filters} onChange={applyFilters} lockedFormat={lockedFormat} />
 
       <Panel>
         <PanelHeader title="Lots" />
@@ -251,7 +254,7 @@ columns={columns}
               loading={query.isLoading}
               emptyMessage="No lots match these filters."
               getRowKey={(r) => r.id}
-              onRowClick={(r) => router.push(`/register/${r.id}`)}
+              onRowClick={(r) => router.push(scopedHref(`/register/${r.id}`, lockedFormat))}
               rowActions={(r) => <LotRowActions row={r} />}
             />
           )}

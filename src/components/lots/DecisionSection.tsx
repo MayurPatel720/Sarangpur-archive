@@ -3,27 +3,15 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
-import type { DecisionBody, LotDetailResponse } from '@/types/lot';
-import { SIGNIFICANCE_QUESTIONS, TERMINAL_STAGES } from '@/lib/domain';
-import { useReferenceList } from '@/hooks/useReferenceList';
-import { date, prettyEnum } from '@/lib/format';
-import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea } from '@/components/ui/Form';
+import type { LotDetailResponse } from '@/types/lot';
+import { TERMINAL_STAGES } from '@/lib/domain';
+import { date } from '@/lib/format';
+import { Field, FormError, GhostButton, PrimaryButton, Textarea } from '@/components/ui/Form';
 import { Badge, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
+import { DecisionTriage } from './DecisionTriage';
 
 type DetailLot = LotDetailResponse['lot'];
-
-function YesNo({ value, onChange, label }: { value: '' | 'yes' | 'no'; onChange: (v: 'yes' | 'no') => void; label: string }) {
-  return (
-    <Field label={label}>
-      <Select value={value} onChange={(e) => onChange(e.target.value as 'yes' | 'no')}>
-        <option value="">Choose…</option>
-        <option value="yes">Yes</option>
-        <option value="no">No</option>
-      </Select>
-    </Field>
-  );
-}
 
 export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged: () => void }) {
   const me = useMe();
@@ -37,37 +25,9 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
   const terminal = (TERMINAL_STAGES as string[]).includes(lot.stage);
   const [error, setError] = useState<string | null>(null);
 
-  // Checklist state
-  const [existsInMls, setExistsInMls] = useState<'' | 'yes' | 'no'>('');
-  const [newCopyIsBetter, setNewCopyIsBetter] = useState<'' | 'yes' | 'no'>('');
-  const [conditionUsable, setConditionUsable] = useState<'' | 'yes' | 'no'>('');
-  const [conditionIssue, setConditionIssue] = useState('');
-  const [flags, setFlags] = useState([false, false, false, false]);
-  const [mlsMatchPaths, setMlsMatchPaths] = useState('');
-  const [notes, setNotes] = useState('');
-  const [disposition, setDisposition] = useState<'' | 'return' | 'discard'>('');
-  const [discardReason, setDiscardReason] = useState('');
-  const [discardNotes, setDiscardNotes] = useState('');
-  const [needsDisposition, setNeedsDisposition] = useState(false);
-  const discardReasons = useReferenceList('discardReason');
-
   // Override state
   const [justification, setJustification] = useState('');
   const [requesting, setRequesting] = useState(false);
-
-  const resetChecklist = () => {
-    setExistsInMls('');
-    setNewCopyIsBetter('');
-    setConditionUsable('');
-    setConditionIssue('');
-    setFlags([false, false, false, false]);
-    setMlsMatchPaths('');
-    setNotes('');
-    setDisposition('');
-    setDiscardReason('');
-    setDiscardNotes('');
-    setNeedsDisposition(false);
-  };
 
   const submitMut = useMutation({
     mutationFn: () => lotsApi.submit(lot.id),
@@ -76,25 +36,6 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
       onChanged();
     },
     onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not submit for decision.'),
-  });
-
-  const decideMut = useMutation({
-    mutationFn: (body: DecisionBody) => lotsApi.recordDecision(lot.id, body),
-    onSuccess: () => {
-      setError(null);
-      resetChecklist();
-      onChanged();
-    },
-    onError: (e) => {
-      const message = e instanceof ApiRequestError ? e.message : 'Could not record the decision.';
-      // Server names the verdict when a disposition is required but missing.
-      if (e instanceof ApiRequestError && e.status === 400 && /return_or_discard/.test(message)) {
-        setNeedsDisposition(true);
-        setError('The checklist points away from the archive — choose return or discard below.');
-      } else {
-        setError(message);
-      }
-    },
   });
 
   const requestMut = useMutation({
@@ -116,41 +57,6 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
     },
     onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not decide the override.'),
   });
-
-  const record = () => {
-    setError(null);
-    if (!existsInMls) return setError('State whether this lot already exists in MLS.');
-    if (existsInMls === 'yes' && !newCopyIsBetter) {
-      return setError('State whether this copy is better — the lot already exists in MLS.');
-    }
-    if (!conditionUsable) return setError('State whether the condition is usable.');
-    if (conditionUsable === 'no' && !conditionIssue.trim()) {
-      return setError('Describe the condition issue — condition was marked unusable.');
-    }
-    if (needsDisposition && !disposition) return setError('Choose return or discard.');
-    if (disposition === 'discard' && !discardReason) return setError('Choose a discard reason.');
-    const paths = mlsMatchPaths
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const body: DecisionBody = {
-      existsInMls: existsInMls === 'yes',
-      ...(existsInMls === 'yes' ? { newCopyIsBetter: newCopyIsBetter === 'yes' } : {}),
-      ...(existsInMls === 'yes' && paths.length ? { mlsMatchPaths: paths } : {}),
-      conditionUsable: conditionUsable === 'yes',
-      ...(conditionUsable === 'no' ? { conditionIssue: conditionIssue.trim() } : {}),
-      significanceFlags: [flags[0] ?? false, flags[1] ?? false, flags[2] ?? false, flags[3] ?? false],
-      ...(notes.trim() ? { notes: notes.trim() } : {}),
-      ...(needsDisposition && disposition ? { disposition } : {}),
-      ...(disposition === 'discard'
-        ? {
-            discardReason: discardReason as NonNullable<DecisionBody['discardReason']>,
-            ...(discardNotes.trim() ? { discardNotes: discardNotes.trim() } : {}),
-          }
-        : {}),
-    };
-    decideMut.mutate(body);
-  };
 
   const showChecklist =
     !terminal && (lot.stage === 'decision' || lot.decisionDetail.overrideStatus === 'approved');
@@ -202,7 +108,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
               In MLS: {d.existsInMls === null ? '—' : d.existsInMls ? 'yes' : 'no'}
               {d.newCopyIsBetter !== null ? ` · Better copy: ${d.newCopyIsBetter ? 'yes' : 'no'}` : ''}
               {' · '}Condition usable: {d.conditionUsable === null ? '—' : d.conditionUsable ? 'yes' : 'no'}
-              {' · '}Significance: {d.significanceFlags === null ? '—' : d.significanceFlags.some(Boolean) ? `${d.significanceFlags.filter(Boolean).length} of 4 criteria met` : 'none met'}
+              {' · '}Significance: {d.significanceFlags === null ? '—' : d.significanceFlags.some(Boolean) ? `${d.significanceFlags.filter(Boolean).length} criteria met` : 'none met'}
             </div>
             {d.conditionIssue ? <p className="m-0 text-[13px] text-ink-2">Condition issue: {d.conditionIssue}</p> : null}
             {d.mlsMatchPaths.length > 0 ? (
@@ -226,91 +132,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
         {showChecklist ? (
           canDecide ? (
             <div className="flex flex-col gap-3 border-t border-line-soft pt-4">
-              <h3 className="m-0 text-[13px] font-semibold text-ink">
-                {canRevisit ? 'Re-record decision (approved override)' : 'Record decision'}
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <YesNo label="Already exists in MLS?" value={existsInMls} onChange={setExistsInMls} />
-                {existsInMls === 'yes' ? (
-                  <YesNo label="This copy is better?" value={newCopyIsBetter} onChange={setNewCopyIsBetter} />
-                ) : null}
-                <YesNo label="Condition usable?" value={conditionUsable} onChange={setConditionUsable} />
-                {conditionUsable === 'no' ? (
-                  <Field
-                    label="Condition issue"
-                    hint="Describe what's wrong — e.g. blurry, moldy, torn, faded or distorted."
-                  >
-                    <Textarea value={conditionIssue} onChange={(e) => setConditionIssue(e.target.value)} />
-                  </Field>
-                ) : null}
-              </div>
-              {existsInMls === 'yes' ? (
-                <Field
-                  label="Matching MLS file paths"
-                  hint="One path per line — where this lot already exists in MLS."
-                >
-                  <Textarea
-                    value={mlsMatchPaths}
-                    onChange={(e) => setMlsMatchPaths(e.target.value)}
-                    rows={3}
-                    placeholder={'e.g.\n/photos/2019/patotsav/\n/negatives/box-12/'}
-                  />
-                </Field>
-              ) : null}
-              <fieldset className="m-0 p-0 border-0 min-w-0">
-                <legend className="px-0 mb-2 text-[12px] text-ink-3">
-                  Significance criteria (any one archives the lot)
-                </legend>
-                <div className="grid grid-cols-1 gap-2">
-                  {SIGNIFICANCE_QUESTIONS.map((question, i) => (
-                    <label key={i} className="flex items-start gap-2 min-h-[44px] text-[13px] text-ink cursor-pointer">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 mt-1 accent-[var(--color-accent)]"
-                        checked={flags[i] ?? false}
-                        onChange={(e) => setFlags(flags.map((f, j) => (j === i ? e.target.checked : f)))}
-                      />
-                      <span>{question}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <Field label="Decision notes">
-                <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
-              </Field>
-              {needsDisposition ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <Field label="Disposition — the checklist points away from the archive">
-                    <Select value={disposition} onChange={(e) => setDisposition(e.target.value as '' | 'return' | 'discard')}>
-                      <option value="">Choose…</option>
-                      <option value="return">Return to sender</option>
-                      <option value="discard">Discard</option>
-                    </Select>
-                  </Field>
-                  {disposition === 'discard' ? (
-                    <>
-                      <Field label="Discard reason">
-                        <Select value={discardReason} onChange={(e) => setDiscardReason(e.target.value)}>
-                          <option value="">Choose…</option>
-                          {(discardReasons.data?.items ?? []).map((r) => (
-                            <option key={r.value} value={r.value}>
-                              {r.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </Field>
-                      <Field label="Discard notes" hint="Optional detail for the audit entry.">
-                        <Textarea value={discardNotes} onChange={(e) => setDiscardNotes(e.target.value)} />
-                      </Field>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-              <div>
-                <PrimaryButton disabled={decideMut.isPending} onClick={record}>
-                  {decideMut.isPending ? 'Recording…' : 'Record decision'}
-                </PrimaryButton>
-              </div>
+              <DecisionTriage lot={lot} onChanged={onChanged} revisit={canRevisit} />
             </div>
           ) : (
             <p className="m-0 text-[13px] text-ink-3">You don&apos;t have permission to record decisions.</p>

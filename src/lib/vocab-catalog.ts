@@ -339,6 +339,32 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
       { value: 'discard', label: 'Discard', meta: { disposition: 'discard' } },
     ]),
   },
+  {
+    key: 'significance',
+    label: 'Significance questions',
+    group: 'Decisions',
+    tier: 'open',
+    protected: true,
+    metaSchema: NO_META,
+    items: items([
+      {
+        value: 'historical',
+        label:
+          'Does the photo have historical significance — connected to a prasang, or useful for future samaiyos / utsavs / patotsavs / videos / projects / shibirs?',
+      },
+      { value: 'shastriji_yogiji', label: 'Does the photo contain Shastriji Maharaj or Yogiji Maharaj?' },
+      {
+        value: 'psm_unique',
+        label:
+          'Does the photo contain an extraordinary, special, or unique image of Pramukh Swami Maharaj? (Verify uniqueness with MLS search first.)',
+      },
+      {
+        value: 'sadguru_vadil',
+        label:
+          'Does the photo contain Sadguru and Vadil Santo without the Satpurush — e.g. Yatra, Pardesh Vicharan?',
+      },
+    ]),
+  },
 ];
 
 export const CATALOG_LIST_KEYS: string[] = SEED_SYSTEM_LISTS.map((l) => l.key);

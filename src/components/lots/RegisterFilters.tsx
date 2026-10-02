@@ -35,9 +35,12 @@ export const EMPTY_FILTERS: LotFilters = {
 export function RegisterFilters({
   filters,
   onChange,
+  lockedFormat,
 }: {
   filters: LotFilters;
   onChange: (next: LotFilters) => void;
+  /** Format block the list was opened from: dropdown locked to that one format. */
+  lockedFormat?: string;
 }) {
   const set = (k: keyof LotFilters) => (v: string) => onChange({ ...filters, [k]: v });
   const stages = useReferenceList('stage');
@@ -91,13 +94,20 @@ export function RegisterFilters({
           </Select>
         </Field>
         <Field label="Format">
-          <Select value={filters.format} onChange={(e) => set('format')(e.target.value)}>
-            <option value="">All formats</option>
-            {(formats.data?.items ?? []).map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
-              </option>
-            ))}
+          <Select
+            value={lockedFormat ?? filters.format}
+            disabled={Boolean(lockedFormat)}
+            onChange={(e) => set('format')(e.target.value)}
+            aria-label="Format"
+          >
+            {lockedFormat ? null : <option value="">All formats</option>}
+            {(formats.data?.items ?? [])
+              .filter((f) => !lockedFormat || f.value === lockedFormat)
+              .map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
           </Select>
         </Field>
         <Field label="Data type">
@@ -183,7 +193,16 @@ export function RegisterFilters({
         </div>
         {isActive ? (
           <div className="ml-auto">
-            <GhostButton onClick={() => onChange({ ...EMPTY_FILTERS, sort: filters.sort })}>
+            <GhostButton
+              onClick={() =>
+                onChange({
+                  ...EMPTY_FILTERS,
+                  // Clearing filters must never drop the block's format lock.
+                  ...(lockedFormat ? { format: lockedFormat } : {}),
+                  sort: filters.sort,
+                })
+              }
+            >
               Clear filters
             </GhostButton>
           </div>

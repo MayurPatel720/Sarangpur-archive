@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { AlertsManager } from '@/components/dashboard/AlertsManager';
 
 export const metadata: Metadata = {
@@ -6,5 +7,10 @@ export const metadata: Metadata = {
 };
 
 export default function AlertsPage() {
-  return <AlertsManager />;
+  // Suspense: AlertsManager reads ?format= via useSearchParams.
+  return (
+    <Suspense fallback={null}>
+      <AlertsManager />
+    </Suspense>
+  );
 }

@@ -44,8 +44,11 @@ export interface DashboardWindow {
  * $facet runs each sub-pipeline over the same input stream, so the collection is
  * scanned once instead of eleven times. Each sub-pipeline starts with a $match that an
  * index can serve — see the index declarations in models/ArchiveLot.ts.
+ *
+ * `format` scopes the whole facet: a single `$match` in front of the $facet keeps
+ * every sub-pipeline (and the index each one relies on) format-local.
  */
-export function lotFacetPipeline(w: DashboardWindow): Pipeline {
+export function lotFacetPipeline(w: DashboardWindow, format?: string): Pipeline {
   const stages = w.stages ?? defaultStageGraph();
   const decisionStages = stages.decision.length > 0 ? stages.decision : ['decision'];
   const scanStages = stages.scan.length > 0 ? stages.scan : ['scanning'];
@@ -53,6 +56,7 @@ export function lotFacetPipeline(w: DashboardWindow): Pipeline {
   const returnOpen = w.returnOpen.length > 0 ? w.returnOpen : ['pending', 'in_progress'];
 
   return [
+    ...(format ? [{ $match: { format } }] : []),
     {
       $facet: {
         totalLots: [{ $count: 'n' }],
@@ -166,11 +170,12 @@ export function lotFacetPipeline(w: DashboardWindow): Pipeline {
  * 100MB per-stage limit. If the active set ever grows past ~100k, swap the $group for
  * $topN (MongoDB 5.2+), which trims as it goes.
  */
-export function pipelineBoardPipeline(w: DashboardWindow): Pipeline {
+export function pipelineBoardPipeline(w: DashboardWindow, format?: string): Pipeline {
   const stages = w.stages ?? defaultStageGraph();
   const inFlight = stages.inFlight.length > 0 ? stages.inFlight : ['intake'];
   const terminal = stages.terminal.length > 0 ? stages.terminal : ['storage', 'returned', 'discarded'];
   return [
+    ...(format ? [{ $match: { format } }] : []),
     {
       // In-flight stages count current occupancy; terminal stages count arrivals inside
       // the reporting window. Both branches are served by the { stage, stageEnteredAt }
@@ -215,7 +220,40 @@ export function pipelineBoardPipeline(w: DashboardWindow): Pipeline {
 /**
  * Recent activity. A plain indexed sort — no $lookup, because the actor name and lot
  * code are denormalised onto the entry at write time (see models/ActivityLog.ts).
+ *
+ * `format` matches the denormalised `ActivityLog.format` written by `withAudit()`.
+ * Rows written before that field existed have format null and only appear on the
+ * global dashboard — denormalised history is never back-filled.
  */
-export function recentActivityPipeline(limit: number): Pipeline {
-  return [{ $sort: { at: -1 } }, { $limit: limit }];
+export function recentActivityPipeline(limit: number, format?: string): Pipeline {
+  return [
+    ...(format ? [{ $match: { format } }] : []),
+    { $sort: { at: -1 } },
+    { $limit: limit },
+  ];
+}
+
+/**
+ * Per-format counts for the dashboard hub: one $group over the whole collection,
+ * so the hub costs a single pass regardless of how many formats exist.
+ * `inFlight` / `awaitingDecision` reuse the same stage-graph lists the KPI cards do.
+ */
+export function formatBlocksPipeline(w: DashboardWindow): Pipeline {
+  const stages = w.stages ?? defaultStageGraph();
+  const inFlight = stages.inFlight.length > 0 ? stages.inFlight : ['intake'];
+  const decisionStages = stages.decision.length > 0 ? stages.decision : ['decision'];
+
+  return [
+    {
+      $group: {
+        _id: '$format',
+        lots: { $sum: 1 },
+        inFlight: { $sum: { $cond: [{ $in: ['$stage', inFlight] }, 1, 0] } },
+        awaitingDecision: {
+          $sum: { $cond: [{ $in: ['$stage', decisionStages] }, 1, 0] },
+        },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ];
 }

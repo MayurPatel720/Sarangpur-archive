@@ -6,6 +6,8 @@ import { useQuery } from '@tanstack/react-query';
 import { searchApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
+import { useFormatContext } from '@/hooks/useFormatParam';
+import { scopedHref } from '@/lib/dashboard-links';
 import { useDrawer } from '@/components/shell/drawer-context';
 import { SIDEBAR_OFFSET_CLASS } from '@/lib/shell';
 import { date } from '@/lib/format';
@@ -131,6 +133,8 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
   const listRef = useRef<HTMLDivElement>(null);
   const { data: me } = useMe();
   const { collapsed } = useDrawer();
+  // Ambient format block (opened from /dashboard/[format] or ?format=).
+  const ctxFormat = useFormatContext();
   const formats = useReferenceList('format');
   const dataTypes = useReferenceList('dataType');
   const stages = useReferenceList('stage');
@@ -138,7 +142,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
 
   const [rawQ, setRawQ] = useState('');
   const [q, setQ] = useState('');
-  const [format, setFormat] = useState<FormatChip>('');
+  const [format, setFormat] = useState<FormatChip>(ctxFormat ?? '');
   const [dataType, setDataType] = useState<DataTypeChip>('');
   const [stage, setStage] = useState<StageChip>('');
   const [decision, setDecision] = useState<DecisionChip>('');
@@ -166,12 +170,17 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
     return () => window.clearTimeout(t);
   }, [rawQ]);
 
-  const hasFilter = Boolean(format || dataType || stage || decision);
+  // Inside a block the format is ambient — forced onto every query but NOT
+  // counted as a picked filter, so "type to search" still gates the request.
+  const locked = Boolean(ctxFormat);
+  const effectiveFormat = ctxFormat ?? format;
+  const hasFilter =
+    Boolean(dataType || stage || decision) || (!locked && Boolean(format));
   const hasQuery = q.length > 0 || hasFilter;
 
   const params: Record<string, string> = {};
   if (q) params.q = q;
-  if (format) params.format = format;
+  if (effectiveFormat) params.format = effectiveFormat;
   if (dataType) params.dataType = dataType;
   if (stage) params.stage = stage;
   if (decision) params.decision = decision;
@@ -202,7 +211,7 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
 
   const go = (id: string) => {
     onClose();
-    router.push(`/register/${id}`);
+    router.push(scopedHref(`/register/${id}`, ctxFormat));
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -266,15 +275,25 @@ export function SearchOverlay({ onClose }: { onClose: () => void }) {
 
         <div className="px-3 py-2.5 border-b border-line-soft flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <FilterDropdown
-              label="Format"
-              value={format}
-              onChange={(v) => setFormat(v as FormatChip)}
-              options={[
-                { value: '', label: 'All' },
-                ...(formats.data?.items ?? []).map((f) => ({ value: f.value, label: f.label })),
-              ]}
-            />
+            {ctxFormat ? (
+              <span
+                aria-label={`Format, ${formatLabel(ctxFormat)}`}
+                className="h-7 px-2.5 rounded-full text-[11.5px] font-medium border whitespace-nowrap inline-flex items-center gap-1.5 bg-strong-bg text-on-strong border-strong-bg"
+              >
+                <span className="opacity-70">Format</span>
+                <span>{formatLabel(ctxFormat)}</span>
+              </span>
+            ) : (
+              <FilterDropdown
+                label="Format"
+                value={format}
+                onChange={(v) => setFormat(v as FormatChip)}
+                options={[
+                  { value: '', label: 'All' },
+                  ...(formats.data?.items ?? []).map((f) => ({ value: f.value, label: f.label })),
+                ]}
+              />
+            )}
             <FilterDropdown
               label="Type"
               value={dataType}

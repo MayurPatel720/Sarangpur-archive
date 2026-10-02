@@ -4,11 +4,12 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { ALERT_HREF } from '@/lib/dashboard-links';
+import { ALERT_HREF, scopedHref } from '@/lib/dashboard-links';
 import { num, severityChip, severityText } from '@/lib/format';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { IconAlertTriangle, IconClock, IconCopy, IconReturn, IconStar } from '@/components/ui/icons';
 import type { Severity } from '@/types/dashboard';
+import type { Format } from '@/lib/domain';
 
 const ALERT_ICON: Record<string, typeof IconAlertTriangle> = {
   decision_overdue: IconAlertTriangle,
@@ -27,10 +28,10 @@ const ICON_TILE: Record<Severity, string> = {
   critical: 'bg-danger-bg text-danger',
 };
 
-export function AlertsPanel() {
+export function AlertsPanel({ format }: { format?: Format }) {
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: queryKeys.dashboard.alerts(),
-    queryFn: dashboardApi.alerts,
+    queryKey: queryKeys.dashboard.alerts(format),
+    queryFn: () => dashboardApi.alerts(format),
   });
 
   if (error) {
@@ -50,7 +51,7 @@ export function AlertsPanel() {
           <Badge severity="critical">{num(data.totalOpen)} open</Badge>
         )}
         <Link
-          href="/alerts"
+          href={scopedHref('/alerts', format)}
           className="ml-auto text-[12.5px] font-semibold text-ink-4 no-underline hover:text-ink"
         >
           View all
@@ -74,7 +75,7 @@ export function AlertsPanel() {
               return (
                 <Link
                   key={alert.key}
-                  href={ALERT_HREF[alert.key] ?? '/alerts'}
+                  href={scopedHref(ALERT_HREF[alert.key] ?? '/alerts', format)}
                   className={`flex items-center gap-3 px-4 py-3 no-underline ${
                     i < data.alerts.length - 1 ? 'border-b border-line-row' : ''
                   }`}

@@ -13,6 +13,8 @@ import { DataTable } from '@/components/ui/DataTable';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
 import { useMe } from '@/hooks/useCan';
+import { useFormatContext } from '@/hooks/useFormatParam';
+import { scopedHref } from '@/lib/dashboard-links';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { LotRowActions } from './LotRowActions';
 
@@ -96,6 +98,8 @@ function QueueTableInner({
 }) {
   const router = useRouter();
   const me = useMe();
+  // Keep the open lot inside the format block the queue was opened from.
+  const ctxFormat = useFormatContext();
   const stages = useReferenceList('stage');
   const { page, pageSize, setPage, setPageSize } = useUrlPagination(defaultPageSize);
 
@@ -153,7 +157,7 @@ function QueueTableInner({
               loading={queue.isLoading}
               emptyMessage={emptyMessage}
               getRowKey={(r) => r.id}
-              onRowClick={(r) => router.push(`/register/${r.id}`)}
+              onRowClick={(r) => router.push(scopedHref(`/register/${r.id}`, ctxFormat))}
               rowActions={(r) => <LotRowActions row={r} />}
               columns={[
                 {

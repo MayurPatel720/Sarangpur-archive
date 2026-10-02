@@ -89,7 +89,10 @@ export const activityEntrySchema = z.object({
   kind: z.enum(ACTIVITY_KINDS),
   title: z.string(),
   detail: z.string(),
-  lotCode: z.string(),
+  /** Null for project-level events, which belong to no lot. */
+  lotCode: z.string().nullable(),
+  /** Set for project-level and lot-membership events. Null otherwise. */
+  projectCode: z.string().nullable(),
   actorName: z.string(),
   at: z.string(),
   severity: severitySchema,
@@ -100,6 +103,22 @@ export const activityResponseSchema = z.object({
 });
 export type ActivityResponse = z.infer<typeof activityResponseSchema>;
 export type ActivityEntry = z.infer<typeof activityEntrySchema>;
+
+/* ------------------------------------------------------------------ blocks */
+
+/** Per-format counts for the dashboard hub. `null` counts = no `format:*` grant. */
+export const formatBlockSchema = z.object({
+  format: z.string(),
+  lots: z.number().nullable(),
+  inFlight: z.number().nullable(),
+  awaitingDecision: z.number().nullable(),
+});
+
+export const blocksResponseSchema = z.object({
+  blocks: z.array(formatBlockSchema),
+});
+export type BlocksResponse = z.infer<typeof blocksResponseSchema>;
+export type FormatBlock = z.infer<typeof formatBlockSchema>;
 
 /* -------------------------------------------------------------------- error */
 

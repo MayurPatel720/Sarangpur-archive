@@ -19,6 +19,7 @@ import { Aggregator } from 'mingo';
 import 'mingo/init/system';
 
 import {
+  formatBlocksPipeline,
   lotFacetPipeline,
   pipelineBoardPipeline,
   recentActivityPipeline,
@@ -28,17 +29,27 @@ import {
   shapeActivity,
   shapeAlerts,
   shapeBoard,
+  shapeFormatBlocks,
   shapeSummary,
   type ActivityRow,
   type BoardBucket,
   type LotFacetResult,
 } from '../src/server/dashboard/queries';
 import {
+  activityEntrySchema,
   activityResponseSchema,
   alertsResponseSchema,
+  blocksResponseSchema,
   pipelineResponseSchema,
   summaryResponseSchema,
 } from '../src/types/dashboard';
+import {
+  projectActivityPipeline,
+  projectItemStatsPipeline,
+  projectLotStagesPipeline,
+} from '../src/server/projects/pipelines';
+import { shapeProjectActivity } from '../src/server/projects/queries';
+import { projectProgressSchema } from '../src/types/project';
 
 const DAY = 86_400_000;
 const NOW = new Date('2026-09-18T12:00:00.000Z');
@@ -102,11 +113,13 @@ const LOTS = [
   }),
   lot({
     _id: 'L7', stage: 'scanning', dateReceived: ago(25), stageEnteredAt: ago(3),
+    format: 'video',
     digitization: { expectedFileCount: 200, foundFileCount: 200, masterBytes: 0 },
   }),
 
   lot({
     _id: 'L8', stage: 'mls_tag', dateReceived: ago(45), stageEnteredAt: ago(2),
+    format: 'video',
     mls: { duplicatesFound: 2, taggedCount: 5 },
     return: { status: 'pending', format: 'digital', dueAt: ahead(10), method: null },
   }),
@@ -128,9 +141,9 @@ const LOTS = [
 ];
 
 const ACTIVITY = [
-  { _id: 'A1', kind: 'scan_completed', title: 'Scan completed', detail: '200 of 200 files matched', lotCode: 'NEG-MUM-014', actorName: 'H. Patel', at: ago(0) },
-  { _id: 'A2', kind: 'mls_duplicate_flagged', title: 'MLS duplicate flagged', detail: 'Held for Lead review', lotCode: 'NEG-MUM-014', actorName: 'System', at: ago(1) },
-  { _id: 'A3', kind: 'intake_created', title: 'Intake created', detail: '120 prints', lotCode: 'LOT-2026-0214', actorName: 'M. Patel', at: ago(2) },
+  { _id: 'A1', kind: 'scan_completed', title: 'Scan completed', detail: '200 of 200 files matched', lotCode: 'NEG-MUM-014', actorName: 'H. Patel', at: ago(0), format: 'photo' },
+  { _id: 'A2', kind: 'mls_duplicate_flagged', title: 'MLS duplicate flagged', detail: 'Held for Lead review', lotCode: 'NEG-MUM-014', actorName: 'System', at: ago(1), format: 'video' },
+  { _id: 'A3', kind: 'intake_created', title: 'Intake created', detail: '120 prints', lotCode: 'LOT-2026-0214', actorName: 'M. Patel', at: ago(2), format: 'photo' },
 ];
 
 /* -------------------------------------------------------------------- runs */
@@ -252,6 +265,192 @@ check(
   'severity is derived from the event kind',
   activity.entries.map((e) => e.severity),
   ['good', 'critical', 'neutral'],
+);
+
+/* --- 6. format-scoped facet / summary / board ----------------------------- */
+
+console.log('\nFormat-scoped queries (format=video → L7, L8 only)');
+
+const facetVid = run<LotFacetResult>(lotFacetPipeline(w, 'video'), LOTS)[0]!;
+check('video: total lots', facetVid.totalLots[0]?.n, 2);
+check(
+  'video: stage occupancy',
+  Object.fromEntries(facetVid.byStage.map((b) => [b._id, b.n])),
+  { scanning: 1, mls_tag: 1 },
+);
+check('video: received in window (L7 only, L8 is 45d old)', facetVid.receivedThisWindow[0]?.n, 1);
+check('video: received in previous window (L8)', facetVid.receivedPreviousWindow[0]?.n, 1);
+check('video: scan progress', [facetVid.scanProgress[0]?.expected, facetVid.scanProgress[0]?.found], [200, 200]);
+check('video: awaiting MLS tag', facetVid.awaitingMlsTag[0]?.n, 1);
+check('video: no decision backlog', facetVid.decisionOverdue[0]?.n, undefined);
+check('video: storage bytes', facetVid.storage[0]?.bytes, 0);
+
+const summaryVid = shapeSummary(facetVid, w);
+check('video summary: matches Zod contract', summaryResponseSchema.safeParse(summaryVid).success, true);
+check('video summary: total / active', [summaryVid.totalLotCount, summaryVid.activeLotCount], [2, 2]);
+check('video summary: storage meter', [summaryVid.storage.usedTb, summaryVid.storage.percent], [0, 0]);
+const kpiVid = (k: string) => summaryVid.kpis.find((x) => x.key === k);
+check('video KPI received', [kpiVid('received')?.value, kpiVid('received')?.note], [1, 'Unchanged vs previous 30 days']);
+check('video KPI awaiting decision', [kpiVid('awaiting_decision')?.value, kpiVid('awaiting_decision')?.note], [0, 'All within the review threshold']);
+check('video KPI in digitization', [kpiVid('in_digitization')?.value, kpiVid('in_digitization')?.note], [1, '200 items · 100% scanned']);
+check('video KPI awaiting MLS', [kpiVid('awaiting_mls_tag')?.value], [1]);
+check('video KPI returns pending/overdue', [kpiVid('returns_pending')?.value, kpiVid('returns_overdue')?.value], [1, 0]);
+
+const facetPhoto = run<LotFacetResult>(lotFacetPipeline(w, 'photo'), LOTS)[0]!;
+check('photo: total lots (10 of 12)', facetPhoto.totalLots[0]?.n, 10);
+check('photo: scan progress excludes the video lot', [facetPhoto.scanProgress[0]?.expected, facetPhoto.scanProgress[0]?.found], [100, 40]);
+check('photo: no MLS-tag backlog', facetPhoto.awaitingMlsTag[0]?.n, 0);
+check('photo: storage bytes unchanged', facetPhoto.storage[0]?.bytes, 5e12);
+const summaryPhoto = shapeSummary(facetPhoto, w);
+check('photo summary: total / active', [summaryPhoto.totalLotCount, summaryPhoto.activeLotCount], [10, 6]);
+
+const boardVid = shapeBoard(run<BoardBucket>(pipelineBoardPipeline(w, 'video'), LOTS), NOW);
+check('video board: matches Zod contract', pipelineResponseSchema.safeParse(boardVid).success, true);
+check(
+  'video board: counts per column',
+  Object.fromEntries(boardVid.stages.map((s) => [s.stage, s.count])),
+  { intake: 0, decision: 0, metadata: 0, scanning: 1, mls_tag: 1, storage: 0, returned: 0, discarded: 0 },
+);
+check('video board: totalActive', boardVid.totalActive, 2);
+check(
+  'video board: scanning sample shows 100% progress',
+  boardVid.stages.find((s) => s.stage === 'scanning')?.samples[0],
+  { id: 'L7', code: 'LOT-X', note: '200 / 200 files', noteSeverity: 'good', progressPercent: 100 },
+);
+
+/* --- 7. the format-blocks pipeline + grant shaping ------------------------ */
+
+console.log('\nFormat blocks (dashboard hub)');
+const blockRows = run<{ _id: string; lots: number; inFlight: number; awaitingDecision: number }>(
+  formatBlocksPipeline(w),
+  LOTS,
+);
+check('blocks rows for present formats, sorted', blockRows, [
+  { _id: 'photo', lots: 10, inFlight: 6, awaitingDecision: 3 },
+  { _id: 'video', lots: 2, inFlight: 2, awaitingDecision: 0 },
+]);
+
+const blocksGranted = shapeFormatBlocks(blockRows, [
+  'format:photo',
+  'format:video',
+  'format:audio',
+  'format:documents',
+  'format:prasadi',
+]);
+check(
+  'blocks: granted formats show counts, absent formats show zeros',
+  blocksGranted.blocks.map((b) => [b.format, b.lots, b.inFlight, b.awaitingDecision]),
+  [
+    ['photo', 10, 6, 3],
+    ['video', 2, 2, 0],
+    ['audio', 0, 0, 0],
+    ['documents', 0, 0, 0],
+    ['prasadi', 0, 0, 0],
+  ],
+);
+check('blocks granted: matches Zod contract', blocksResponseSchema.safeParse(blocksGranted).success, true);
+
+const blocksLocked = shapeFormatBlocks(blockRows, ['format:video']);
+check(
+  'blocks: locked formats have null counts (numbers never leak)',
+  blocksLocked.blocks.map((b) => [b.format, b.lots]),
+  [['photo', null], ['video', 2], ['audio', null], ['documents', null], ['prasadi', null]],
+);
+check('blocks locked: matches Zod contract', blocksResponseSchema.safeParse(blocksLocked).success, true);
+
+/* --- 8. format-scoped activity -------------------------------------------- */
+
+console.log('\nFormat-scoped activity feed');
+const actPhoto = shapeActivity(run<ActivityRow>(recentActivityPipeline(8, 'photo'), ACTIVITY));
+check('photo feed: only photo entries, newest first', actPhoto.entries.map((e) => e.id), ['A1', 'A3']);
+check('photo feed: matches Zod contract', activityResponseSchema.safeParse(actPhoto).success, true);
+const actVideo = shapeActivity(run<ActivityRow>(recentActivityPipeline(8, 'video'), ACTIVITY));
+check('video feed: only video entries', actVideo.entries.map((e) => e.id), ['A2']);
+const actAll = shapeActivity(run<ActivityRow>(recentActivityPipeline(8), ACTIVITY));
+check('unscoped feed unchanged', actAll.entries.map((e) => e.id), ['A1', 'A2', 'A3']);
+
+/* --- 9. project pipelines ------------------------------------------------ */
+
+console.log('\nProject pipelines (P1 has 3 member lots incl. one shared with P2, one standalone lot)');
+
+const PROJECT_LOTS = [
+  lot({ _id: 'PL1', stage: 'intake', projectIds: ['P1'] }),
+  lot({ _id: 'PL2', stage: 'scanning', projectIds: ['P1', 'P2'] }),
+  lot({ _id: 'PL3', stage: 'decision', projectIds: ['P1'] }),
+  lot({ _id: 'PL4', stage: 'intake', projectIds: [] }),
+  lot({ _id: 'PL5', stage: 'mls_tag', projectIds: ['P2'] }),
+];
+
+const stageRows = run<{ _id: string; count: number }>(projectLotStagesPipeline('P1'), PROJECT_LOTS);
+check('P1 member-lot counts by stage (sorted, standalone excluded)', stageRows, [
+  { _id: 'decision', count: 1 },
+  { _id: 'intake', count: 1 },
+  { _id: 'scanning', count: 1 },
+]);
+
+const p2Rows = run<{ _id: string; count: number }>(projectLotStagesPipeline('P2'), PROJECT_LOTS);
+check(
+  'P2 sees the shared lot plus its own',
+  Object.fromEntries(p2Rows.map((r) => [r._id, r.count])),
+  { mls_tag: 1, scanning: 1 },
+);
+
+const PROJECT_ITEMS = [
+  { _id: 'I1', lot: 'PL1', selectedForDigitization: true, digitized: true, taggedInMls: true },
+  { _id: 'I2', lot: 'PL1', selectedForDigitization: true, digitized: false, taggedInMls: false },
+  { _id: 'I3', lot: 'PL2', selectedForDigitization: false, digitized: false, taggedInMls: false },
+  { _id: 'I4', lot: 'PL9', selectedForDigitization: true, digitized: true, taggedInMls: true },
+];
+
+const [itemStats] = run<{
+  _id: null;
+  total: number;
+  selected: number;
+  digitized: number;
+  tagged: number;
+}>(projectItemStatsPipeline(['PL1', 'PL2']), PROJECT_ITEMS);
+const stats = itemStats!;
+check('item rollup counts member lots only (I4 excluded)', stats, {
+  _id: null,
+  total: 3,
+  selected: 2,
+  digitized: 1,
+  tagged: 1,
+});
+
+const progress = {
+  lotsTotal: 3,
+  lotsByStage: stageRows.map((s) => ({ stage: s._id, count: s.count })),
+  totalItems: stats.total,
+  selectedItems: stats.selected,
+  digitizedItems: stats.digitized,
+  taggedItems: stats.tagged,
+};
+check('progress rollup matches its Zod contract', projectProgressSchema.safeParse(progress).success, true);
+
+const PROJECT_ACTIVITY = [
+  { _id: 'PA1', kind: 'project_lot_added', title: 'Lot added to project', detail: 'LOT-2026-0001 joined', project: 'P1', projectCode: 'DIWALI-26', lotCode: 'LOT-2026-0001', actorName: 'Admin', at: ago(0) },
+  { _id: 'PA2', kind: 'project_lot_added', title: 'Lot added to project', detail: 'other project', project: 'P2', projectCode: 'OTHER-26', lotCode: 'LOT-2026-0002', actorName: 'Admin', at: ago(0) },
+  { _id: 'PA3', kind: 'project_created', title: 'Project created', detail: '', project: 'P1', projectCode: 'DIWALI-26', lotCode: null, actorName: 'Admin', at: ago(2) },
+  // Legacy lot-side entry with no project field — must never leak into a project feed.
+  { _id: 'PA4', kind: 'intake_created', title: 'Intake created', detail: '120 prints', lotCode: 'LOT-X', actorName: 'M. Patel', at: ago(1) },
+];
+
+const projectRows = run<Parameters<typeof shapeProjectActivity>[0][number]>(
+  projectActivityPipeline('P1', 20),
+  PROJECT_ACTIVITY,
+);
+const shapedProjectActivity = shapeProjectActivity(projectRows);
+check('project feed: only P1 entries, newest first', shapedProjectActivity.map((e) => e.id), ['PA1', 'PA3']);
+check(
+  'project feed: matches its Zod contract',
+  activityEntrySchema.array().safeParse(shapedProjectActivity).success,
+  true,
+);
+check(
+  'project feed: severity is derived from the event kind',
+  shapedProjectActivity.map((e) => e.severity),
+  ['info', 'info'],
 );
 
 /* ------------------------------------------------------------------ verdict */

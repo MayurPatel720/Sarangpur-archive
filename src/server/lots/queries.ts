@@ -11,6 +11,7 @@ import { resolveReferenceLabel, getReferenceList } from '@/server/reference';
 import { subtypeListKeyForFormat, subtypeListKeySync } from '@/server/reference/runtime';
 import type { LotDetailResponse, LotListQuery, LotListResponse } from '@/types/lot';
 import type { ItemsQuery, ItemsResponse, ActivityQuery, ActivityResponse } from '@/types/ops';
+import type { TriageItemsResponse } from '@/types/triage';
 
 /**
  * Subtype list key for a format, from the admin `format` list meta.
@@ -593,6 +594,58 @@ export async function listItems(
     total,
     page: query.page,
     pageSize: query.pageSize,
+  };
+}
+
+/** Every item of one lot, unsliced, with per-line subtype labels (decision triage). */
+export async function listTriageItems(lotId: string): Promise<TriageItemsResponse> {
+  await connectToDatabase();
+  if (!Types.ObjectId.isValid(lotId)) throw new HttpError(404, 'Lot not found.');
+  const [doc, items] = await Promise.all([
+    ArchiveLot.findById(lotId).lean(),
+    LotItem.find({ lot: new Types.ObjectId(lotId) })
+      .sort({ groupNo: 1, itemNo: 1 })
+      .lean(),
+  ]);
+  if (!doc) throw new HttpError(404, 'Lot not found.');
+
+  const rawLines = (doc.mediaLines ?? []) as { format: string; mediaSubtype: string }[];
+  const keyByIndex = rawLines.map((l) => mediaSubtypeListKey(l.format));
+  const distinctKeys = [...new Set(keyByIndex.filter((k): k is string => k != null))];
+  const labelByKeyValue = new Map<string, string>();
+  await Promise.all(
+    distinctKeys.map(async (key) => {
+      const list = await getReferenceList(key);
+      for (const item of list) labelByKeyValue.set(`${key}::${item.value}`, item.label);
+    }),
+  );
+  const labelFor = (lineIndex: number): { subtype: string; subtypeLabel: string } => {
+    const line = rawLines[lineIndex] ?? rawLines[0];
+    if (!line) return { subtype: 'unspecified', subtypeLabel: 'Unspecified' };
+    const key = mediaSubtypeListKey(line.format);
+    return {
+      subtype: line.mediaSubtype,
+      subtypeLabel:
+        (key ? labelByKeyValue.get(`${key}::${line.mediaSubtype}`) : undefined) ??
+        line.mediaSubtype,
+    };
+  };
+
+  return {
+    items: items.map((d) => ({
+      id: String(d._id),
+      code: d.code,
+      groupNo: d.groupNo,
+      itemNo: d.itemNo,
+      lineIndex: d.lineIndex ?? 0,
+      ...labelFor(d.lineIndex ?? 0),
+      selectedForDigitization: d.selectedForDigitization,
+      notDigitizedReason: d.notDigitizedReason ?? null,
+      digitized: d.digitized,
+      taggedInMls: d.taggedInMls,
+    })),
+    total: items.length,
+    version: doc.__v ?? 0,
   };
 }
 

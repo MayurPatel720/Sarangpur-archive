@@ -4,14 +4,15 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { KPI_HREF } from '@/lib/dashboard-links';
+import { KPI_HREF, scopedHref } from '@/lib/dashboard-links';
 import { num, severityText } from '@/lib/format';
 import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
+import type { Format } from '@/lib/domain';
 
-export function KpiRow() {
+export function KpiRow({ format }: { format?: Format }) {
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: queryKeys.dashboard.summary(),
-    queryFn: dashboardApi.summary,
+    queryKey: queryKeys.dashboard.summary(format),
+    queryFn: () => dashboardApi.summary(format),
   });
 
   if (error) {
@@ -42,7 +43,7 @@ export function KpiRow() {
       {data.kpis.map((kpi) => (
         <Panel key={kpi.key} className="px-4 pt-[15px] pb-4">
           <Link
-            href={KPI_HREF[kpi.key] ?? '/register'}
+            href={scopedHref(KPI_HREF[kpi.key] ?? '/register', format)}
             className="flex flex-col gap-2 no-underline"
           >
             <span className="text-[11.5px] font-medium text-ink-3">{kpi.label}</span>

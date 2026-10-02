@@ -18,7 +18,8 @@ export interface DecisionChecklistInput {
   existsInMls: boolean;
   newCopyIsBetter?: boolean;
   conditionUsable: boolean;
-  significanceFlags: readonly [boolean, boolean, boolean, boolean];
+  /** One answer per active `significance` question, in list order. */
+  significanceFlags: readonly boolean[];
 }
 
 export function computeVerdict(input: DecisionChecklistInput): Verdict {
@@ -26,4 +27,29 @@ export function computeVerdict(input: DecisionChecklistInput): Verdict {
   if (!input.conditionUsable) return 'return_or_discard';
   if (input.significanceFlags.some(Boolean)) return 'archive';
   return 'return_or_discard';
+}
+
+/**
+ * Triage union (decision AG Grid): significance is answered once per media
+ * sub-type group, not once for the whole lot. The lot-level verdict still runs
+ * through `computeVerdict`, so per-group answers are OR-ed — any single
+ * criterion met in any group archives exactly as before.
+ */
+export type SignificanceFlags = readonly boolean[];
+
+export function unionSignificanceFlags(
+  groups: readonly SignificanceFlags[],
+  count = 0,
+): SignificanceFlags {
+  const len = Math.max(
+    count,
+    groups.reduce((m, g) => Math.max(m, g.length), 0),
+  );
+  const out: boolean[] = Array.from({ length: len }, () => false);
+  for (const g of groups) {
+    for (let i = 0; i < g.length; i += 1) {
+      if (g[i]) out[i] = true;
+    }
+  }
+  return out;
 }

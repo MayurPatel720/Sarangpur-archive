@@ -1,17 +1,17 @@
 import { z } from 'zod';
-import { PERMISSIONS } from '@/server/permissions';
+import { FORMAT_PERMISSIONS, PERMISSIONS } from '@/server/permissions';
 
 /**
  * Wire contracts for the admin module (roles, reference lists, users, settings).
  *
  * Same rule as the dashboard contracts: every route parses its response with
  * these schemas before returning it, and the client infers its types from them.
- * `permissions.ts` is import-safe here — it owns zero imports, so no cycle.
+ * `permissions.ts` only pulls in `lib/domain.ts` (pure constants), so no cycle.
  */
 
 /* -------------------------------------------------------------------- roles */
 
-const permissionSchema = z.enum(PERMISSIONS);
+const permissionSchema = z.union([z.enum(PERMISSIONS), z.enum(FORMAT_PERMISSIONS)]);
 
 export const roleSchema = z.object({
   key: z.string(),

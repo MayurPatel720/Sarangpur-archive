@@ -109,6 +109,9 @@ export async function withAudit<T>(opts: {
           {
             lot: lot._id,
             lotCode: lot.namingCode ?? lot.lotReference,
+            // Denormalised at write time for the format-scoped activity feed —
+            // same contract as actorName/lotCode: never back-filled on rename.
+            format: lot.format ?? null,
             kind: opts.kind,
             title: opts.title,
             detail: opts.detail,

@@ -370,7 +370,8 @@ export const decisionBodySchema = z
     conditionUsable: z.boolean(),
     /** Required when !conditionUsable — stored on the audit entry. */
     conditionIssue: z.string().trim().max(2000).optional(),
-    significanceFlags: z.tuple([z.boolean(), z.boolean(), z.boolean(), z.boolean()]),
+    /** One answer per active `significance` question, in list order. */
+    significanceFlags: z.array(z.boolean()).min(1).max(24),
     notes: z.string().trim().max(2000).optional(),
     disposition: z.enum(['return', 'discard']).optional(),
     /** Required when disposition is discard (brief §3.08). */

@@ -5,22 +5,33 @@ import Link from 'next/link';
 import { dashboardApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useCan } from '@/hooks/useCan';
+import { FORMAT_LABELS, type Format } from '@/lib/domain';
+import { scopedHref } from '@/lib/dashboard-links';
 import { longDate, num } from '@/lib/format';
 import { Skeleton } from '@/components/ui/primitives';
-import { IconPlus } from '@/components/ui/icons';
+import { IconChevronLeft, IconPlus } from '@/components/ui/icons';
 
-export function PageHeading() {
+export function PageHeading({ format }: { format?: Format } = {}) {
   const { data } = useQuery({
-    queryKey: queryKeys.dashboard.summary(),
-    queryFn: dashboardApi.summary,
+    queryKey: queryKeys.dashboard.summary(format),
+    queryFn: () => dashboardApi.summary(format),
   });
   const canCreate = useCan('lot:create');
 
   return (
     <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
       <div className="flex flex-col gap-1.5 min-w-0">
+        {format && (
+          <Link
+            href="/dashboard"
+            className="w-fit text-[12px] font-semibold text-ink-4 no-underline hover:text-ink flex items-center gap-1"
+          >
+            <IconChevronLeft size={13} />
+            All formats
+          </Link>
+        )}
         <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">
-          Archive operations
+          {format ? `${FORMAT_LABELS[format]} dashboard` : 'Archive operations'}
         </h1>
         {!data ? (
           <Skeleton className="h-3 w-96 max-w-full" />
@@ -35,7 +46,7 @@ export function PageHeading() {
       <div className="flex gap-2.5 sm:ml-auto">
         {canCreate && (
           <Link
-            href="/register/new"
+            href={scopedHref('/register/new', format)}
             className="h-10 px-3.5 bg-accent rounded-[6px] shadow-control text-[13px] font-semibold text-white no-underline flex items-center gap-1.5"
           >
             <IconPlus size={15} />

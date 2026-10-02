@@ -4,11 +4,13 @@ import { Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { useMe } from '@/hooks/useCan';
 import { DataTable } from '@/components/ui/DataTable';
-import { Field, Select } from '@/components/ui/Form';
+import { Field, GhostButton, Select } from '@/components/ui/Form';
 import { ErrorState, Panel, PanelHeader } from '@/components/ui/primitives';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
+import { AddItemDialog } from './AddItemDialog';
 
 function TriFilter({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
@@ -37,6 +39,9 @@ function ItemsPanelInner({ lotId }: { lotId: string }) {
   const [digitized, setDigitized] = useState('');
   const [tagged, setTagged] = useState('');
   const [dup, setDup] = useState('');
+  const [showAdd, setShowAdd] = useState(false);
+  const me = useMe();
+  const canAdd = me.data ? me.data.grants.includes('item:create') : false;
 
   const params: Record<string, string> = { page: String(page), pageSize: String(pageSize) };
   if (digitized) params.digitized = digitized;
@@ -53,7 +58,13 @@ function ItemsPanelInner({ lotId }: { lotId: string }) {
 
   return (
     <Panel>
-      <PanelHeader title="Items" />
+      <PanelHeader title="Items">
+        {canAdd ? (
+          <span className="ml-auto">
+            <GhostButton onClick={() => setShowAdd(true)}>Add item</GhostButton>
+          </span>
+        ) : null}
+      </PanelHeader>
       <div className="p-3 md:p-4 pb-0 flex flex-col gap-3">
         <div className="grid grid-cols-3 gap-3 max-w-[480px]">
           <TriFilter
@@ -113,6 +124,7 @@ function ItemsPanelInner({ lotId }: { lotId: string }) {
           label="items"
         />
       ) : null}
+      {showAdd ? <AddItemDialog lotId={lotId} onClose={() => setShowAdd(false)} /> : null}
     </Panel>
   );
 }

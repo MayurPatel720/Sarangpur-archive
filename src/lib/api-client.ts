@@ -2,10 +2,12 @@ import type { ZodType } from 'zod';
 import {
   activityResponseSchema,
   alertsResponseSchema,
+  blocksResponseSchema,
   pipelineResponseSchema,
   summaryResponseSchema,
   type ActivityResponse,
   type AlertsResponse,
+  type BlocksResponse,
   type PipelineResponse,
   type SummaryResponse,
 } from '@/types/dashboard';
@@ -87,6 +89,32 @@ import {
   searchResponseSchema,
   type SearchResponse,
 } from '@/types/search';
+import {
+  itemCreateResponseSchema,
+  lotProjectsResponseSchema,
+  projectAssignResponseSchema,
+  projectCreateResponseSchema,
+  projectDetailResponseSchema,
+  projectListResponseSchema,
+  projectUpdateResponseSchema,
+  type ItemCreateInput,
+  type ItemCreateResponse,
+  type LotProjectsResponse,
+  type ProjectAssignResponse,
+  type ProjectCreateInput,
+  type ProjectCreateResponse,
+  type ProjectDetailResponse,
+  type ProjectListResponse,
+  type ProjectUpdateBody,
+  type ProjectUpdateResponse,
+} from '@/types/project';
+import {
+  triageBulkResponseSchema,
+  triageItemsResponseSchema,
+  type TriageBulkBody,
+  type TriageBulkResponse,
+  type TriageItemsResponse,
+} from '@/types/triage';
 
 /**
  * Thrown when a route returns a non-2xx. Carries the server's own message so the UI
@@ -125,12 +153,24 @@ async function getJson<T>(path: string, schema: ZodType<T>): Promise<T> {
   return schema.parse(await res.json());
 }
 
+/** `?format=x` for format-scoped dashboard reads; '' keeps the global URL. */
+function formatQuery(format?: string): string {
+  return format ? `?format=${encodeURIComponent(format)}` : '';
+}
+
 export const dashboardApi = {
-  summary: () => getJson<SummaryResponse>('/api/dashboard/summary', summaryResponseSchema),
-  pipeline: () => getJson<PipelineResponse>('/api/dashboard/pipeline', pipelineResponseSchema),
-  alerts: () => getJson<AlertsResponse>('/api/dashboard/alerts', alertsResponseSchema),
-  activity: (limit = 8) =>
-    getJson<ActivityResponse>(`/api/dashboard/activity?limit=${limit}`, activityResponseSchema),
+  blocks: () => getJson<BlocksResponse>('/api/dashboard/blocks', blocksResponseSchema),
+  summary: (format?: string) =>
+    getJson<SummaryResponse>(`/api/dashboard/summary${formatQuery(format)}`, summaryResponseSchema),
+  pipeline: (format?: string) =>
+    getJson<PipelineResponse>(`/api/dashboard/pipeline${formatQuery(format)}`, pipelineResponseSchema),
+  alerts: (format?: string) =>
+    getJson<AlertsResponse>(`/api/dashboard/alerts${formatQuery(format)}`, alertsResponseSchema),
+  activity: (limit = 8, format?: string) =>
+    getJson<ActivityResponse>(
+      `/api/dashboard/activity?limit=${limit}${format ? `&format=${encodeURIComponent(format)}` : ''}`,
+      activityResponseSchema,
+    ),
 };
 
 export const healthApi = {
@@ -251,7 +291,18 @@ export const lotsApi = {
       body,
       decisionResponseSchema,
     ),
-  requestOverride: (id: string, body: OverrideRequestBody) =>
+  triageItems: (id: string) =>
+    getJson<TriageItemsResponse>(
+      `/api/lots/${encodeURIComponent(id)}/triage`,
+      triageItemsResponseSchema,
+    ),
+  recordTriage: (id: string, body: TriageBulkBody) =>
+    sendJson<TriageBulkResponse>(
+      `/api/lots/${encodeURIComponent(id)}/decision/triage`,
+      'POST',
+      body,
+      triageBulkResponseSchema,
+    ),  requestOverride: (id: string, body: OverrideRequestBody) =>
     sendJson<OverrideResponse>(
       `/api/lots/${encodeURIComponent(id)}/override`,
       'POST',
@@ -326,6 +377,18 @@ export const lotsApi = {
       `/api/lots/${encodeURIComponent(id)}/activity?page=${page}&pageSize=${pageSize}`,
       lotActivityResponseSchema,
     ),
+  projects: (id: string) =>
+    getJson<LotProjectsResponse>(
+      `/api/lots/${encodeURIComponent(id)}/projects`,
+      lotProjectsResponseSchema,
+    ),
+  createItem: (id: string, body: ItemCreateInput) =>
+    sendJson<ItemCreateResponse>(
+      `/api/lots/${encodeURIComponent(id)}/items`,
+      'POST',
+      body,
+      itemCreateResponseSchema,
+    ),
 };
 
 export const searchApi = {
@@ -335,30 +398,61 @@ export const searchApi = {
   },
 };
 
+/** `?format=x` keeps a queue read inside its format block; absent = global queue. */
+function queueUrl(queue: string, page: number, pageSize: number, format?: string): string {
+  return `/api/queues/${queue}?page=${page}&pageSize=${pageSize}${
+    format ? `&format=${encodeURIComponent(format)}` : ''
+  }`;
+}
+
 export const queuesApi = {
-  decision: (page: number, pageSize: number) =>
-    getJson<LotListResponse>(
-      `/api/queues/decision?page=${page}&pageSize=${pageSize}`,
-      lotListResponseSchema,
+  decision: (page: number, pageSize: number, format?: string) =>
+    getJson<LotListResponse>(queueUrl('decision', page, pageSize, format), lotListResponseSchema),
+  digitize: (page: number, pageSize: number, format?: string) =>
+    getJson<LotListResponse>(queueUrl('digitize', page, pageSize, format), lotListResponseSchema),
+  mls: (page: number, pageSize: number, format?: string) =>
+    getJson<LotListResponse>(queueUrl('mls', page, pageSize, format), lotListResponseSchema),
+  returns: (page: number, pageSize: number, format?: string) =>
+    getJson<LotListResponse>(queueUrl('returns', page, pageSize, format), lotListResponseSchema),
+  discards: (page: number, pageSize: number, format?: string) =>
+    getJson<LotListResponse>(queueUrl('discards', page, pageSize, format), lotListResponseSchema),
+};
+
+export const projectsApi = {
+  list: (page: number, pageSize: number, search?: string) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+      ...(search ? { search } : {}),
+    }).toString();
+    return getJson<ProjectListResponse>(`/api/projects?${qs}`, projectListResponseSchema);
+  },
+  create: (body: ProjectCreateInput) =>
+    sendJson<ProjectCreateResponse>('/api/projects', 'POST', body, projectCreateResponseSchema),
+  detail: (id: string, lotPage: number, lotPageSize: number) =>
+    getJson<ProjectDetailResponse>(
+      `/api/projects/${encodeURIComponent(id)}?lotPage=${lotPage}&lotPageSize=${lotPageSize}`,
+      projectDetailResponseSchema,
     ),
-  digitize: (page: number, pageSize: number) =>
-    getJson<LotListResponse>(
-      `/api/queues/digitize?page=${page}&pageSize=${pageSize}`,
-      lotListResponseSchema,
+  update: (id: string, body: ProjectUpdateBody) =>
+    sendJson<ProjectUpdateResponse>(
+      `/api/projects/${encodeURIComponent(id)}`,
+      'PATCH',
+      body,
+      projectUpdateResponseSchema,
     ),
-  mls: (page: number, pageSize: number) =>
-    getJson<LotListResponse>(
-      `/api/queues/mls?page=${page}&pageSize=${pageSize}`,
-      lotListResponseSchema,
+  assignLot: (projectId: string, lotId: string) =>
+    sendJson<ProjectAssignResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/lots`,
+      'POST',
+      { lotId },
+      projectAssignResponseSchema,
     ),
-  returns: (page: number, pageSize: number) =>
-    getJson<LotListResponse>(
-      `/api/queues/returns?page=${page}&pageSize=${pageSize}`,
-      lotListResponseSchema,
-    ),
-  discards: (page: number, pageSize: number) =>
-    getJson<LotListResponse>(
-      `/api/queues/discards?page=${page}&pageSize=${pageSize}`,
-      lotListResponseSchema,
+  unassignLot: (projectId: string, lotId: string) =>
+    sendJson<ProjectAssignResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/lots/${encodeURIComponent(lotId)}`,
+      'DELETE',
+      {},
+      projectAssignResponseSchema,
     ),
 };

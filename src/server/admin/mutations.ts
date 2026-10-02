@@ -5,7 +5,7 @@ import { Setting } from '@/models/Setting';
 import { User } from '@/models/User';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError, type MutationContext } from '@/lib/api';
-import { PERMISSIONS, checkSystemSafety, checkSelfEdit } from '@/server/permissions';
+import { ALL_PERMISSIONS, checkSystemSafety, checkSelfEdit } from '@/server/permissions';
 import { hashPassword } from '@/server/auth-verify';
 import { PROTECTED_LIST_KEYS, catalogList } from '@/lib/vocab-catalog';
 import { invalidateReferenceCache } from '@/server/reference/runtime';
@@ -79,7 +79,7 @@ export async function createRole(body: RoleCreateBody, ctx: MutationContext): Pr
   if (existing) throw new HttpError(409, `Role '${key}' already exists.`);
 
   for (const p of body.permissions) {
-    if (!(PERMISSIONS as readonly string[]).includes(p)) {
+    if (!(ALL_PERMISSIONS as readonly string[]).includes(p)) {
       throw new HttpError(400, `Unknown permission '${p}'.`);
     }
   }
@@ -119,7 +119,7 @@ export async function patchRole(
   if (body.permissions !== undefined) {
     const next = [...new Set(body.permissions)];
     for (const p of next) {
-      if (!(PERMISSIONS as readonly string[]).includes(p)) {
+      if (!(ALL_PERMISSIONS as readonly string[]).includes(p)) {
         throw new HttpError(400, `Unknown permission '${p}'.`);
       }
     }

@@ -36,15 +36,11 @@ import {
   makeContactColumns,
   type ContactRow,
 } from './lot-form-fields';
-import { DecisionSection } from './DecisionSection';
-import { ScanSection } from './ScanSection';
-import { MlsSection } from './MlsSection';
-import { ReturnSection } from './ReturnSection';
-import { DiscardSection } from './DiscardSection';
-import { FilePathSection } from './FilePathSection';
+import { WorkflowSteps } from './WorkflowSteps';
 import { MediaLinesPanel } from './MediaLinesPanel';
 import { ItemsPanel } from './ItemsPanel';
 import { ActivityPanel } from './ActivityPanel';
+import { LotProjectsSection } from './LotProjectsSection';
 
 type LotDetail = LotDetailResponse['lot'];
 
@@ -60,14 +56,6 @@ const TAB_LABELS: Record<TabId, string> = {
   activity: 'Activity',
 };
 
-/** Sticky in-page jumps for the five workflow sections (the hand-sketch rail). */
-const WORKFLOW_JUMPS = [
-  { id: 'wf-decision', label: 'Decision' },
-  { id: 'wf-scan', label: 'Scan' },
-  { id: 'wf-tag', label: 'Tag' },
-  { id: 'wf-return', label: 'Return' },
-  { id: 'wf-discard', label: 'Discard' },
-] as const;
 const MAIN_PATH = ['intake', 'decision', 'metadata', 'scanning', 'mls_tag', 'storage'] as const;
 
 const STAGE_SEVERITY: Record<string, Severity> = {
@@ -534,8 +522,30 @@ function PeopleSection({ lot }: { lot: LotDetail }) {
 
 /* ------------------------------------------------------------ full record */
 
-function FullRecordSection({ lot, originLabel }: { lot: LotDetail; originLabel: string | null }) {
+/**
+ * Recorded significance answers with live question labels. Flags are
+ * positional (index ↔ question order when recorded); when the admin has since
+ * added or retired questions the counts no longer line up, so unmatched slots
+ * fall back to a generic label instead of a wrong question.
+ */
+function SignificanceAnswers({ flags }: { flags: boolean[] }) {
+  const sigQuestions = useReferenceList('significance');
+  const questions = sigQuestions.data?.items ?? [];
   return (
+    <span>
+      {flags.map((f, i) => (
+        <span key={i} className="mr-1.5">
+          {questions[i]?.label ?? `Criterion ${i + 1}`}: {f ? 'yes' : 'no'}
+        </span>
+      ))}
+      {questions.length !== flags.length ? (
+        <span className="text-ink-3"> (question set changed since this decision)</span>
+      ) : null}
+    </span>
+  );
+}
+
+function FullRecordSection({ lot, originLabel }: { lot: LotDetail; originLabel: string | null }) {  return (
       <Panel>
         <PanelHeader title="Full record" />
         <div className="px-4 md:px-5 py-4 flex flex-col">
@@ -576,17 +586,23 @@ function FullRecordSection({ lot, originLabel }: { lot: LotDetail; originLabel: 
             ) : null}
           </GroupBlock>
 
-          <GroupBlock>
-            <GroupLabel>Photo content</GroupLabel>
-            <RecordRow>
-              <Definition label="Photo date">{lot.photoDate ?? dash}</Definition>
-              <Definition label="Photo location">{lot.photoLocation ?? dash}</Definition>
-              <Definition label="Photo event">{lot.photoEvent ?? dash}</Definition>
-            </RecordRow>
-            <RecordRow>
-              <Definition label="People in photo" className="col-span-2 md:col-span-4">{lot.peopleInPhoto ?? dash}</Definition>
-            </RecordRow>
-          </GroupBlock>
+          {lot.format === 'photo' ||
+          lot.photoDate ||
+          lot.photoLocation ||
+          lot.photoEvent ||
+          lot.peopleInPhoto ? (
+            <GroupBlock>
+              <GroupLabel>Photo content</GroupLabel>
+              <RecordRow>
+                <Definition label="Photo date">{lot.photoDate ?? dash}</Definition>
+                <Definition label="Photo location">{lot.photoLocation ?? dash}</Definition>
+                <Definition label="Photo event">{lot.photoEvent ?? dash}</Definition>
+              </RecordRow>
+              <RecordRow>
+                <Definition label="People in photo" className="col-span-2 md:col-span-4">{lot.peopleInPhoto ?? dash}</Definition>
+              </RecordRow>
+            </GroupBlock>
+          ) : null}
 
           <GroupBlock>
             <GroupLabel>Rights</GroupLabel>
@@ -618,9 +634,7 @@ function FullRecordSection({ lot, originLabel }: { lot: LotDetail; originLabel: 
             {lot.decisionDetail.significanceFlags ? (
               <RecordRow>
                 <Definition label="Significance" className="col-span-2 md:col-span-4">
-                  {lot.decisionDetail.significanceFlags.map((f, i) => (
-                    <span key={i} className="mr-1.5">Q{i + 1}: {f ? 'yes' : 'no'}</span>
-                  ))}
+                  <SignificanceAnswers flags={lot.decisionDetail.significanceFlags} />
                 </Definition>
               </RecordRow>
             ) : null}
@@ -1054,39 +1068,11 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <ProgressSection lot={lot} />
         <JourneyPanel lot={lot} stageLabel={stageLabel} />
         <PeopleSection lot={lot} />
+        <LotProjectsSection lotId={lot.id} />
       </TabPanel>
 
       <TabPanel id="workflow" active={tab === 'workflow'}>
-        <nav
-          aria-label="Workflow sections"
-          className="sticky top-0 z-10 -my-1 py-2 bg-surface/95 backdrop-blur flex gap-1.5 overflow-x-auto"
-        >
-          {WORKFLOW_JUMPS.map((j) => (
-            <a
-              key={j.id}
-              href={`#${j.id}`}
-              className="flex-shrink-0 h-8 px-3 rounded-full bg-surface-sunken border border-line text-[12.5px] font-medium text-ink-2 no-underline flex items-center hover:text-ink hover:border-line-strong"
-            >
-              {j.label}
-            </a>
-          ))}
-        </nav>
-        <div id="wf-decision" className="scroll-mt-16">
-          <DecisionSection lot={lot} onChanged={onChanged} />
-        </div>
-        <div id="wf-scan" className="scroll-mt-16">
-          <ScanSection lot={lot} onChanged={onChanged} />
-        </div>
-        <div id="wf-tag" className="scroll-mt-16">
-          <MlsSection lot={lot} onChanged={onChanged} />
-        </div>
-        <div id="wf-return" className="scroll-mt-16">
-          <ReturnSection lot={lot} onChanged={onChanged} />
-        </div>
-        <div id="wf-discard" className="scroll-mt-16">
-          <DiscardSection lot={lot} onChanged={onChanged} />
-        </div>
-        <FilePathSection lot={lot} onChanged={onChanged} />
+        <WorkflowSteps lot={lot} onChanged={onChanged} />
       </TabPanel>
 
       <TabPanel id="record" active={tab === 'record'}>

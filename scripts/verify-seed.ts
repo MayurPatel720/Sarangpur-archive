@@ -27,7 +27,7 @@ import { User } from '../src/models/User';
 import { ReferenceList } from '../src/models/ReferenceList';
 import { Role } from '../src/models/Role';
 import { Setting } from '../src/models/Setting';
-import { checkSystemSafety, PERMISSIONS } from '../src/server/permissions';
+import { ALL_PERMISSIONS, checkSystemSafety } from '../src/server/permissions';
 import { CATALOG_LIST_KEYS, catalogList } from '../src/lib/vocab-catalog';
 import {
   DATA_TYPES,
@@ -162,7 +162,7 @@ refsOk(
 console.log('\nAccess control seed');
 
 const roles = buildRoles();
-const knownGrants = new Set<string>(PERMISSIONS);
+const knownGrants = new Set<string>(ALL_PERMISSIONS);
 const unknownGrants = roles.flatMap((r) =>
   ((r.permissions as string[]) ?? []).filter((g) => !knownGrants.has(g)),
 );

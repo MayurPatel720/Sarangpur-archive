@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { handleQuery } from '@/lib/api';
 import { lotListResponseSchema } from '@/types/lot';
+import { requireFormatScope } from '@/server/format-scope';
 import { runQueue } from '@/server/queues/queues';
 
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,8 @@ export const dynamic = 'force-dynamic';
 const queueQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  /** Optional format scope — validated + grant-checked in requireFormatScope. */
+  format: z.string().optional(),
 });
 
 /** GET /api/queues/decision — lots waiting for a decision, oldest first, `decision:view`. */
@@ -19,7 +22,13 @@ export async function GET(req: Request) {
   }
   return handleQuery(
     lotListResponseSchema,
-    () => runQueue('decision', parsed.data.page, parsed.data.pageSize),
+    (ctx) =>
+      runQueue(
+        'decision',
+        parsed.data.page,
+        parsed.data.pageSize,
+        requireFormatScope(parsed.data.format ?? null, ctx) ?? undefined,
+      ),
     { permission: 'decision:view' },
   );
 }

@@ -6,7 +6,7 @@
  *
  * Run: npm run verify:decision-rule (also part of `npm run verify`).
  */
-import { computeVerdict, type DecisionChecklistInput } from '../src/server/lots/decision-rule';
+import { computeVerdict, unionSignificanceFlags, type DecisionChecklistInput } from '../src/server/lots/decision-rule';
 
 interface Case {
   name: string;
@@ -70,3 +70,40 @@ if (failures > 0) {
   process.exit(1);
 }
 console.log(`All ${CASES.length} decision-rule cases pass.`);
+
+// Triage union: per-group significance OR-ed into one lot-level tuple.
+const UNION_CASES: { name: string; groups: [boolean, boolean, boolean, boolean][]; expected: [boolean, boolean, boolean, boolean] }[] = [
+  { name: 'no groups → all false', groups: [], expected: [false, false, false, false] },
+  {
+    name: 'single group passes through',
+    groups: [[false, true, false, false]],
+    expected: [false, true, false, false],
+  },
+  {
+    name: 'flags OR across groups',
+    groups: [
+      [true, false, false, false],
+      [false, false, true, false],
+      [false, false, false, false],
+    ],
+    expected: [true, false, true, false],
+  },
+];
+
+let unionFailures = 0;
+for (const c of UNION_CASES) {
+  const got = unionSignificanceFlags(c.groups);
+  const pass = got.length === 4 && got.every((v, i) => v === c.expected[i]);
+  if (pass) {
+    console.log(`PASS  ${c.name}`);
+  } else {
+    unionFailures += 1;
+    console.error(`FAIL  ${c.name}: expected ${c.expected}, got ${got}`);
+  }
+}
+
+if (unionFailures > 0) {
+  console.error(`${unionFailures} union case(s) failed.`);
+  process.exit(1);
+}
+console.log(`All ${UNION_CASES.length} significance-union cases pass.`);

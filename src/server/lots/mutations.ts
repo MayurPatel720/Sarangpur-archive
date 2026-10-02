@@ -1,20 +1,21 @@
-import { Types } from 'mongoose';
+import { Types, type ClientSession, type HydratedDocument } from 'mongoose';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
 import type { MutationContext } from '@/lib/api';
-import { ArchiveLot } from '@/models/ArchiveLot';
+import { ArchiveLot, type ArchiveLotDoc } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { can } from '@/server/permissions';
 import { withAudit } from '@/server/audit';
-import { assertActiveReferenceValue, getReferenceList, bumpUsage, transferUsage } from '@/server/reference';
+import { assertActiveReferenceValue, getActiveReferenceItems, getReferenceList, bumpUsage, transferUsage } from '@/server/reference';
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { assertActive } from '@/server/reference/runtime';
-import { computeVerdict, type Verdict } from '@/server/lots/decision-rule';
+import { computeVerdict, unionSignificanceFlags, type SignificanceFlags, type Verdict } from '@/server/lots/decision-rule';
 import { generateItemCodes, generateLotReference, generateNamingCode, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
 import { isTerminalStage } from '@/server/lots/queries';
 import type { Stage } from '@/lib/domain';
 import type { LotCreateBody, LotPatchBody, DecisionBody, DecisionResponse, OverrideRequestBody, OverrideDecideBody } from '@/types/lot';
+import type { TriageBulkBody } from '@/types/triage';
 
 async function subtypeLabel(format: string, value: string): Promise<string> {
   const key = await mediaSubtypeListKeyAsync(format);
@@ -187,6 +188,9 @@ export async function createIntake(
           lines.map(async (line, i) => ({
             lot: lot!._id,
             lotCode: lotReference,
+            // Per-line format: a multi-line intake logs each line under the
+            // format it actually belongs to. Write-time denormalisation.
+            format: line.format,
             kind: 'intake_created',
             title: lines.length > 1 ? `Intake created — line ${i + 1}` : 'Intake created',
             detail: `${line.quantity} items · ${await subtypeLabel(line.format, line.mediaSubtype)}${lines.length > 1 ? ` (${i + 1} of ${lines.length})` : ''}. Condition photo attached.`,
@@ -384,8 +388,11 @@ async function namingPrefix(format: string, mediaSubtype: string): Promise<strin
 }
 
 /**
- * Records the decision checklist (API.md §4). The verdict is computed here on
- * the server, never trusted from the client:
+ * Shared decision-write core (API.md §4). Both the checklist route and the
+ * triage bulk route answer the same lot facts (`DecisionFacts`) and run through
+ * here, so the verdict, guards, stage transition, item recode and side effects
+ * live in exactly one place. The verdict is computed here on the server, never
+ * trusted from the client:
  * - verdict `archive` → status archive, stage metadata, naming code issued,
  *   items recoded to it. A `disposition` contradicts the verdict and needs an
  *   approved override (else 400 naming the verdict).
@@ -393,14 +400,26 @@ async function namingPrefix(format: string, mediaSubtype: string): Promise<strin
  * Re-recording needs an approved override, which is consumed by the write.
  * Route permission: `decision:record`.
  */
-export async function recordDecision(
+type DecisionFacts = {
+  existsInMls: boolean;
+  newCopyIsBetter?: boolean | undefined;
+  mlsMatchPaths?: string[] | undefined;
+  conditionUsable: boolean;
+  conditionIssue?: string | undefined;
+  significanceFlags: SignificanceFlags;
+  notes?: string | undefined;
+  disposition?: 'return' | 'discard' | undefined;
+  discardReason?: string | undefined;
+  discardNotes?: string | undefined;
+};
+
+async function writeDecision(
   lotId: string,
-  body: DecisionBody,
+  body: DecisionFacts,
   ctx: MutationContext,
+  auditTitle: string,
+  preWrite?: (lot: HydratedDocument<ArchiveLotDoc>, session: ClientSession) => Promise<void>,
 ): Promise<DecisionResponse> {
-  if (body.discardReason) {
-    await assertActive('discardReason', body.discardReason);
-  }
   const verdict = computeVerdict({
     existsInMls: body.existsInMls,
     newCopyIsBetter: body.newCopyIsBetter,
@@ -412,12 +431,10 @@ export async function recordDecision(
     lotId,
     actor: { id: ctx.userId, name: ctx.userName },
     kind: 'decision_recorded',
-    title:
-      verdict === 'archive' && !body.disposition
-        ? 'Decision recorded — archive'
-        : `Decision recorded — ${body.disposition ?? 'archive'}`,
+    title: auditTitle,
     detail: body.conditionIssue ? `Condition issue: ${body.conditionIssue}` : undefined,
     mutate: async (lot, session) => {
+      if (preWrite) await preWrite(lot, session);
       const format = lot.format;
       const mediaSubtype = lot.mediaSubtype;
       const originSource = lot.originSource;
@@ -533,6 +550,149 @@ export async function recordDecision(
 
   const fresh = await ArchiveLot.findById(outcome.id).select('__v').lean();
   return { ...outcome, version: fresh?.__v ?? 0 };
+}
+
+/**
+ * Significance answers are positional — one boolean per active `significance`
+ * question, in list order. The admin can reword, add, or retire questions, so
+ * every write checks the answers still line up with the current list instead
+ * of silently recording against shifted positions.
+ */
+async function significanceQuestionCount(): Promise<number> {
+  const questions = await getActiveReferenceItems('significance');
+  if (questions.length === 0) {
+    throw new HttpError(500, 'No significance questions configured.');
+  }
+  return questions.length;
+}
+
+async function assertFlagsMatchQuestions(flags: readonly boolean[]): Promise<void> {
+  const questionCount = await significanceQuestionCount();
+  if (flags.length !== questionCount) {
+    throw new HttpError(
+      400,
+      'The significance questions changed — re-answer them and record again.',
+    );
+  }
+}
+
+/** Checklist entry point — asserts vocabulary, builds the audit title, delegates. */
+export async function recordDecision(
+  lotId: string,
+  body: DecisionBody,
+  ctx: MutationContext,
+): Promise<DecisionResponse> {
+  if (body.discardReason) {
+    await assertActive('discardReason', body.discardReason);
+  }
+  await assertFlagsMatchQuestions(body.significanceFlags);
+  const verdict = computeVerdict({
+    existsInMls: body.existsInMls,
+    newCopyIsBetter: body.newCopyIsBetter,
+    conditionUsable: body.conditionUsable,
+    significanceFlags: body.significanceFlags,
+  });
+  const title =
+    verdict === 'archive' && !body.disposition
+      ? 'Decision recorded — archive'
+      : `Decision recorded — ${body.disposition ?? 'archive'}`;
+  return writeDecision(lotId, body, ctx, title);
+}
+
+/**
+ * Triage bulk entry point. Every item id must belong to the lot; every dropped
+ * item needs an active `notDigitizedReason`. Per-group significance flags are
+ * OR-ed into one lot-level tuple, then the shared core records the decision —
+ * selections land in the same transaction, and `expectedFileCount` is
+ * recounted from the kept items so the digitize queue stays truthful.
+ */
+export async function recordTriageDecision(
+  lotId: string,
+  body: TriageBulkBody,
+  ctx: MutationContext,
+): Promise<DecisionResponse> {
+  if (!Types.ObjectId.isValid(lotId)) throw new HttpError(404, 'Lot not found.');
+  const lotObjectId = new Types.ObjectId(lotId);
+  const ids = body.items.map((it) => it.id);
+  if (ids.some((id) => !Types.ObjectId.isValid(id))) {
+    throw new HttpError(404, 'Some items do not belong to this lot.');
+  }
+  const matchCount = await LotItem.countDocuments({
+    _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+    lot: lotObjectId,
+  });
+  if (matchCount !== ids.length) {
+    throw new HttpError(404, 'Some items do not belong to this lot.');
+  }
+  if (body.discardReason) {
+    await assertActive('discardReason', body.discardReason);
+  }
+  const reasons = [...new Set(body.items.filter((it) => !it.selected).map((it) => it.reason))];
+  await Promise.all(
+    reasons.map((r) => assertActiveReferenceValue('notDigitizedReason', r ?? '')),
+  );
+  const questionCount = await significanceQuestionCount();
+  if (body.groupFlags.some((g) => g.flags.length !== questionCount)) {
+    throw new HttpError(
+      400,
+      'The significance questions changed — re-answer them and record again.',
+    );
+  }
+  const significanceFlags = unionSignificanceFlags(
+    body.groupFlags.map((g) => g.flags),
+    questionCount,
+  );
+  const verdict = computeVerdict({
+    existsInMls: body.existsInMls,
+    newCopyIsBetter: body.newCopyIsBetter,
+    conditionUsable: body.conditionUsable,
+    significanceFlags,
+  });
+  const title =
+    verdict === 'archive' && !body.disposition
+      ? 'Decision recorded (triage) — archive'
+      : `Decision recorded (triage) — ${body.disposition ?? 'archive'}`;
+
+  return writeDecision(
+    lotId,
+    {
+      existsInMls: body.existsInMls,
+      newCopyIsBetter: body.newCopyIsBetter,
+      mlsMatchPaths: body.mlsMatchPaths,
+      conditionUsable: body.conditionUsable,
+      conditionIssue: body.conditionIssue,
+      significanceFlags,
+      notes: body.notes,
+      disposition: body.disposition,
+      discardReason: body.discardReason,
+      discardNotes: body.discardNotes,
+    },
+    ctx,
+    title,
+    async (lot, session) => {
+      for (let i = 0; i < body.items.length; i += 1000) {
+        await LotItem.bulkWrite(
+          body.items.slice(i, i + 1000).map((it) => ({
+            updateOne: {
+              filter: { _id: new Types.ObjectId(it.id), lot: lot._id },
+              update: {
+                $set: {
+                  selectedForDigitization: it.selected,
+                  notDigitizedReason: it.selected ? null : it.reason,
+                },
+              },
+            },
+          })),
+          { session },
+        );
+      }
+      const selectedCount = await LotItem.countDocuments({
+        lot: lot._id,
+        selectedForDigitization: true,
+      }).session(session);
+      lot.set('digitization.expectedFileCount', selectedCount);
+    },
+  );
 }
 
 /**

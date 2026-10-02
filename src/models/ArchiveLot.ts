@@ -117,6 +117,18 @@ const archiveLotSchema = new Schema(
     /** When the lot entered its current stage. Drives every "stuck for N days" alert. */
     stageEnteredAt: { type: Date, required: true, index: true },
 
+    /**
+     * Projects this lot belongs to (many-to-many — a lot can sit in several
+     * projects, and lots without any entry are standalone). Membership is
+     * mutated only by `project:assign` holders through the projects mutations,
+     * which keep `Project.lotCount` in sync in the same transaction.
+     */
+    projectIds: {
+      type: [{ type: Schema.Types.ObjectId, ref: 'Project' }],
+      default: [],
+      index: true,
+    },
+
     decision: {
       status: { type: String, required: true, default: 'pending', index: true },
       /** Server-computed verdict (decision-rule.ts). Stored so the UI can show it. */
@@ -132,8 +144,8 @@ const archiveLotSchema = new Schema(
         type: [Boolean],
         default: undefined,
         validate: {
-          validator: (v: boolean[] | undefined) => v === undefined || v.length === 4,
-          message: 'significanceFlags must hold exactly four answers',
+          validator: (v: boolean[] | undefined) => v === undefined || v.length >= 1,
+          message: 'significanceFlags must hold at least one answer',
         },
       },
       significanceNotes: { type: String, trim: true },

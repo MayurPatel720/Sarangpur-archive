@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { dashboardApi, ApiRequestError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { scopedHref } from '@/lib/dashboard-links';
 import { num, severityText } from '@/lib/format';
 import { ErrorState, Meter, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import type { Severity } from '@/types/dashboard';
+import type { Format } from '@/lib/domain';
 
 /** The 2px rule under each column header. Only two stages earn a coloured one. */
 const HEAD_RULE: Record<Severity, string> = {
@@ -17,10 +19,10 @@ const HEAD_RULE: Record<Severity, string> = {
   critical: 'bg-danger-mark',
 };
 
-export function PipelineBoard() {
+export function PipelineBoard({ format }: { format?: Format }) {
   const { data, isPending, error, refetch } = useQuery({
-    queryKey: queryKeys.dashboard.pipeline(),
-    queryFn: dashboardApi.pipeline,
+    queryKey: queryKeys.dashboard.pipeline(format),
+    queryFn: () => dashboardApi.pipeline(format),
   });
 
   if (error) {
@@ -40,7 +42,7 @@ export function PipelineBoard() {
           {isPending ? 'Loading…' : `${num(data.totalActive)} lots in the pipeline`}
         </span>
         <Link
-          href="/register"
+          href={scopedHref('/register', format)}
           className="ml-auto text-[12.5px] font-semibold text-ink-4 no-underline hover:text-ink"
         >
           Open full register
@@ -59,7 +61,7 @@ export function PipelineBoard() {
           : data.stages.map((stage) => (
               <div key={stage.stage} className="flex flex-col gap-2.5 min-w-0">
                 <Link
-                  href={`/register?stage=${stage.stage}`}
+                  href={scopedHref(`/register?stage=${stage.stage}`, format)}
                   className="flex flex-col gap-1.5 pb-2.5 relative no-underline"
                 >
                   <span className="text-[9.5px] font-semibold tracking-[0.1em] uppercase text-ink-3 truncate">

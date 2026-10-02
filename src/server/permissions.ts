@@ -16,6 +16,8 @@
  * logged-in sessions carrying a stale JWT.
  */
 
+import { FORMATS, type Format } from '@/lib/domain';
+
 export const PERMISSIONS = [
   // Dashboard
   'dashboard:view',
@@ -47,6 +49,14 @@ export const PERMISSIONS = [
   'discard:reverse',
   // Attachments (view rides on lot:view)
   'attachment:upload',
+  // Projects (parent grouping over lots)
+  'project:view',
+  'project:create',
+  'project:edit',
+  /** Add/remove lots on a project. Admin-only by seed; assignable to custom roles. */
+  'project:assign',
+  /** Manually add an individual item to a lot (beyond intake auto-generation). */
+  'item:create',
   // Admin
   'user:manage',
   'settings:manage',
@@ -56,7 +66,30 @@ export const PERMISSIONS = [
   'audit:export',
   'storage:view',
 ] as const;
-export type Permission = (typeof PERMISSIONS)[number];
+
+/**
+ * Format-block access — one grant per media format, e.g. `format:photo`.
+ * A user only opens the format blocks (and their scoped dashboards/queues) whose
+ * grant they hold. Derived FROM `FORMATS` (below guarded at compile time) so a
+ * new format cannot ship without a permission key.
+ */
+export type FormatPermission = `format:${Format}`;
+export const FORMAT_PERMISSIONS = [
+  'format:photo',
+  'format:video',
+  'format:audio',
+  'format:documents',
+  'format:prasadi',
+] as const satisfies readonly FormatPermission[];
+/** Compile-time guard: fails if FORMATS grows and FORMAT_PERMISSIONS lags behind. */
+export type FormatGrantCoverage = FormatPermission extends (typeof FORMAT_PERMISSIONS)[number]
+  ? true
+  : never;
+
+/** Everything a role document may hold. Use for validation; use PERMISSIONS for UI groups. */
+export const ALL_PERMISSIONS = [...PERMISSIONS, ...FORMAT_PERMISSIONS] as const;
+
+export type Permission = (typeof PERMISSIONS)[number] | FormatPermission;
 
 /** The five seeded role keys. Mirror `ROLES` in domain.ts. */
 export const SYSTEM_ROLE_KEYS = ['volunteer', 'reviewer', 'lead_reviewer', 'admin', 'viewer'] as const;
@@ -79,6 +112,9 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'return:manage',
     'discards:view',
     'attachment:upload',
+    'project:view',
+    'item:create',
+    ...FORMAT_PERMISSIONS,
   ],
   reviewer: [
     'dashboard:view',
@@ -98,6 +134,9 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'discards:view',
     'discard:confirm',
     'attachment:upload',
+    'project:view',
+    'item:create',
+    ...FORMAT_PERMISSIONS,
   ],
   lead_reviewer: [
     'dashboard:view',
@@ -119,8 +158,11 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'discards:view',
     'discard:confirm',
     'attachment:upload',
+    'project:view',
+    'item:create',
+    ...FORMAT_PERMISSIONS,
   ],
-  admin: [...PERMISSIONS],
+  admin: [...ALL_PERMISSIONS],
   /** Brief: view all records — read-only, no mutations. */
   viewer: [
     'dashboard:view',
@@ -131,6 +173,8 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'returns:view',
     'discards:view',
     'storage:view',
+    'project:view',
+    ...FORMAT_PERMISSIONS,
   ],
 };
 

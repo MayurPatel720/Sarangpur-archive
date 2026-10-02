@@ -6,7 +6,9 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useDrawer } from '@/components/shell/drawer-context';
 import { useMe } from '@/hooks/useCan';
+import { useFormatContext } from '@/hooks/useFormatParam';
 import { dashboardApi, healthApi } from '@/lib/api-client';
+import { scopedHref } from '@/lib/dashboard-links';
 import { formatBytes, num } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { SIDEBAR_WIDTH_CLASS } from '@/lib/shell';
@@ -22,7 +24,9 @@ import {
   IconSettings,
   IconDecision,
   IconScan,
+  IconBox,
   IconTag,
+  IconPlus,
   IconReturn,
   IconDiscard,
 } from '@/components/ui/icons';
@@ -32,6 +36,8 @@ type NavItem = { icon: React.ElementType; label: string; href: string };
 const WORKFLOW_ITEMS = [
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard', perm: 'dashboard:view' },
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
+  { icon: IconBox, label: 'Projects', href: '/projects', perm: 'project:view' },
+  { icon: IconPlus, label: 'New project', href: '/projects?new=1', perm: 'project:create' },
   { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconAlertTriangle, label: 'Alerts', href: '/alerts', perm: null },
 ] as const;
@@ -147,6 +153,12 @@ export function Sidebar() {
   const stageParam = searchParams.get('stage');
   const onRegister = pathname === '/register' || pathname.startsWith('/register/');
   const onAdmin = pathname.startsWith('/admin');
+  /**
+   * Active format block (`?format=` or `/dashboard/[format]`). While inside a
+   * block the nav hrefs and badges scope to it; global everywhere else.
+   * Storage/health and ⌘K stay global on purpose — filesystem health has no format.
+   */
+  const ctxFormat = useFormatContext();
 
   const health = useQuery({
     queryKey: queryKeys.health.server(),
@@ -156,16 +168,16 @@ export function Sidebar() {
   });
 
   const alerts = useQuery({
-    queryKey: queryKeys.dashboard.alerts(),
-    queryFn: dashboardApi.alerts,
+    queryKey: queryKeys.dashboard.alerts(ctxFormat),
+    queryFn: () => dashboardApi.alerts(ctxFormat),
     enabled: ready,
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
 
   const summary = useQuery({
-    queryKey: queryKeys.dashboard.summary(),
-    queryFn: dashboardApi.summary,
+    queryKey: queryKeys.dashboard.summary(ctxFormat),
+    queryFn: () => dashboardApi.summary(ctxFormat),
     enabled: ready && showCore('dashboard:view'),
     staleTime: 30_000,
     refetchInterval: 60_000,
@@ -223,12 +235,24 @@ export function Sidebar() {
 
   for (const item of WORKFLOW_ITEMS) {
     if (!showCore(item.perm)) continue;
+    // `/dashboard` is the format-block picker itself — keep it unscoped.
+    const isPicker = item.href === '/dashboard';
+    // Some rows deep-link with a query (e.g. `/projects?new=1`) — active only
+    // when the pathname AND those exact params match; extra params are ignored.
+    const [bare = item.href, itemQuery = ''] = item.href.split('?');
+    const queryMatches =
+      !itemQuery ||
+      itemQuery
+        .split('&')
+        .every((pair) => searchParams.get(pair.split('=')[0] ?? '') === (pair.split('=')[1] ?? ''));
     rows.push({
-      item,
+      item: isPicker ? item : { ...item, href: scopedHref(item.href, ctxFormat) },
       active:
         item.href === '/register'
           ? onRegister && pathname !== '/register/new' && !formatParam && !stageParam
-          : pathname === item.href,
+          : isPicker
+            ? pathname === '/dashboard' || pathname.startsWith('/dashboard/')
+            : pathname === bare && queryMatches,
       badge: item.href === '/alerts' && alertBadge > 0 ? alertBadge : null,
       badgeTitle: item.href === '/alerts' ? `${alertBadge} open alerts` : undefined,
     });
@@ -238,7 +262,8 @@ export function Sidebar() {
     if (!privileged || !showGated(q.perm)) continue;
     const badge = q.kpi ? kpiValue(q.kpi) : null;
     rows.push({
-      item: { icon: q.icon, label: q.label, href: q.href },
+      item: { icon: q.icon, label: q.label, href: scopedHref(q.href, ctxFormat) },
+      // pathname never carries a query, so compare against the bare href.
       active: pathname.startsWith(q.href),
       badge: badge !== null && badge > 0 ? badge : null,
       badgeTitle: badge !== null ? `${badge} in queue` : undefined,

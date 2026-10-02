@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { scopedHref } from '@/lib/dashboard-links';
 import type { LotCreateBody, LotContactInput } from '@/types/lot';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { date, dmyToIso, todayDmy } from '@/lib/format';
@@ -136,11 +137,19 @@ function SummarySection({
   );
 }
 
-export function IntakeForm() {
+export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const me = useMe();
   const can = me.data ? me.data.grants.includes('lot:create') : false;
+  /**
+   * Format block the user came from — seeds every new row AND locks the
+   * format dropdown to that block's format. No `initialFormat` = unlocked,
+   * mixed-format lots allowed.
+   */
+  const seedLine: Omit<MediaLineForm, 'id'> = initialFormat
+    ? { ...EMPTY_LINE, format: initialFormat }
+    : EMPTY_LINE;
 
   const [step, setStep] = useState(0);
   /**
@@ -160,7 +169,7 @@ export function IntakeForm() {
   const [pocs, setPocs] = useState<ContactRow[]>([]);
   /** `null` = no facilitator (the row IS the toggle — no separate checkbox). */
   const [facilitator, setFacilitator] = useState<ContactRow | null>(null);
-  const [lines, setLines] = useState<MediaLineForm[]>([{ ...EMPTY_LINE, id: 'r0' }]);
+  const [lines, setLines] = useState<MediaLineForm[]>([{ ...seedLine, id: 'r0' }]);
   /** Row id counter for added/duplicated rows (contacts and media lines). */
   const rowId = useRef(1);
   const [conditionNotes, setConditionNotes] = useState('');
@@ -226,6 +235,10 @@ export function IntakeForm() {
     return sum + (Number.isInteger(q) && q > 0 ? q : 0);
   }, 0);
 
+  // The photo topic fields only exist for photo lots — shown, submitted and
+  // summarised only while at least one line is a photo line.
+  const hasPhotoLines = lines.some((l) => l.format === 'photo');
+
   const labelFor = (
     list: { items: { value: string; label: string }[] } | undefined,
     value: string,
@@ -240,7 +253,7 @@ export function IntakeForm() {
     mutationFn: (body: LotCreateBody) => lotsApi.create(body),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-      router.push(`/register/${res.id}`);
+      router.push(scopedHref(`/register/${res.id}`, initialFormat));
     },
     onError: (e) => {
       setFormError(e instanceof ApiRequestError ? e.message : 'Could not register this lot.');
@@ -438,10 +451,10 @@ export function IntakeForm() {
             },
           }
         : {}),
-      ...(photoDate.trim() ? { photoDate: photoDate.trim() } : {}),
-      ...(photoLocation.trim() ? { photoLocation: photoLocation.trim() } : {}),
-      ...(photoEvent.trim() ? { photoEvent: photoEvent.trim() } : {}),
-      ...(peopleInPhoto.trim() ? { peopleInPhoto: peopleInPhoto.trim() } : {}),
+      ...(hasPhotoLines && photoDate.trim() ? { photoDate: photoDate.trim() } : {}),
+      ...(hasPhotoLines && photoLocation.trim() ? { photoLocation: photoLocation.trim() } : {}),
+      ...(hasPhotoLines && photoEvent.trim() ? { photoEvent: photoEvent.trim() } : {}),
+      ...(hasPhotoLines && peopleInPhoto.trim() ? { peopleInPhoto: peopleInPhoto.trim() } : {}),
       ...(digitalFilePath.trim() ? { digitalFilePath: digitalFilePath.trim() } : {}),
       ...(physicalLabelApplied ? { physicalLabelApplied: true } : {}),
       ...(containerLabelApplied ? { containerLabelApplied: true } : {}),
@@ -486,9 +499,12 @@ export function IntakeForm() {
           aria-label={`Line ${index + 1}, format`}
           autoFocus={autoFocus}
           value={row.format}
+          disabled={Boolean(initialFormat)}
           onChange={(e) => setLine(rowId, { format: e.target.value, mediaSubtype: '' })}
         >
-          {(formats.data?.items ?? []).map((f) => (
+          {(formats.data?.items ?? []).filter(
+            (f) => !initialFormat || f.value === initialFormat,
+          ).map((f) => (
             <option key={f.value} value={f.value}>
               {f.label}
             </option>
@@ -691,7 +707,11 @@ export function IntakeForm() {
           <StepBlocks>
             <FormSection
               legend="Media lines"
-              description="One row per format / sub-type combination — a mixed lot of prints and cassettes gets two rows. Selection for digitization happens at a later stage."
+              description={
+                initialFormat
+                  ? `This intake was opened from the ${initialFormat.charAt(0).toUpperCase()}${initialFormat.slice(1)} block — every line in this lot is ${initialFormat.charAt(0).toUpperCase()}${initialFormat.slice(1)}.`
+                  : 'One row per format / sub-type combination — a mixed lot of prints and cassettes gets two rows. Selection for digitization happens at a later stage.'
+              }
             >
               <EditableTable
                 columns={lineColumns}
@@ -699,8 +719,12 @@ export function IntakeForm() {
                 getRowId={(l) => l.id}
                 onChange={setLines}
                 errors={fieldErrors}
-                createRow={() => ({ ...EMPTY_LINE, id: newRowId() })}
-                cloneRow={(l) => ({ ...l, id: newRowId() })}
+                createRow={() => ({ ...seedLine, id: newRowId() })}
+                cloneRow={(l) => ({
+                  ...l,
+                  ...(initialFormat ? { format: initialFormat } : {}),
+                  id: newRowId(),
+                })}
                 minRows={1}
                 maxRows={20}
                 addLabel="Add row"
@@ -770,22 +794,24 @@ export function IntakeForm() {
               </div>
             </FormSection>
 
-            <FormSection legend="Media content metadata (optional)">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Photo date">
-                  <TextInput value={photoDate} onChange={(e) => setPhotoDate(e.target.value)} placeholder="e.g. 1985 or c. 1990" />
-                </Field>
-                <Field label="Photo location">
-                  <TextInput value={photoLocation} onChange={(e) => setPhotoLocation(e.target.value)} placeholder="Optional" />
-                </Field>
-                <Field label="Photo event">
-                  <TextInput value={photoEvent} onChange={(e) => setPhotoEvent(e.target.value)} placeholder="Optional" />
-                </Field>
-                <Field label="People in photo">
-                  <TextInput value={peopleInPhoto} onChange={(e) => setPeopleInPhoto(e.target.value)} placeholder="Optional" />
-                </Field>
-              </div>
-            </FormSection>
+            {hasPhotoLines ? (
+              <FormSection legend="Media content metadata (optional)">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Photo date">
+                    <TextInput value={photoDate} onChange={(e) => setPhotoDate(e.target.value)} placeholder="e.g. 1985 or c. 1990" />
+                  </Field>
+                  <Field label="Photo location">
+                    <TextInput value={photoLocation} onChange={(e) => setPhotoLocation(e.target.value)} placeholder="Optional" />
+                  </Field>
+                  <Field label="Photo event">
+                    <TextInput value={photoEvent} onChange={(e) => setPhotoEvent(e.target.value)} placeholder="Optional" />
+                  </Field>
+                  <Field label="People in photo">
+                    <TextInput value={peopleInPhoto} onChange={(e) => setPeopleInPhoto(e.target.value)} placeholder="Optional" />
+                  </Field>
+                </div>
+              </FormSection>
+            ) : null}
 
             <FormSection legend="Naming &amp; storage (optional)">
               <Field label="Digital file path">
@@ -916,10 +942,14 @@ export function IntakeForm() {
                 <SummaryRow label="Condition photo" value={conditionPhotoUrl} />
                 <SummaryRow label="Reason for sending" value={reasonForSending} />
                 <SummaryRow label="Sender remarks" value={senderRemarks} />
-                <SummaryRow label="Photo date" value={photoDate} />
-                <SummaryRow label="Photo location" value={photoLocation} />
-                <SummaryRow label="Photo event" value={photoEvent} />
-                <SummaryRow label="People in photo" value={peopleInPhoto} />
+                {hasPhotoLines ? (
+                  <>
+                    <SummaryRow label="Photo date" value={photoDate} />
+                    <SummaryRow label="Photo location" value={photoLocation} />
+                    <SummaryRow label="Photo event" value={photoEvent} />
+                    <SummaryRow label="People in photo" value={peopleInPhoto} />
+                  </>
+                ) : null}
                 <SummaryRow label="Digital file path" value={digitalFilePath} />
                 <SummaryRow label="Physical label" value={physicalLabelApplied ? 'Applied' : 'Not applied'} />
                 <SummaryRow label="Container label" value={containerLabelApplied ? 'Applied' : 'Not applied'} />
@@ -941,7 +971,10 @@ export function IntakeForm() {
             </GhostButton>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
-            <GhostButton disabled={create.isPending} onClick={() => router.push('/register')}>
+            <GhostButton
+              disabled={create.isPending}
+              onClick={() => router.push(scopedHref('/register', initialFormat))}
+            >
               Cancel
             </GhostButton>
             {step < STEPS.length - 1 ? (
