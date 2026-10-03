@@ -44,8 +44,9 @@ function mapRow(
     _id: unknown;
     lotReference: string;
     namingCode?: string | null;
-    dateReceived: Date;
-    owner: { name: string };
+    dateReceived?: Date | null;
+    owner?: { name: string } | null;
+    assigneeName?: string | null;
     pointsOfContact?: { name: string }[] | null;
     format: SearchRow['format'];
     mediaSubtype: string;
@@ -62,8 +63,9 @@ function mapRow(
     id: String(d._id),
     lotReference: d.lotReference,
     namingCode: d.namingCode ?? null,
-    dateReceived: d.dateReceived.toISOString(),
-    ownerName: d.owner.name,
+    dateReceived: d.dateReceived ? d.dateReceived.toISOString() : null,
+    ownerName: d.owner?.name ?? '',
+    assigneeName: d.assigneeName ?? null,
     pointOfContactName: d.pointsOfContact?.[0]?.name ?? null,
     format: d.format,
     mediaSubtype: d.mediaSubtype,

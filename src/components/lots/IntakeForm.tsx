@@ -79,8 +79,8 @@ function validateLine(l: MediaLineForm, i: number): { key: string; message: stri
 
 const STEPS = [
   { label: 'Origin & contacts' },
-  { label: 'Media & quantities' },
   { label: 'Condition & notes' },
+  { label: 'Media & quantities' },
   { label: 'Rights & review' },
 ] as const;
 
@@ -90,8 +90,8 @@ const STEPS = [
  */
 const STEP_INTROS: readonly (string | null)[] = [
   'Where the media came from and who to contact about it.',
-  null,
   'Condition on arrival, why it was sent, and any return request.',
+  null,
   'Rights paperwork, then a final review before registering.',
 ];
 
@@ -327,7 +327,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
       if (facilitator && !facilitator.name.trim()) {
         add('fac.name', 'Facilitator name is required once a facilitator is added.');
       }
-    } else if (index === 1) {
+    } else if (index === 2) {
       for (const [i, l] of lines.entries()) {
         const failure = validateLine(l, i);
         if (failure) add(failure.key, failure.message);
@@ -407,9 +407,9 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
       const isLineKey = (k: string) =>
         k === 'lines.total' ||
         /\.(format|dataType|mediaSubtype|quantity|quantityRemarks)$/.test(k);
-      if (keys.some(isLineKey)) markDone(1, false);
+      if (keys.some(isLineKey)) markDone(2, false);
       if (keys.some((k) => !isLineKey(k))) markDone(0, false);
-      const target = isLineKey(keys[0]!) ? 1 : 0;
+      const target = isLineKey(keys[0]!) ? 2 : 0;
       const changedStep = target !== step;
       if (changedStep) {
         setStep(target);
@@ -702,8 +702,8 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
           </StepBlocks>
         ) : null}
 
-        {/* ------------------------------------------------------ step 1 */}
-        {step === 1 ? (
+        {/* ------------------------------------------------------ step 2 (media) */}
+        {step === 2 ? (
           <StepBlocks>
             <FormSection
               legend="Media lines"
@@ -749,8 +749,8 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
           </StepBlocks>
         ) : null}
 
-        {/* ------------------------------------------------------ step 2 */}
-        {step === 2 ? (
+        {/* ------------------------------------------------------ step 1 (condition) */}
+        {step === 1 ? (
           <StepBlocks>
             <FormSection legend="Condition">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -925,7 +925,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
                 />
               </SummarySection>
 
-              <SummarySection title="Media & quantities" stepIndex={1} onEdit={() => jumpTo(1)}>
+              <SummarySection title="Media & quantities" stepIndex={2} onEdit={() => jumpTo(2)}>
                 {lines.map((l, i) => (
                   <SummaryRow key={i} label={lines.length > 1 ? `Line ${i + 1}` : 'Media'} value={lineSummary(l)} />
                 ))}
@@ -937,7 +937,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
                 ) : null}
               </SummarySection>
 
-              <SummarySection title="Condition & notes" stepIndex={2} onEdit={() => jumpTo(2)}>
+              <SummarySection title="Condition & notes" stepIndex={1} onEdit={() => jumpTo(1)}>
                 <SummaryRow label="Condition notes" value={conditionNotes} />
                 <SummaryRow label="Condition photo" value={conditionPhotoUrl} />
                 <SummaryRow label="Reason for sending" value={reasonForSending} />

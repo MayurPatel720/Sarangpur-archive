@@ -7,6 +7,8 @@ import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { Attachment } from '@/models/Attachment';
 import { User } from '@/models/User';
+import { Project } from '@/models/Project';
+import { intakeMissing } from '@/lib/intake-gate';
 import { resolveReferenceLabel, getReferenceList } from '@/server/reference';
 import { subtypeListKeyForFormat, subtypeListKeySync } from '@/server/reference/runtime';
 import type { LotDetailResponse, LotListQuery, LotListResponse } from '@/types/lot';
@@ -221,6 +223,8 @@ export type LotFilterInput = {
   format?: string;
   dataType?: string;
   receiver?: string;
+  assignee?: string;
+  projectId?: string;
   returnStatus?: string | string[];
   receivedFrom?: string;
   receivedTo?: string;
@@ -253,6 +257,12 @@ export function buildLotFilter(
   if (query.dataType) filter.dataType = query.dataType;
   if (query.receiver && Types.ObjectId.isValid(query.receiver)) {
     filter.receiver = new Types.ObjectId(query.receiver);
+  }
+  if (query.assignee && Types.ObjectId.isValid(query.assignee)) {
+    filter.assignee = new Types.ObjectId(query.assignee);
+  }
+  if (query.projectId && Types.ObjectId.isValid(query.projectId)) {
+    filter.projectIds = new Types.ObjectId(query.projectId);
   }
   if (query.returnStatus) {
     filter['return.status'] = Array.isArray(query.returnStatus)
@@ -307,8 +317,9 @@ export async function listLots(query: LotListQuery): Promise<LotListResponse> {
     id: String(d._id),
     lotReference: d.lotReference,
     namingCode: d.namingCode ?? null,
-    dateReceived: d.dateReceived.toISOString(),
-    ownerName: d.owner.name,
+    dateReceived: d.dateReceived ? d.dateReceived.toISOString() : null,
+    ownerName: d.owner?.name ?? '',
+    assigneeName: d.assigneeName ?? null,
     pointOfContactName: d.pointsOfContact?.[0]?.name ?? null,
     format: d.format,
     mediaSubtype: d.mediaSubtype,
@@ -438,6 +449,16 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       quantityRemarks: l.quantityRemarks ?? null,
     };
   });
+  let syncProject: { id: string; code: string; name: string; siblingCount: number } | null = null;
+  if (doc.syncProjectId) {
+    const [proj, siblingCount] = await Promise.all([
+      Project.findById(doc.syncProjectId).select('code name').lean(),
+      ArchiveLot.countDocuments({ syncProjectId: doc.syncProjectId }),
+    ]);
+    if (proj) {
+      syncProject = { id: String(proj._id), code: proj.code, name: proj.name, siblingCount };
+    }
+  }
   const nameById = new Map(users.map((u) => [String(u._id), u.name as string]));
   const userName = (id: Types.ObjectId | null | undefined): string | null =>
     id == null ? null : (nameById.get(String(id)) ?? 'Unknown');
@@ -457,9 +478,9 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       lotReference: doc.lotReference,
       namingCode: doc.namingCode ?? null,
       originSource: doc.originSource ?? null,
-      dateReceived: doc.dateReceived.toISOString(),
+      dateReceived: doc.dateReceived ? doc.dateReceived.toISOString() : null,
       receiver: { id: String(doc.receiver), name: userName(doc.receiver) ?? 'Unknown' },
-      owner: contact(doc.owner)!,
+      owner: contact(doc.owner) ?? { name: '', phone: null, email: null, address: null },
       pointsOfContact: (doc.pointsOfContact ?? []).map((p) => contact(p)!),
       facilitator: contact(doc.facilitator ?? null),
       format: doc.format,
@@ -548,6 +569,11 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
         discardNotes: doc.discard?.notes ?? null,
       },
       attachmentCount,
+      syncProject,
+      assignee: doc.assignee
+        ? { id: String(doc.assignee), name: doc.assigneeName ?? userName(doc.assignee) ?? 'Unknown' }
+        : null,
+      intakeMissing: intakeMissing(doc),
       version: doc.__v ?? 0,
       createdAt: doc.createdAt.toISOString(),
       updatedAt: doc.updatedAt.toISOString(),

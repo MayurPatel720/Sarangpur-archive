@@ -6,7 +6,9 @@ import { ArchiveLot, type ArchiveLotDoc } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { can } from '@/server/permissions';
-import { withAudit } from '@/server/audit';
+import { withAudit, auditActor } from '@/server/audit';
+import { LOT_PATCH_SHARED_KEYS, propagateFromLot } from '@/server/projects/sync';
+import { intakeMissing } from '@/lib/intake-gate';
 import { assertActiveReferenceValue, getActiveReferenceItems, getReferenceList, bumpUsage, transferUsage } from '@/server/reference';
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { assertActive } from '@/server/reference/runtime';
@@ -25,22 +27,39 @@ async function subtypeLabel(format: string, value: string): Promise<string> {
 }
 
 /**
- * Creates an intake in ONE transaction (SPEC §4.4): allocates the lotReference,
- * inserts the lot, bulk-inserts one LotItem per unit of quantity (each line's
- * first `quantityToDigitize` items selected, carrying that line's
- * `lineIndex`), bumps vocabulary usage, and writes one `intake_created` audit
- * entry per media line (tagged with the line's sub-type for per-media-type
- * activity grouping).
- *
- * The legacy top-level media fields are derived — primary = first line,
- * quantities = across-lines sums — so every existing pipeline keeps working.
+ * Intake body as the core insert sees it. Standalone intake (`createIntake`)
+ * always supplies `dateReceived`/`originSource`/`owner` (the API schema requires
+ * them); a project child lot may not know them yet, so they are optional here
+ * and the Intake→Decision gate blocks the lot until they are filled.
  */
-export async function createIntake(
-  body: LotCreateBody,
-  ctx: MutationContext,
-): Promise<{ id: string; lotReference: string; itemsCreated: number }> {
-  // Admin-managed vocabulary — reject retired/unknown values before the transaction.
-  const lines = body.mediaLines.map((l) => ({
+export type LotInsertBody = Omit<LotCreateBody, 'dateReceived' | 'originSource' | 'owner'> & {
+  dateReceived?: string | null;
+  originSource?: string | null;
+  owner?: LotCreateBody['owner'] | null;
+};
+
+export interface LotInsertExtras {
+  syncProjectId?: Types.ObjectId | null;
+  projectIds?: Types.ObjectId[];
+  assignee?: { id: string; name: string } | null;
+}
+
+interface NormalisedLine {
+  format: string;
+  dataType: string;
+  mediaSubtype: string;
+  quantity: number;
+  quantityToDigitize: number;
+  quantityAlreadyDigitized: number;
+  notDigitizedReason: string | null;
+  quantityRemarks: string | null;
+}
+
+/** Normalises media lines and rejects retired/unknown vocabulary — runs BEFORE the transaction. */
+export async function validateLotVocab(
+  body: LotInsertBody,
+): Promise<{ lines: NormalisedLine[]; subtypeKeys: (string | null)[] }> {
+  const lines: NormalisedLine[] = body.mediaLines.map((l) => ({
     format: l.format,
     dataType: l.dataType,
     mediaSubtype: l.mediaSubtype,
@@ -51,7 +70,7 @@ export async function createIntake(
     quantityRemarks: l.quantityRemarks ?? null,
   }));
   await Promise.all([
-    assertActiveReferenceValue('originSource', body.originSource),
+    body.originSource ? assertActiveReferenceValue('originSource', body.originSource) : Promise.resolve(),
     body.returnFormat ? assertActiveReferenceValue('returnFormat', body.returnFormat) : Promise.resolve(),
     body.rights?.type ? assertActiveReferenceValue('rightsType', body.rights.type) : Promise.resolve(),
     ...lines.flatMap((l) => [
@@ -68,88 +87,256 @@ export async function createIntake(
       subtypeKeys[i] ? assertActiveReferenceValue(subtypeKeys[i]!, l.mediaSubtype) : Promise.resolve(),
     ),
   );
+  return { lines, subtypeKeys };
+}
 
+/**
+ * Inserts one lot + its items + vocabulary usage + audit entries INSIDE the caller's
+ * transaction (SPEC §4.4): allocates the lotReference, inserts the lot,
+ * bulk-inserts one LotItem per unit of quantity (each line's first
+ * `quantityToDigitize` items selected, carrying that line's `lineIndex`), bumps
+ * usage, and writes one `intake_created` entry per media line.
+ *
+ * The legacy top-level media fields are derived — primary = first line,
+ * quantities = across-lines sums — so every existing pipeline keeps working.
+ */
+export async function insertLotInSession(
+  body: LotInsertBody,
+  vocab: { lines: NormalisedLine[]; subtypeKeys: (string | null)[] },
+  ctx: MutationContext,
+  session: ClientSession,
+  extras: LotInsertExtras = {},
+): Promise<{ id: string; lotReference: string; format: string; itemsCreated: number }> {
+  const { lines, subtypeKeys } = vocab;
   const primary = lines[0]!;
   const totalQuantity = lines.reduce((sum, l) => sum + l.quantity, 0);
   const totalToDigitize = lines.reduce((sum, l) => sum + l.quantityToDigitize, 0);
   const totalAlreadyDigitized = lines.reduce((sum, l) => sum + l.quantityAlreadyDigitized, 0);
 
+  const lotReference = await generateLotReference(session);
+  const [lot] = await ArchiveLot.create(
+    [
+      {
+        lotReference,
+        originSource: body.originSource ?? undefined,
+        dateReceived: body.dateReceived ? new Date(body.dateReceived) : null,
+        receiver: new Types.ObjectId(ctx.userId),
+        owner: body.owner ?? undefined,
+        pointsOfContact: body.pointsOfContact ?? [],
+        facilitator: body.facilitator ?? null,
+        format: primary.format,
+        dataType: primary.dataType,
+        mediaSubtype: primary.mediaSubtype,
+        quantity: totalQuantity,
+        quantityToDigitize: totalToDigitize,
+        quantityAlreadyDigitized: totalAlreadyDigitized,
+        quantityRemarks: primary.quantityRemarks,
+        mediaLines: lines,
+        conditionNotes: body.conditionNotes,
+        conditionPhotoUrl: body.conditionPhotoUrl,
+        reasonForSending: body.reasonForSending,
+        senderRemarks: body.senderRemarks,
+        photoDate: body.photoDate ?? null,
+        photoLocation: body.photoLocation ?? null,
+        photoEvent: body.photoEvent ?? null,
+        peopleInPhoto: body.peopleInPhoto ?? null,
+        digitalFilePath: body.digitalFilePath ?? null,
+        physicalLabelApplied: body.physicalLabelApplied ?? false,
+        containerLabelApplied: body.containerLabelApplied ?? false,
+        rights: {
+          type: body.rights?.type ?? null,
+          deedReference: body.rights?.deedReference ?? null,
+          notes: body.rights?.notes ?? null,
+        },
+        return: {
+          requested: body.returnRequested ?? false,
+          format: body.returnFormat ?? 'none',
+          durationText: body.returnDuration ?? null,
+          dueAt: body.returnDueAt ? new Date(body.returnDueAt) : null,
+          status: body.returnRequested ? 'pending' : 'not_requested',
+          returnedAt: null,
+          method: null,
+          handledBy: null,
+          trackingReference: null,
+          notes: null,
+        },
+        projectIds: extras.projectIds ?? [],
+        syncProjectId: extras.syncProjectId ?? null,
+        assignee: extras.assignee ? new Types.ObjectId(extras.assignee.id) : null,
+        assigneeName: extras.assignee?.name ?? null,
+        stage: 'intake',
+        stageEnteredAt: new Date(),
+      },
+    ],
+    { session },
+  );
+  lot!.set('digitization.expectedFileCount', totalToDigitize);
+  await lot!.save({ session });
+
+  // One contiguous code run, sliced per line so group/item numbers stay
+  // unique across the lot; each line's head run is selected for digitizing.
+  const codes = generateItemCodes(lotReference, totalQuantity);
+  const docs: Record<string, unknown>[] = [];
+  let offset = 0;
+  lines.forEach((line, lineIndex) => {
+    const slice = codes.slice(offset, offset + line.quantity);
+    offset += line.quantity;
+    slice.forEach((c, idx) => {
+      const selected = idx < line.quantityToDigitize;
+      docs.push({
+        lot: lot!._id,
+        code: c.code,
+        groupNo: c.groupNo,
+        itemNo: c.itemNo,
+        lineIndex,
+        selectedForDigitization: selected,
+        notDigitizedReason: selected ? null : line.notDigitizedReason,
+      });
+    });
+  });
+  for (let i = 0; i < docs.length; i += 2000) {
+    await LotItem.insertMany(docs.slice(i, i + 2000), { session });
+  }
+
+  // usageCount for open-list values the lot will never change again.
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (subtypeKeys[i]) await bumpUsage(subtypeKeys[i]!, line.mediaSubtype, session);
+  }
+  if (body.rights?.type) await bumpUsage('rightsType', body.rights.type, session);
+  if (body.originSource) await bumpUsage('originSource', body.originSource, session);
+  for (const value of new Set(lines.map((l) => l.format))) {
+    await bumpUsage('format', value, session);
+  }
+  for (const value of new Set(lines.map((l) => l.dataType))) {
+    await bumpUsage('dataType', value, session);
+  }
+  if (body.returnFormat) await bumpUsage('returnFormat', body.returnFormat, session);
+  for (const value of new Set(lines.map((l) => l.notDigitizedReason).filter((r): r is string => r != null))) {
+    await bumpUsage('notDigitizedReason', value, session);
+  }
+
+  const actorId = new Types.ObjectId(ctx.userId);
+  const now = new Date();
+  const entries = await Promise.all(
+    lines.map(async (line, i) => ({
+      lot: lot!._id,
+      lotCode: lotReference,
+      // Per-line format: a multi-line intake logs each line under the
+      // format it actually belongs to. Write-time denormalisation.
+      format: line.format,
+      kind: 'intake_created',
+      title: lines.length > 1 ? `Intake created — line ${i + 1}` : 'Intake created',
+      detail: `${line.quantity} items · ${await subtypeLabel(line.format, line.mediaSubtype)}${lines.length > 1 ? ` (${i + 1} of ${lines.length})` : ''}.${extras.syncProjectId ? ' Created from a project.' : ' Condition photo attached.'}`,
+      mediaSubtype: line.mediaSubtype,
+      mediaLineIndex: i,
+      actor: actorId,
+      actorName: ctx.userName,
+      at: now,
+      changes: [],
+    })),
+  );
+  if (extras.assignee) {
+    entries.push({
+      lot: lot!._id,
+      lotCode: lotReference,
+      format: primary.format,
+      kind: 'lot_assigned',
+      title: `Assigned to ${extras.assignee.name}`,
+      detail: '',
+      mediaSubtype: primary.mediaSubtype,
+      mediaLineIndex: 0,
+      actor: actorId,
+      actorName: ctx.userName,
+      at: now,
+      changes: [],
+    });
+  }
+  await ActivityLog.create(entries, { session, ordered: true });
+
+  return { id: String(lot!._id), lotReference, format: primary.format, itemsCreated: totalQuantity };
+}
+
+/** Standalone intake: one lot in its own transaction. */
+export async function createIntake(
+  body: LotCreateBody,
+  ctx: MutationContext,
+): Promise<{ id: string; lotReference: string; itemsCreated: number }> {
+  const vocab = await validateLotVocab(body);
   await connectToDatabase();
   const session = await ArchiveLot.startSession();
   try {
-    let lotId = '';
-    let lotReference = '';
+    let out!: { id: string; lotReference: string; itemsCreated: number };
     await session.withTransaction(async () => {
-      lotReference = await generateLotReference(session);
+      out = await insertLotInSession(body, vocab, ctx, session);
+    });
+    return { id: out.id, lotReference: out.lotReference, itemsCreated: out.itemsCreated };
+  } finally {
+    await session.endSession();
+  }
+}
 
-      const [lot] = await ArchiveLot.create(
-        [
-          {
-            lotReference,
-            originSource: body.originSource,
-            dateReceived: new Date(body.dateReceived),
-            receiver: new Types.ObjectId(ctx.userId),
-            owner: body.owner,
-            pointsOfContact: body.pointsOfContact ?? [],
-            facilitator: body.facilitator ?? null,
-            format: primary.format,
-            dataType: primary.dataType,
-            mediaSubtype: primary.mediaSubtype,
-            quantity: totalQuantity,
-            quantityToDigitize: totalToDigitize,
-            quantityAlreadyDigitized: totalAlreadyDigitized,
-            quantityRemarks: primary.quantityRemarks,
-            mediaLines: lines,
-            conditionNotes: body.conditionNotes,
-            conditionPhotoUrl: body.conditionPhotoUrl,
-            reasonForSending: body.reasonForSending,
-            senderRemarks: body.senderRemarks,
-            photoDate: body.photoDate ?? null,
-            photoLocation: body.photoLocation ?? null,
-            photoEvent: body.photoEvent ?? null,
-            peopleInPhoto: body.peopleInPhoto ?? null,
-            digitalFilePath: body.digitalFilePath ?? null,
-            physicalLabelApplied: body.physicalLabelApplied ?? false,
-            containerLabelApplied: body.containerLabelApplied ?? false,
-            rights: {
-              type: body.rights?.type ?? null,
-              deedReference: body.rights?.deedReference ?? null,
-              notes: body.rights?.notes ?? null,
-            },
-            return: {
-              requested: body.returnRequested ?? false,
-              format: body.returnFormat ?? 'none',
-              durationText: body.returnDuration ?? null,
-              dueAt: body.returnDueAt ? new Date(body.returnDueAt) : null,
-              status: body.returnRequested ? 'pending' : 'not_requested',
-              returnedAt: null,
-              method: null,
-              handledBy: null,
-              trackingReference: null,
-              notes: null,
-            },
-            stage: 'intake',
-            stageEnteredAt: new Date(),
-          },
-        ],
-        { session },
-      );
-      lot!.set('digitization.expectedFileCount', totalToDigitize);
-      await lot!.save({ session });
-      lotId = String(lot!._id);
+/**
+ * Replace a lot's media lines (add / edit / remove rows, change quantities) while it
+ * is still in Intake. Intake lots have no scan or MLS data yet, so the items are
+ * simply regenerated from the new lines — refused if any item already carries a
+ * file name or progress (which cannot be reproduced). Project child lots stay
+ * single-format. Route permission: `lot:edit`; the assignee rule applies.
+ */
+export async function replaceMediaLines(
+  lotId: string,
+  body: { version: number; mediaLines: LotCreateBody['mediaLines'] },
+  ctx: MutationContext,
+): Promise<{ id: string; lotReference: string; quantity: number; version: number }> {
+  const vocab = await validateLotVocab({ mediaLines: body.mediaLines } as LotInsertBody);
+  const { lines, subtypeKeys } = vocab;
+  const total = lines.reduce((sum, l) => sum + l.quantity, 0);
+  if (total > 20000) throw new HttpError(400, 'Total quantity across media lines cannot exceed 20000.');
 
-      // One contiguous code run, sliced per line so group/item numbers stay
-      // unique across the lot; each line's head run is selected for digitizing.
-      const codes = generateItemCodes(lotReference, totalQuantity);
+  const { id, lotReference } = await withAudit({
+    lotId,
+    actor: auditActor(ctx),
+    kind: 'intake_updated',
+    title: 'Media lines updated',
+    mutate: async (lot, session) => {
+      if ((lot.__v ?? 0) !== body.version) {
+        throw new HttpError(409, 'This record changed since you opened it. Reload and try again.');
+      }
+      if (lot.stage !== 'intake') {
+        throw new HttpError(400, 'Quantities can only be changed while the lot is still in Intake.');
+      }
+      if (lot.syncProjectId && lines.some((l) => l.format !== lot.format)) {
+        throw new HttpError(400, `This lot is the ${lot.format} lot of its project — every line must be ${lot.format}.`);
+      }
+      const touched = await LotItem.countDocuments({
+        lot: lot._id,
+        $or: [{ digitized: true }, { taggedInMls: true }, { fileName: { $ne: null } }],
+      }).session(session);
+      if (touched > 0) {
+        throw new HttpError(409, 'Items on this lot already have files or progress, so the quantities are locked.');
+      }
+
+      const primary = lines[0]!;
+      const toDigitize = lines.reduce((sum, l) => sum + l.quantityToDigitize, 0);
+      lot.format = primary.format;
+      lot.dataType = primary.dataType;
+      lot.mediaSubtype = primary.mediaSubtype;
+      lot.quantity = total;
+      lot.quantityToDigitize = toDigitize;
+      lot.quantityAlreadyDigitized = lines.reduce((sum, l) => sum + l.quantityAlreadyDigitized, 0);
+      lot.quantityRemarks = primary.quantityRemarks ?? undefined;
+      lot.set('mediaLines', lines);
+      lot.set('digitization.expectedFileCount', toDigitize);
+
+      await LotItem.deleteMany({ lot: lot._id }, { session });
+      const codes = generateItemCodes(lot.namingCode ?? lot.lotReference, total);
       const docs: Record<string, unknown>[] = [];
       let offset = 0;
       lines.forEach((line, lineIndex) => {
-        const slice = codes.slice(offset, offset + line.quantity);
-        offset += line.quantity;
-        slice.forEach((c, idx) => {
+        codes.slice(offset, offset + line.quantity).forEach((c, idx) => {
           const selected = idx < line.quantityToDigitize;
           docs.push({
-            lot: lot!._id,
+            lot: lot._id,
             code: c.code,
             groupNo: c.groupNo,
             itemNo: c.itemNo,
@@ -158,57 +345,19 @@ export async function createIntake(
             notDigitizedReason: selected ? null : line.notDigitizedReason,
           });
         });
+        offset += line.quantity;
       });
       for (let i = 0; i < docs.length; i += 2000) {
         await LotItem.insertMany(docs.slice(i, i + 2000), { session });
       }
-
-      // usageCount for open-list values the lot will never change again.
       for (let i = 0; i < lines.length; i += 1) {
-        const line = lines[i]!;
-        if (subtypeKeys[i]) await bumpUsage(subtypeKeys[i]!, line.mediaSubtype, session);
+        if (subtypeKeys[i]) await bumpUsage(subtypeKeys[i]!, lines[i]!.mediaSubtype, session);
       }
-      if (body.rights?.type) await bumpUsage('rightsType', body.rights.type, session);
-      await bumpUsage('originSource', body.originSource, session);
-      for (const value of new Set(lines.map((l) => l.format))) {
-        await bumpUsage('format', value, session);
-      }
-      for (const value of new Set(lines.map((l) => l.dataType))) {
-        await bumpUsage('dataType', value, session);
-      }
-      if (body.returnFormat) await bumpUsage('returnFormat', body.returnFormat, session);
-      for (const value of new Set(lines.map((l) => l.notDigitizedReason).filter((r): r is string => r != null))) {
-        await bumpUsage('notDigitizedReason', value, session);
-      }
-
-      const actorId = new Types.ObjectId(ctx.userId);
-      const now = new Date();
-      await ActivityLog.create(
-        await Promise.all(
-          lines.map(async (line, i) => ({
-            lot: lot!._id,
-            lotCode: lotReference,
-            // Per-line format: a multi-line intake logs each line under the
-            // format it actually belongs to. Write-time denormalisation.
-            format: line.format,
-            kind: 'intake_created',
-            title: lines.length > 1 ? `Intake created — line ${i + 1}` : 'Intake created',
-            detail: `${line.quantity} items · ${await subtypeLabel(line.format, line.mediaSubtype)}${lines.length > 1 ? ` (${i + 1} of ${lines.length})` : ''}. Condition photo attached.`,
-            mediaSubtype: line.mediaSubtype,
-            mediaLineIndex: i,
-            actor: actorId,
-            actorName: ctx.userName,
-            at: now,
-            changes: [],
-          })),
-        ),
-        { session },
-      );
-    });
-    return { id: lotId, lotReference, itemsCreated: totalQuantity };
-  } finally {
-    await session.endSession();
-  }
+      return { id: String(lot._id), lotReference: lot.lotReference };
+    },
+  });
+  const fresh = await ArchiveLot.findById(id).select('__v quantity').lean();
+  return { id, lotReference, quantity: fresh?.quantity ?? total, version: fresh?.__v ?? 0 };
 }
 
 /**
@@ -246,7 +395,7 @@ export async function patchLot(
 
   const { id, lotReference } = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'intake_updated',
     title: 'Intake updated',
     mutate: async (lot) => {
@@ -266,6 +415,7 @@ export async function patchLot(
       const prevDataType = lot.dataType;
       const prevRightsType = lot.rights?.type ?? null;
 
+      if (body.dateReceived !== undefined) lot.dateReceived = new Date(body.dateReceived);
       if (body.originSource !== undefined) lot.originSource = body.originSource;
       if (body.format !== undefined) lot.format = body.format;
       if (body.dataType !== undefined) lot.dataType = body.dataType;
@@ -341,6 +491,10 @@ export async function patchLot(
     },
   });
 
+  // Shared intake fields on a project child lot: push to the project and every sibling.
+  const sharedKeys = LOT_PATCH_SHARED_KEYS.filter((k) => (body as Record<string, unknown>)[k] !== undefined);
+  if (sharedKeys.length > 0) await propagateFromLot(id, sharedKeys, ctx);
+
   const fresh = await ArchiveLot.findById(id).select('__v').lean();
   return { id, lotReference, version: fresh?.__v ?? 0 };
 }
@@ -352,13 +506,20 @@ export async function submitForDecision(
 ): Promise<{ id: string; lotReference: string; stage: 'decision'; version: number }> {
   const { id, lotReference } = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'submitted_for_decision',
     title: 'Submitted for decision',
     mutate: async (lot) => {
       if (!lot.decision) throw new HttpError(500, 'Lot decision block is missing.');
       if (lot.stage !== 'intake') {
         throw new HttpError(400, 'Only intake lots can be submitted for decision.');
+      }
+      const missing = intakeMissing(lot);
+      if (missing.length > 0) {
+        throw new HttpError(
+          400,
+          `Fill in ${missing.join(', ')} before sending this lot to decision.`,
+        );
       }
       if (lot.decision.status !== 'pending') {
         throw new HttpError(409, 'This lot already has a recorded decision.');
@@ -429,7 +590,7 @@ async function writeDecision(
 
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'decision_recorded',
     title: auditTitle,
     detail: body.conditionIssue ? `Condition issue: ${body.conditionIssue}` : undefined,
@@ -438,6 +599,12 @@ async function writeDecision(
       const format = lot.format;
       const mediaSubtype = lot.mediaSubtype;
       const originSource = lot.originSource;
+      if (lot.stage === 'intake') {
+        const missing = intakeMissing(lot);
+        if (missing.length > 0) {
+          throw new HttpError(400, `Fill in ${missing.join(', ')} before recording a decision.`);
+        }
+      }
       if (!lot.decision || !mediaSubtype || !originSource) {
         throw new HttpError(500, 'Lot is missing required fields.');
       }
@@ -707,7 +874,7 @@ export async function requestOverride(
 ): Promise<{ id: string; lotReference: string; overrideStatus: 'requested'; version: number }> {
   const { id, lotReference } = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'override_requested',
     title: 'Override requested',
     detail: body.justification,
@@ -749,7 +916,7 @@ export async function decideOverride(
 }> {
   const { id, lotReference, overrideStatus } = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: body.outcome === 'approved' ? 'override_approved' : 'override_rejected',
     title: body.outcome === 'approved' ? 'Override approved' : 'Override rejected',
     mutate: async (lot) => {

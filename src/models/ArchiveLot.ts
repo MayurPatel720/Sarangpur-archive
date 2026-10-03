@@ -43,10 +43,15 @@ const archiveLotSchema = new Schema(
     /** Admin-managed `originSource` list value — not a Mongoose enum (open vocabulary). */
     originSource: { type: String },
 
-    dateReceived: { type: Date, required: true, index: true },
+    /**
+     * Required for standalone intake (enforced by the API); optional here because a
+     * project child lot is created before the admin knows it. The intake gate
+     * (`submitForDecision`) blocks leaving Intake while it is empty.
+     */
+    dateReceived: { type: Date, default: null, index: true },
     receiver: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
 
-    owner: { type: contactSchema, required: true },
+    owner: { type: contactSchema, default: undefined },
     pointsOfContact: { type: [contactSchema], default: [] },
     facilitator: { type: contactSchema, default: null },
 
@@ -128,6 +133,20 @@ const archiveLotSchema = new Schema(
       default: [],
       index: true,
     },
+
+    /**
+     * The one project whose shared intake data this lot mirrors (set for lots made
+     * by the project wizard, or attached with sync). `projectIds` stays the
+     * many-to-many membership list.
+     */
+    syncProjectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
+    /**
+     * Who owns this lot end to end. Only the assignee and `project:assign` holders
+     * may mutate it (enforced centrally in withAudit). `assigneeName` is denormalised
+     * at write time and never back-filled (rule 5).
+     */
+    assignee: { type: Schema.Types.ObjectId, ref: 'User', default: null, index: true },
+    assigneeName: { type: String, trim: true, default: null },
 
     decision: {
       status: { type: String, required: true, default: 'pending', index: true },

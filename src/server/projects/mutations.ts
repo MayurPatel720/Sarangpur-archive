@@ -6,15 +6,29 @@ import { Project } from '@/models/Project';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { ActivityLog } from '@/models/ActivityLog';
 import { User } from '@/models/User';
+import { withAudit, auditActor } from '@/server/audit';
+import { insertLotInSession, validateLotVocab, replaceMediaLines, type LotInsertBody } from '@/server/lots/mutations';
 import type {
+  LotAssigneeBody,
+  ProjectAddMediaInput,
   ProjectAssignBody,
   ProjectAssignResponse,
   ProjectCreateInput,
   ProjectCreateResponse,
+  ProjectShared,
+  ProjectSharedPatch,
   ProjectUpdateBody,
   ProjectUpdateResponse,
 } from '@/types/project';
+import { SHARED_KEYS } from '@/types/project';
 import { shapeProjectRow } from './queries';
+import {
+  applySharedToLot,
+  assertSharedVocab,
+  fanOutShared,
+  lotSharedPatch,
+  mergeProjectShared,
+} from './sync';
 
 /**
  * Project writes. Every mutation runs in a transaction that applies the change
@@ -45,24 +59,72 @@ async function resolveUserNames(
 
 /* ------------------------------------------------------------------- create */
 
+type Line = ProjectCreateInput['mediaLines'][number];
+
+/** Groups media lines by format, keeping first-seen order (one child lot per format). */
+function groupByFormat(lines: Line[]): { format: string; lines: Line[] }[] {
+  const groups = new Map<string, Line[]>();
+  for (const l of lines) {
+    const g = groups.get(l.format);
+    if (g) g.push(l);
+    else groups.set(l.format, [l]);
+  }
+  return [...groups.entries()].map(([format, ls]) => ({ format, lines: ls }));
+}
+
+/** Project shared values → the lot-create body fields (names are identical by design). */
+function sharedToLotFields(shared: ProjectShared): Omit<LotInsertBody, 'mediaLines'> {
+  return { ...shared, facilitator: shared.facilitator ?? null } as Omit<LotInsertBody, 'mediaLines'>;
+}
+
+/** Strip undefined/empty so `Project.shared` only holds real values. */
+function compactShared(shared: ProjectShared): ProjectShared {
+  const out: Record<string, unknown> = {};
+  for (const k of SHARED_KEYS) {
+    const v = (shared as Record<string, unknown>)[k];
+    if (v === undefined || v === null || v === '') continue;
+    out[k] = v;
+  }
+  return out as ProjectShared;
+}
+
 export async function createProject(
   body: ProjectCreateInput,
   ctx: MutationContext,
 ): Promise<ProjectCreateResponse> {
+  const shared = compactShared((body.shared ?? {}) as ProjectShared);
+  await assertSharedVocab(shared as ProjectSharedPatch);
+  const groups = groupByFormat(body.mediaLines);
+  const assignments = new Map((body.assignments ?? []).map((a) => [a.format, a.assigneeId ?? null]));
+  for (const f of assignments.keys()) {
+    if (!groups.some((g) => g.format === f)) {
+      throw new HttpError(400, `Assignment given for "${f}", but no media line uses that format.`);
+    }
+  }
+  // Vocabulary is checked per child lot BEFORE the transaction opens.
+  const vocabs = await Promise.all(
+    groups.map((g) =>
+      validateLotVocab({ ...sharedToLotFields(shared), mediaLines: g.lines } as LotInsertBody),
+    ),
+  );
+
   await connectToDatabase();
   const session = await Project.startSession();
   try {
     let id = '';
+    let code = '';
+    const lots: { id: string; lotReference: string; format: string }[] = [];
     await session.withTransaction(async () => {
-      const code = body.code.trim();
+      lots.length = 0;
+      code = body.code.trim();
       const existing = await Project.findOne({ code }).session(session).lean();
       if (existing) throw new HttpError(409, `Project code "${code}" is already in use.`);
 
-      const memberIds = [
+      const userIds = [
         ...(body.coordinatorId ? [body.coordinatorId] : []),
-        ...(body.team ?? []).map((t) => t.userId),
+        ...[...assignments.values()].filter((v): v is string => Boolean(v)),
       ];
-      const names = await resolveUserNames([...new Set(memberIds)], session);
+      const names = await resolveUserNames([...new Set(userIds)], session);
 
       const [project] = await Project.create(
         [
@@ -72,13 +134,8 @@ export async function createProject(
             description: body.description?.trim() || null,
             createdBy: new Types.ObjectId(ctx.userId),
             coordinator: body.coordinatorId ? new Types.ObjectId(body.coordinatorId) : null,
-            coordinatorName: body.coordinatorId
-              ? (names.get(body.coordinatorId) ?? null)
-              : null,
-            team: (body.team ?? []).map((t) => ({
-              user: new Types.ObjectId(t.userId),
-              label: t.label?.trim() || null,
-            })),
+            coordinatorName: body.coordinatorId ? (names.get(body.coordinatorId) ?? null) : null,
+            shared,
             startDate: body.startDate ? new Date(body.startDate) : null,
             targetDate: body.targetDate ? new Date(body.targetDate) : null,
             lotCount: 0,
@@ -86,6 +143,24 @@ export async function createProject(
         ],
         { session },
       );
+
+      for (const [i, g] of groups.entries()) {
+        const assigneeId = assignments.get(g.format) ?? null;
+        const lot = await insertLotInSession(
+          { ...sharedToLotFields(shared), mediaLines: g.lines } as LotInsertBody,
+          vocabs[i]!,
+          ctx,
+          session,
+          {
+            syncProjectId: project!._id,
+            projectIds: [project!._id],
+            assignee: assigneeId ? { id: assigneeId, name: names.get(assigneeId) ?? 'Unknown' } : null,
+          },
+        );
+        lots.push({ id: lot.id, lotReference: lot.lotReference, format: lot.format });
+      }
+      project!.lotCount = lots.length;
+      await project!.save({ session });
 
       await ActivityLog.create(
         [
@@ -96,7 +171,9 @@ export async function createProject(
             projectCode: code,
             kind: 'project_created',
             title: `Project ${code} created`,
-            detail: project!.name,
+            detail: `${project!.name} · ${lots.length} ${lots.length === 1 ? 'lot' : 'lots'}: ${lots
+              .map((l) => l.lotReference)
+              .join(', ')}`,
             actor: new Types.ObjectId(ctx.userId),
             actorName: ctx.userName,
             at: new Date(),
@@ -107,8 +184,7 @@ export async function createProject(
       );
       id = String(project!._id);
     });
-    const created = await Project.findById(id).select('code').lean();
-    return { id, code: created!.code };
+    return { id, code, lots };
   } finally {
     await session.endSession();
   }
@@ -121,6 +197,7 @@ export async function updateProject(
   body: ProjectUpdateBody,
   ctx: MutationContext,
 ): Promise<ProjectUpdateResponse> {
+  if (body.shared) await assertSharedVocab(body.shared);
   await connectToDatabase();
   if (!Types.ObjectId.isValid(projectId)) throw new HttpError(404, 'Project not found.');
   const session = await Project.startSession();
@@ -158,21 +235,17 @@ export async function updateProject(
           project.coordinatorName = null;
         }
       }
-      if (body.team !== undefined) {
-        await resolveUserNames(
-          [...new Set(body.team.map((t) => t.userId))],
-          session,
-        );
-        const next = body.team.map((t) => ({
-          user: new Types.ObjectId(t.userId),
-          label: t.label?.trim() || null,
-        }));
-        track(
-          'team',
-          project.team.map((t) => String(t.user)),
-          body.team.map((t) => t.userId),
-        );
-        project.set('team', next);
+      if (body.shared !== undefined) {
+        const before = { ...((project.shared ?? {}) as Record<string, unknown>) };
+        const next = { ...before };
+        for (const [k, v] of Object.entries(body.shared)) {
+          if (v === undefined) continue;
+          if (v === null) delete next[k];
+          else next[k] = v;
+        }
+        track('shared', before, next);
+        project.set('shared', next);
+        project.markModified('shared');
       }
       if (body.startDate !== undefined) {
         const next = body.startDate ? new Date(body.startDate) : null;
@@ -208,6 +281,11 @@ export async function updateProject(
     });
 
     if (!updated) throw new HttpError(404, 'Project not found.');
+    // One value for the whole project: push the change to every synced child lot.
+    if (body.shared && Object.keys(body.shared).length > 0) {
+      const u = updated as { code: string };
+      await fanOutShared(projectId, body.shared, ctx, { detail: `Edited on project ${u.code}` });
+    }
     return shapeProjectRow(updated);
   } finally {
     await session.endSession();
@@ -273,8 +351,11 @@ async function writeMembershipEntries(
 }
 
 /**
- * Add a lot to a project. Idempotent — re-adding writes no duplicate entries.
- * Removing the lot's last project is allowed silently: it becomes standalone.
+ * Add an existing lot to a project and start syncing it. THE PROJECT WINS: the
+ * project's shared values overwrite the lot's; where the project has no value for
+ * a field and the lot does, the lot's value fills the project (and so every
+ * sibling). Idempotent — re-adding writes no duplicate membership entries.
+ * A lot already synced with a DIFFERENT project is refused.
  */
 export async function assignLot(
   projectId: string,
@@ -288,21 +369,38 @@ export async function assignLot(
   const session = await Project.startSession();
   try {
     let result!: ProjectAssignResponse;
+    let attached = false;
     await session.withTransaction(async () => {
+      attached = false;
       const [project, lot] = await Promise.all([
         Project.findById(projectId).session(session),
         ArchiveLot.findById(body.lotId).session(session),
       ]);
       if (!project) throw new HttpError(404, 'Project not found.');
       if (!lot) throw new HttpError(404, 'Lot not found.');
+      if (lot.syncProjectId && String(lot.syncProjectId) !== String(project._id)) {
+        throw new HttpError(409, 'This lot already shares its details with another project. Remove it from that project first.');
+      }
+
+      const names = body.assigneeId ? await resolveUserNames([body.assigneeId], session) : new Map<string, string>();
+      if (body.assigneeId) {
+        lot.assignee = new Types.ObjectId(body.assigneeId);
+        lot.assigneeName = names.get(body.assigneeId) ?? null;
+      }
 
       const already = (lot.projectIds ?? []).some((id) => String(id) === String(project._id));
       if (!already) {
         lot.projectIds = [...(lot.projectIds ?? []), project._id];
-        await lot.save({ session });
         project.lotCount += 1;
         await project.save({ session });
+      }
+      if (!lot.syncProjectId) {
+        lot.syncProjectId = project._id;
+        attached = true;
+      }
+      await lot.save({ session });
 
+      if (!already) {
         const lotCode = lot.namingCode ?? lot.lotReference;
         await writeMembershipEntries(session, {
           lotId: lot._id,
@@ -319,6 +417,44 @@ export async function assignLot(
       }
       result = { projectId: String(project._id), lotId: String(lot._id), lotCount: project.lotCount };
     });
+
+    if (attached) {
+      // Phase 2 (own transactions, via withAudit): project values → lot, then lot-only
+      // values → project → siblings.
+      const project = await Project.findById(projectId).lean();
+      const lotDoc = await ArchiveLot.findById(body.lotId).lean();
+      if (project && lotDoc) {
+        const projectShared = (project.shared ?? {}) as Record<string, unknown>;
+        const lotValues = lotSharedPatch(lotDoc, SHARED_KEYS) as Record<string, unknown>;
+        const fill: Record<string, unknown> = {};
+        for (const k of SHARED_KEYS) {
+          const has = projectShared[k] !== undefined && projectShared[k] !== null;
+          const lotHas = lotValues[k] !== undefined && lotValues[k] !== null;
+          if (!has && lotHas) fill[k] = lotValues[k];
+        }
+        if (Object.keys(projectShared).length > 0) {
+          await withAudit({
+            lotId: body.lotId,
+            actor: auditActor(ctx),
+            skipAccessCheck: true,
+            kind: 'intake_updated',
+            title: 'Details synced from project',
+            detail: `Project ${project.code} values now apply to this lot.`,
+            mutate: async (lot) => {
+              applySharedToLot(lot, projectShared as ProjectSharedPatch);
+              return null;
+            },
+          });
+        }
+        if (Object.keys(fill).length > 0) {
+          await mergeProjectShared(project._id, fill as ProjectSharedPatch);
+          await fanOutShared(project._id, fill as ProjectSharedPatch, ctx, {
+            excludeLotId: body.lotId,
+            detail: `Filled from lot ${lotDoc.lotReference} · project ${project.code}`,
+          });
+        }
+      }
+    }
     return result;
   } finally {
     await session.endSession();
@@ -350,6 +486,10 @@ export async function unassignLot(
         lot.projectIds = (lot.projectIds ?? []).filter(
           (id) => String(id) !== String(project._id),
         );
+        // The lot keeps the values it has now, but stops mirroring the project.
+        if (lot.syncProjectId && String(lot.syncProjectId) === String(project._id)) {
+          lot.syncProjectId = null;
+        }
         await lot.save({ session });
         project.lotCount = Math.max(0, project.lotCount - 1);
         await project.save({ session });
@@ -374,4 +514,95 @@ export async function unassignLot(
   } finally {
     await session.endSession();
   }
+}
+
+/* ----------------------------------------------------------------- assignee */
+
+/** Set or clear a lot's assignee (admin only, route-gated by `project:assign`). */
+export async function setLotAssignee(
+  lotId: string,
+  body: LotAssigneeBody,
+  ctx: MutationContext,
+): Promise<{ lotId: string; assigneeId: string | null; assigneeName: string | null }> {
+  await connectToDatabase();
+  let name: string | null = null;
+  if (body.assigneeId) {
+    const u = await User.findById(body.assigneeId).select('name').lean();
+    if (!u) throw new HttpError(400, 'Unknown user selected.');
+    name = u.name as string;
+  }
+  await withAudit({
+    lotId,
+    actor: auditActor(ctx),
+    kind: 'lot_assigned',
+    title: name ? `Assigned to ${name}` : 'Assignee removed',
+    mutate: async (lot) => {
+      lot.assignee = body.assigneeId ? new Types.ObjectId(body.assigneeId) : null;
+      lot.assigneeName = name;
+      return null;
+    },
+  });
+  return { lotId, assigneeId: body.assigneeId, assigneeName: name };
+}
+
+/* -------------------------------------------------------------- add media */
+
+/**
+ * Admin adds more media to a project. A format that already has a child lot appends
+ * the new lines to it (the lot must still be in Intake); a new format creates a new
+ * child lot carrying the project's shared values.
+ */
+export async function addProjectMedia(
+  projectId: string,
+  body: ProjectAddMediaInput,
+  ctx: MutationContext,
+): Promise<{ lots: { id: string; lotReference: string; format: string; created: boolean }[] }> {
+  await connectToDatabase();
+  if (!Types.ObjectId.isValid(projectId)) throw new HttpError(404, 'Project not found.');
+  const project = await Project.findById(projectId).lean();
+  if (!project) throw new HttpError(404, 'Project not found.');
+  const shared = (project.shared ?? {}) as ProjectShared;
+  const groups = groupByFormat(body.mediaLines as Line[]);
+  const assignments = new Map((body.assignments ?? []).map((a) => [a.format, a.assigneeId ?? null]));
+  const out: { id: string; lotReference: string; format: string; created: boolean }[] = [];
+
+  for (const g of groups) {
+    const existing = await ArchiveLot.findOne({ syncProjectId: project._id, format: g.format })
+      .select('lotReference mediaLines __v')
+      .lean();
+    if (existing) {
+      const lines = [
+        ...((existing.mediaLines ?? []) as Line[]).map((l) => ({
+          format: l.format,
+          dataType: l.dataType,
+          mediaSubtype: l.mediaSubtype,
+          quantity: l.quantity,
+          quantityRemarks: l.quantityRemarks ?? undefined,
+        })),
+        ...g.lines,
+      ];
+      await replaceMediaLines(String(existing._id), { version: existing.__v ?? 0, mediaLines: lines }, ctx);
+      out.push({ id: String(existing._id), lotReference: existing.lotReference, format: g.format, created: false });
+      continue;
+    }
+    const lotBody = { ...sharedToLotFields(shared), mediaLines: g.lines } as LotInsertBody;
+    const vocab = await validateLotVocab(lotBody);
+    const assigneeId = assignments.get(g.format) ?? null;
+    const session = await Project.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const names = assigneeId ? await resolveUserNames([assigneeId], session) : new Map<string, string>();
+        const lot = await insertLotInSession(lotBody, vocab, ctx, session, {
+          syncProjectId: project._id,
+          projectIds: [project._id],
+          assignee: assigneeId ? { id: assigneeId, name: names.get(assigneeId) ?? 'Unknown' } : null,
+        });
+        await Project.updateOne({ _id: project._id }, { $inc: { lotCount: 1 } }, { session });
+        out.push({ id: lot.id, lotReference: lot.lotReference, format: lot.format, created: true });
+      });
+    } finally {
+      await session.endSession();
+    }
+  }
+  return { lots: out };
 }

@@ -17,7 +17,7 @@ import { OVERRIDE_STATUSES } from '@/lib/domain';
  * `'return'|'discard'`, override outcome).
  */
 
-const contactSchema = z.object({
+export const contactSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.').max(120),
   phone: z.string().trim().max(40).optional(),
   email: z.string().trim().email('Must be a valid email.').max(160).optional(),
@@ -25,7 +25,7 @@ const contactSchema = z.object({
 });
 export type LotContactInput = z.input<typeof contactSchema>;
 
-const rightsSchema = z.object({
+export const rightsSchema = z.object({
   type: z.string().trim().min(1).max(60).optional(),
   deedReference: z.string().trim().max(120).optional(),
   notes: z.string().trim().max(1000).optional(),
@@ -38,7 +38,7 @@ const rightsSchema = z.object({
  * the later per-line selection update, not on intake. The `<=` guards stay so
  * a future caller can still pass an explicit split.
  */
-const mediaLineInputSchema = z
+export const mediaLineInputSchema = z
   .object({
     format: z.string().trim().min(1).max(40),
     dataType: z.string().trim().min(1).max(40),
@@ -162,6 +162,10 @@ export const lotListQuerySchema = z.object({
   receiver: z.string().trim().max(40).optional(),
   receivedFrom: z.string().datetime({ offset: true }).optional(),
   receivedTo: z.string().datetime({ offset: true }).optional(),
+  /** User id — "assigned to me" and per-person filters. */
+  assignee: z.string().trim().max(40).optional(),
+  /** Restrict to lots that belong to this project. */
+  projectId: z.string().trim().max(40).optional(),
   /** Powers the returns queue (`return.status ∈ {pending, in_progress}`). */
   returnStatus: z.union([z.string().trim().min(1).max(40), z.array(z.string().trim().min(1).max(40))]).optional(),
 });
@@ -171,8 +175,10 @@ export const lotRowSchema = z.object({
   id: z.string(),
   lotReference: z.string(),
   namingCode: z.string().nullable(),
-  dateReceived: z.string(),
+  /** Null while a project child lot is still waiting for its intake details. */
+  dateReceived: z.string().nullable(),
   ownerName: z.string(),
+  assigneeName: z.string().nullable(),
   pointOfContactName: z.string().nullable(),
   format: z.string(),
   mediaSubtype: z.string(),
@@ -199,7 +205,7 @@ const lotDetailSchema = z.object({
   lotReference: z.string(),
   namingCode: z.string().nullable(),
   originSource: z.string().nullable(),
-  dateReceived: z.string(),
+  dateReceived: z.string().nullable(),
   receiver: z.object({ id: z.string(), name: z.string() }),
   owner: z.object({
     name: z.string(),
@@ -311,6 +317,11 @@ const lotDetailSchema = z.object({
     discardNotes: z.string().nullable(),
   }),
   attachmentCount: z.number(),
+  /** Project this lot's shared intake data is synced with, if any. */
+  syncProject: z.object({ id: z.string(), code: z.string(), name: z.string(), siblingCount: z.number() }).nullable(),
+  assignee: z.object({ id: z.string(), name: z.string() }).nullable(),
+  /** Required intake fields still empty — the Intake→Decision gate. */
+  intakeMissing: z.array(z.string()),
   version: z.number(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -323,6 +334,7 @@ export type LotDetailResponse = z.output<typeof lotDetailResponseSchema>;
 export const lotPatchBodySchema = z
   .object({
     version: z.number().int().min(0),
+    dateReceived: z.string().datetime({ offset: true }).optional(),
     originSource: z.string().trim().min(1).max(40).optional(),
     format: z.string().trim().min(1).max(40).optional(),
     dataType: z.string().trim().min(1).max(40).optional(),
@@ -446,3 +458,21 @@ export const submitResponseSchema = z.object({
   version: z.number(),
 });
 export type SubmitResponse = z.output<typeof submitResponseSchema>;
+
+/** PUT /api/lots/[lotId]/media-lines — replace the media table while the lot is in Intake. */
+export const lotMediaLinesBodySchema = z
+  .object({
+    version: z.number().int().min(0),
+    mediaLines: z.array(mediaLineInputSchema).min(1).max(20),
+  })
+  .refine((b) => b.mediaLines.reduce((sum, l) => sum + l.quantity, 0) <= 20000, {
+    message: 'Total quantity across media lines cannot exceed 20000.',
+    path: ['mediaLines'],
+  });
+export type LotMediaLinesBody = z.input<typeof lotMediaLinesBodySchema>;
+export const lotMediaLinesResponseSchema = z.object({
+  id: z.string(),
+  lotReference: z.string(),
+  quantity: z.number(),
+  version: z.number(),
+});

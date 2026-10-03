@@ -1,7 +1,7 @@
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { LotItem } from '@/models/LotItem';
-import { withAudit } from '@/server/audit';
+import { withAudit, auditActor } from '@/server/audit';
 import { assertActiveReferenceValue } from '@/server/reference';
 import type { ItemCreateInput, ItemCreateResponse } from '@/types/project';
 
@@ -35,7 +35,7 @@ export async function createItem(
 
   return withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'item_created',
     title: 'Item added',
     detail: body.groupNo ? `Group ${body.groupNo}` : 'Appended to last group',

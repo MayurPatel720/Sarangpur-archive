@@ -15,19 +15,9 @@ import { Schema, model, models, type InferSchemaType, type Model } from 'mongoos
  * - `coordinatorName` is denormalised at write time and never back-filled,
  *   same contract as `ActivityLog.actorName` (repo rule 5).
  *
- * - A project has no lifecycle status — it is a pure grouping label. Dates and
- *   team are informational only and confer no access control: anyone holding
- *   `lot:view` sees every project.
+ * - A project has no lifecycle status. Dates are informational only. The team is
+ *   derived from the assignees of its lots (no manual list).
  */
-const projectTeamSchema = new Schema(
-  {
-    user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    /** Free-text role on this project, e.g. "scanner", "tagger". */
-    label: { type: String, trim: true, default: null },
-  },
-  { _id: false },
-);
-
 const projectSchema = new Schema(
   {
     /** Admin-typed unique code, e.g. `DIWALI-2026`. Uniqueness enforced, format free. */
@@ -38,7 +28,12 @@ const projectSchema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     coordinator: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     coordinatorName: { type: String, trim: true, default: null },
-    team: { type: [projectTeamSchema], default: [] },
+    /**
+     * Intake data shared by every synced child lot (one value for the whole
+     * project). Plain object in the wire shape of `projectSharedSchema` — see `src/server/projects/sync.ts`
+     * for the key list and the mapping. Dates are ISO strings (wire shape).
+     */
+    shared: { type: Schema.Types.Mixed, default: () => ({}) },
 
     startDate: { type: Date, default: null },
     targetDate: { type: Date, default: null },

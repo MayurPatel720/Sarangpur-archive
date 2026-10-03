@@ -1,4 +1,4 @@
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
 import {
   activityResponseSchema,
   alertsResponseSchema,
@@ -48,6 +48,7 @@ import {
   lotCreateResponseSchema,
   lotDetailResponseSchema,
   lotListResponseSchema,
+  lotMediaLinesResponseSchema,
   lotPatchResponseSchema,
   overrideResponseSchema,
   submitResponseSchema,
@@ -56,6 +57,7 @@ import {
   type LotCreateBody,
   type LotDetailResponse,
   type LotListResponse,
+  type LotMediaLinesBody,
   type LotPatchBody,
   type OverrideDecideBody,
   type OverrideRequestBody,
@@ -98,6 +100,7 @@ import {
   projectListResponseSchema,
   projectUpdateResponseSchema,
   type ItemCreateInput,
+  type ProjectAddMediaInput,
   type ItemCreateResponse,
   type LotProjectsResponse,
   type ProjectAssignResponse,
@@ -179,7 +182,7 @@ export const healthApi = {
 
 async function sendJson<T>(
   path: string,
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
   body: unknown,
   schema: ZodType<T>,
 ): Promise<T> {
@@ -274,6 +277,13 @@ export const lotsApi = {
     getJson<LotDetailResponse>(
       `/api/lots/${encodeURIComponent(id)}`,
       lotDetailResponseSchema,
+    ),
+  replaceMediaLines: (id: string, body: LotMediaLinesBody) =>
+    sendJson<{ id: string; lotReference: string; quantity: number; version: number }>(
+      `/api/lots/${encodeURIComponent(id)}/media-lines`,
+      'PUT',
+      body,
+      lotMediaLinesResponseSchema,
     ),
   patch: (id: string, body: LotPatchBody) =>
     sendJson<{ id: string; lotReference: string; version: number }>(
@@ -441,12 +451,30 @@ export const projectsApi = {
       body,
       projectUpdateResponseSchema,
     ),
-  assignLot: (projectId: string, lotId: string) =>
+  assignLot: (projectId: string, lotId: string, assigneeId?: string) =>
     sendJson<ProjectAssignResponse>(
       `/api/projects/${encodeURIComponent(projectId)}/lots`,
       'POST',
-      { lotId },
+      { lotId, ...(assigneeId ? { assigneeId } : {}) },
       projectAssignResponseSchema,
+    ),
+  addMedia: (projectId: string, body: ProjectAddMediaInput) =>
+    sendJson<{ lots: { id: string; lotReference: string; format: string; created: boolean }[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/media`,
+      'POST',
+      body,
+      z.object({
+        lots: z.array(
+          z.object({ id: z.string(), lotReference: z.string(), format: z.string(), created: z.boolean() }),
+        ),
+      }),
+    ),
+  setAssignee: (lotId: string, assigneeId: string | null) =>
+    sendJson<{ lotId: string; assigneeId: string | null; assigneeName: string | null }>(
+      `/api/lots/${encodeURIComponent(lotId)}/assignee`,
+      'PUT',
+      { assigneeId },
+      z.object({ lotId: z.string(), assigneeId: z.string().nullable(), assigneeName: z.string().nullable() }),
     ),
   unassignLot: (projectId: string, lotId: string) =>
     sendJson<ProjectAssignResponse>(

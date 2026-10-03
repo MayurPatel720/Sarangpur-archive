@@ -8,6 +8,7 @@ import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { User } from '@/models/User';
 import { escapeRegex } from '@/server/lots/queries';
+import { intakeMissing } from '@/lib/intake-gate';
 import {
   projectActivityPipeline,
   projectItemStatsPipeline,
@@ -128,7 +129,9 @@ export async function getProjectDetail(
   const lotSkip = (lotsQuery.lotPage - 1) * lotsQuery.lotPageSize;
 
   const [memberIds, lotDocs, lotsTotal, stageRows, activityRows, users] = await Promise.all([
-    ArchiveLot.find(memberFilter).select('_id').lean(),
+    ArchiveLot.find(memberFilter)
+      .select('lotReference format quantity assignee assigneeName syncProjectId')
+      .lean(),
     ArchiveLot.find(memberFilter)
       .sort({ dateReceived: -1 })
       .skip(lotSkip)
@@ -150,10 +153,7 @@ export async function getProjectDetail(
     }>(asPipeline(projectActivityPipeline(project._id, 20))),
     User.find({
       _id: {
-        $in: [
-          ...(project.coordinator ? [project.coordinator] : []),
-          ...(project.team ?? []).map((t) => t.user),
-        ],
+        $in: project.coordinator ? [project.coordinator] : [],
       },
     })
       .select('name')
@@ -173,16 +173,38 @@ export async function getProjectDetail(
   const receivers = await User.find({ _id: { $in: receiverIds } }).select('name').lean();
   const receiverNames = new Map(receivers.map((u) => [String(u._id), u.name as string]));
 
+  const teamCounts = new Map<string, { name: string; count: number }>();
+  for (const m of memberIds) {
+    if (!m.assignee) continue;
+    const key = String(m.assignee);
+    const prev = teamCounts.get(key);
+    if (prev) prev.count += 1;
+    else teamCounts.set(key, { name: m.assigneeName ?? 'Unknown', count: 1 });
+  }
+
   const stats = itemStats ?? { total: 0, selected: 0, digitized: 0, tagged: 0 };
   return {
     project: {
       ...shapeProjectRow(project),
       coordinatorId: project.coordinator ? String(project.coordinator) : null,
-      team: (project.team ?? []).map((t) => ({
-        userId: String(t.user),
-        userName: nameById.get(String(t.user)) ?? 'Unknown',
-        label: t.label ?? null,
+      shared: (project.shared ?? {}) as ProjectDetailResponse['project']['shared'],
+      // Team is derived: whoever is assigned a lot in this project.
+      team: [...teamCounts.entries()].map(([userId, t]) => ({
+        userId,
+        userName: t.name,
+        lotCount: t.count,
       })),
+      lotsByFormat: memberIds.map((m) => ({
+        lotId: String(m._id),
+        lotReference: m.lotReference,
+        format: m.format,
+        quantity: m.quantity,
+        assigneeId: m.assignee ? String(m.assignee) : null,
+        assigneeName: m.assigneeName ?? null,
+      })),
+      missing: intakeMissing(
+        (project.shared ?? {}) as { dateReceived?: string; originSource?: string; owner?: { name?: string } },
+      ),
     },
     progress: {
       lotsTotal,
@@ -197,8 +219,9 @@ export async function getProjectDetail(
         id: String(d._id),
         lotReference: d.lotReference,
         namingCode: d.namingCode ?? null,
-        dateReceived: d.dateReceived.toISOString(),
-        ownerName: d.owner.name,
+        dateReceived: d.dateReceived ? d.dateReceived.toISOString() : null,
+        ownerName: d.owner?.name ?? '',
+        assigneeName: d.assigneeName ?? null,
         pointOfContactName: d.pointsOfContact?.[0]?.name ?? null,
         format: d.format,
         mediaSubtype: d.mediaSubtype,

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { activityEntrySchema } from './dashboard';
-import { lotListResponseSchema } from './lot';
+import { contactSchema, lotListResponseSchema, mediaLineInputSchema, rightsSchema } from './lot';
 
 /**
  * Project contracts (Module: projects).
@@ -14,11 +14,85 @@ import { lotListResponseSchema } from './lot';
 
 const objectIdSchema = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Expected an ObjectId string.');
 
-export const projectTeamMemberSchema = z.object({
-  userId: objectIdSchema,
-  label: z.string().trim().max(60).optional(),
+/**
+ * Intake data shared by a project and ALL of its synced child lots — one value,
+ * edited anywhere, updated everywhere. Dates travel as ISO datetimes with offset.
+ * Media lines, file path and label flags are per-lot and deliberately not here.
+ */
+const sharedFields = {
+  dateReceived: z.string().datetime({ offset: true }),
+  originSource: z.string().trim().min(1).max(40),
+  owner: contactSchema,
+  pointsOfContact: z.array(contactSchema).max(5),
+  facilitator: contactSchema,
+  conditionNotes: z.string().trim().max(2000),
+  conditionPhotoUrl: z.string().trim().min(1).max(500),
+  reasonForSending: z.string().trim().max(1000),
+  senderRemarks: z.string().trim().max(2000),
+  photoDate: z.string().trim().max(80),
+  photoLocation: z.string().trim().max(200),
+  photoEvent: z.string().trim().max(200),
+  peopleInPhoto: z.string().trim().max(1000),
+  returnRequested: z.boolean(),
+  returnFormat: z.string().trim().min(1).max(40),
+  returnDuration: z.string().trim().max(200),
+  returnDueAt: z.string().datetime({ offset: true }),
+  rights: rightsSchema,
+} as const;
+export const SHARED_KEYS = Object.keys(sharedFields) as (keyof typeof sharedFields)[];
+
+/** Create-time shape: every key optional. */
+export const projectSharedSchema = z.object({
+  dateReceived: sharedFields.dateReceived.optional(),
+  originSource: sharedFields.originSource.optional(),
+  owner: sharedFields.owner.optional(),
+  pointsOfContact: sharedFields.pointsOfContact.optional(),
+  facilitator: sharedFields.facilitator.nullable().optional(),
+  conditionNotes: sharedFields.conditionNotes.optional(),
+  conditionPhotoUrl: sharedFields.conditionPhotoUrl.optional(),
+  reasonForSending: sharedFields.reasonForSending.optional(),
+  senderRemarks: sharedFields.senderRemarks.optional(),
+  photoDate: sharedFields.photoDate.optional(),
+  photoLocation: sharedFields.photoLocation.optional(),
+  photoEvent: sharedFields.photoEvent.optional(),
+  peopleInPhoto: sharedFields.peopleInPhoto.optional(),
+  returnRequested: sharedFields.returnRequested.optional(),
+  returnFormat: sharedFields.returnFormat.optional(),
+  returnDuration: sharedFields.returnDuration.optional(),
+  returnDueAt: sharedFields.returnDueAt.optional(),
+  rights: sharedFields.rights.optional(),
 });
-export type ProjectTeamMember = z.infer<typeof projectTeamMemberSchema>;
+export type ProjectShared = z.infer<typeof projectSharedSchema>;
+
+/** Patch shape: a key set to null clears that shared value. */
+export const projectSharedPatchSchema = z.object({
+  dateReceived: sharedFields.dateReceived.nullable().optional(),
+  originSource: sharedFields.originSource.nullable().optional(),
+  owner: sharedFields.owner.nullable().optional(),
+  pointsOfContact: sharedFields.pointsOfContact.nullable().optional(),
+  facilitator: sharedFields.facilitator.nullable().optional(),
+  conditionNotes: sharedFields.conditionNotes.nullable().optional(),
+  conditionPhotoUrl: sharedFields.conditionPhotoUrl.nullable().optional(),
+  reasonForSending: sharedFields.reasonForSending.nullable().optional(),
+  senderRemarks: sharedFields.senderRemarks.nullable().optional(),
+  photoDate: sharedFields.photoDate.nullable().optional(),
+  photoLocation: sharedFields.photoLocation.nullable().optional(),
+  photoEvent: sharedFields.photoEvent.nullable().optional(),
+  peopleInPhoto: sharedFields.peopleInPhoto.nullable().optional(),
+  returnRequested: sharedFields.returnRequested.nullable().optional(),
+  returnFormat: sharedFields.returnFormat.nullable().optional(),
+  returnDuration: sharedFields.returnDuration.nullable().optional(),
+  returnDueAt: sharedFields.returnDueAt.nullable().optional(),
+  rights: sharedFields.rights.nullable().optional(),
+});
+export type ProjectSharedPatch = z.infer<typeof projectSharedPatchSchema>;
+
+/** One child-lot assignment from the wizard's last step (one lot per format). */
+export const projectAssignmentSchema = z.object({
+  format: z.string().trim().min(1).max(40),
+  assigneeId: objectIdSchema.nullable().optional(),
+});
+export type ProjectAssignment = z.infer<typeof projectAssignmentSchema>;
 
 export const projectRowSchema = z.object({
   id: z.string(),
@@ -72,15 +146,28 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 
 /* -------------------------------------------------------------------- create */
 
-export const projectCreateBodySchema = z.object({
-  code: z.string().trim().min(1).max(40),
-  name: z.string().trim().min(1).max(160),
-  description: z.string().trim().max(2000).optional(),
-  coordinatorId: objectIdSchema.optional(),
-  team: z.array(projectTeamMemberSchema).max(50).default([]),
-  startDate: z.string().datetime({ offset: true }).optional(),
-  targetDate: z.string().datetime({ offset: true }).optional(),
-});
+export const projectCreateBodySchema = z
+  .object({
+    code: z.string().trim().min(1).max(40),
+    name: z.string().trim().min(1).max(160),
+    description: z.string().trim().max(2000).optional(),
+    coordinatorId: objectIdSchema.optional(),
+    startDate: z.string().datetime({ offset: true }).optional(),
+    targetDate: z.string().datetime({ offset: true }).optional(),
+    /** Intake details every child lot will share. All optional — assignees fill gaps later. */
+    shared: projectSharedSchema.default({}),
+    /** Mandatory: the quantities. One child lot is created per distinct format. */
+    mediaLines: z
+      .array(mediaLineInputSchema)
+      .min(1, 'Add at least one media line.')
+      .max(20, 'No more than 20 media lines.'),
+    /** Per-format assignee. A format with no entry (or null) starts unassigned (admin-only). */
+    assignments: z.array(projectAssignmentSchema).max(20).default([]),
+  })
+  .refine((b) => b.mediaLines.reduce((sum, l) => sum + l.quantity, 0) <= 20000, {
+    message: 'Total quantity across media lines cannot exceed 20000.',
+    path: ['mediaLines'],
+  });
 export type ProjectCreateBody = z.infer<typeof projectCreateBodySchema>;
 /** Route handlers receive the pre-default input; the server normalises it. */
 export type ProjectCreateInput = z.input<typeof projectCreateBodySchema>;
@@ -88,6 +175,7 @@ export type ProjectCreateInput = z.input<typeof projectCreateBodySchema>;
 export const projectCreateResponseSchema = z.object({
   id: z.string(),
   code: z.string(),
+  lots: z.array(z.object({ id: z.string(), lotReference: z.string(), format: z.string() })),
 });
 export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
 
@@ -97,9 +185,10 @@ export const projectUpdateBodySchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   coordinatorId: objectIdSchema.nullable().optional(),
-  team: z.array(projectTeamMemberSchema).max(50).optional(),
   startDate: z.string().datetime({ offset: true }).nullable().optional(),
   targetDate: z.string().datetime({ offset: true }).nullable().optional(),
+  /** Shared intake values — applied to the project AND every synced child lot. */
+  shared: projectSharedPatchSchema.optional(),
 });
 export type ProjectUpdateBody = z.infer<typeof projectUpdateBodySchema>;
 
@@ -117,13 +206,22 @@ export type ProjectDetailQuery = z.infer<typeof projectDetailQuerySchema>;
 export const projectDetailResponseSchema = z.object({
   project: projectRowSchema.extend({
     coordinatorId: z.string().nullable(),
-    team: z.array(
+    shared: projectSharedSchema,
+    /** Derived: distinct assignees of the project's lots. */
+    team: z.array(z.object({ userId: z.string(), userName: z.string(), lotCount: z.number() })),
+    /** Formats present, with the lot each one lives in — for "add media" and reassigning. */
+    lotsByFormat: z.array(
       z.object({
-        userId: z.string(),
-        userName: z.string(),
-        label: z.string().nullable(),
+        lotId: z.string(),
+        lotReference: z.string(),
+        format: z.string(),
+        quantity: z.number(),
+        assigneeId: z.string().nullable(),
+        assigneeName: z.string().nullable(),
       }),
     ),
+    /** Intake fields still empty across the whole project. */
+    missing: z.array(z.string()),
   }),
   progress: projectProgressSchema,
   /** Member lots, paginated — same rows as the intake register. */
@@ -136,7 +234,21 @@ export type ProjectDetailResponse = z.infer<typeof projectDetailResponseSchema>;
 
 export const projectAssignBodySchema = z.object({
   lotId: objectIdSchema,
+  /** Optional: who owns the lot once it joins (a synced lot with no assignee is admin-only). */
+  assigneeId: objectIdSchema.optional(),
 });
+
+/** Admin adds more media to a project later (new format → new child lot). */
+export const projectAddMediaBodySchema = z.object({
+  mediaLines: z.array(mediaLineInputSchema).min(1).max(20),
+  assignments: z.array(projectAssignmentSchema).max(20).default([]),
+});
+export type ProjectAddMediaBody = z.infer<typeof projectAddMediaBodySchema>;
+export type ProjectAddMediaInput = z.input<typeof projectAddMediaBodySchema>;
+
+/** PUT /api/lots/[lotId]/assignee — null clears the assignee. */
+export const lotAssigneeBodySchema = z.object({ assigneeId: objectIdSchema.nullable() });
+export type LotAssigneeBody = z.infer<typeof lotAssigneeBodySchema>;
 export type ProjectAssignBody = z.infer<typeof projectAssignBodySchema>;
 
 export const projectAssignResponseSchema = z.object({

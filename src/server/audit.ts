@@ -4,6 +4,7 @@ import { ArchiveLot, type ArchiveLotDoc } from '@/models/ArchiveLot';
 import { ActivityLog } from '@/models/ActivityLog';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
+import { assertCanWorkLot } from '@/server/lots/access';
 
 /**
  * The ONLY way to mutate a lot (AGENTS.md rule 1). In one transaction it:
@@ -22,6 +23,17 @@ import { HttpError } from '@/lib/api';
 export interface AuditActor {
   id: string;
   name: string;
+  /**
+   * The actor's live grants. When present, `withAudit` enforces the assignee rule
+   * (only the assignee or a `project:assign` holder may mutate an assigned /
+   * project-synced lot). System actors omit it and are never restricted.
+   */
+  grants?: string[];
+}
+
+/** Build the audit actor from a route's mutation context (carries grants for the assignee rule). */
+export function auditActor(ctx: { userId: string; userName: string; grants: string[] }): AuditActor {
+  return { id: ctx.userId, name: ctx.userName, grants: ctx.grants };
 }
 
 interface ChangeEntry {
@@ -68,6 +80,11 @@ export async function withAudit<T>(opts: {
   kind: ActivityKind;
   title: string;
   detail?: string;
+  /**
+   * Skip the assignee rule. Only for fan-out writes whose authority was already
+   * verified on the originating record (shared-field sync to sibling lots).
+   */
+  skipAccessCheck?: boolean;
   /** Runs inside the transaction. Applies the change; returns the handler's payload. */
   mutate: (lot: HydratedDocument<ArchiveLotDoc>, session: ClientSession) => Promise<T>;
 }): Promise<T> {
@@ -79,6 +96,10 @@ export async function withAudit<T>(opts: {
     await session.withTransaction(async () => {
       const lot = await ArchiveLot.findById(opts.lotId).session(session);
       if (!lot) throw new HttpError(404, 'Lot not found.');
+
+      if (!opts.skipAccessCheck && opts.actor?.grants) {
+        assertCanWorkLot(lot, { id: opts.actor.id, grants: opts.actor.grants });
+      }
 
       const stageBefore = lot.stage;
       const before = JSON.parse(JSON.stringify(lot.toObject())) as Record<string, unknown>;

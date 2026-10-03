@@ -7,7 +7,7 @@ import { LotItem } from '@/models/LotItem';
 import { FileIndex } from '@/models/FileIndex';
 import { MlsOutbox } from '@/models/MlsOutbox';
 import { can } from '@/server/permissions';
-import { withAudit } from '@/server/audit';
+import { withAudit, auditActor } from '@/server/audit';
 import { getStageGraph } from '@/server/reference/runtime';
 import { diffReconciliation } from '@/server/reconcile/diff';
 import { isTerminalStage } from '@/server/lots/queries';
@@ -42,7 +42,7 @@ export async function recordScan(lotId: string, body: ScanBody, ctx: MutationCon
   await assertActive('scanStatus', body.scanStatus);
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: body.folderPath ? 'folder_path_recorded' : 'scan_started',
     title: body.folderPath ? 'Folder path recorded' : 'Scan recorded',
     mutate: async (lot, session) => {
@@ -98,7 +98,7 @@ export async function runReconcile(lotId: string, ctx: MutationContext) {
 
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: complete ? 'scan_completed' : 'reconciliation_mismatch',
     title: complete ? 'Reconciliation complete' : 'Reconciliation mismatch',
     detail: complete
@@ -136,7 +136,7 @@ export async function runReconcile(lotId: string, ctx: MutationContext) {
 export async function tagMls(lotId: string, body: MlsBody, ctx: MutationContext) {
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'mls_tagged',
     title: 'MLS tagging recorded',
     mutate: async (lot, session) => {
@@ -182,7 +182,7 @@ export async function resolveDuplicate(lotId: string, body: DuplicateBody, ctx: 
   await assertActive('duplicateAction', body.duplicateAction);
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'duplicate_resolved',
     title: `Duplicate ${body.duplicateAction}`,
     mutate: async (lot, session) => {
@@ -229,7 +229,7 @@ export async function manageReturn(lotId: string, body: ReturnBody, ctx: Mutatio
   if (body.method) await assertActive('returnMethod', body.method);
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: body.status === 'returned' ? 'return_completed' : 'return_recorded',
     title: body.status === 'returned' ? 'Return completed' : 'Return updated',
     mutate: async (lot, session) => {
@@ -272,7 +272,7 @@ export async function confirmDiscard(lotId: string, body: DiscardBody, ctx: Muta
   const { discardable } = await getStageGraph();
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'discard_confirmed',
     title: `Discard confirmed (${body.reason})`,
     mutate: async (lot, session) => {
@@ -303,7 +303,7 @@ export async function confirmDiscard(lotId: string, body: DiscardBody, ctx: Muta
 export async function reverseDiscard(lotId: string, version: number, ctx: MutationContext) {
   const outcome = await withAudit({
     lotId,
-    actor: { id: ctx.userId, name: ctx.userName },
+    actor: auditActor(ctx),
     kind: 'discard_reversed',
     title: 'Discard reversed',
     mutate: async (lot, _session) => {
