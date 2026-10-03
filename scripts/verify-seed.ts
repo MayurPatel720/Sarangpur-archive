@@ -23,6 +23,7 @@ import 'mingo/init/system';
 import { ActivityLog } from '../src/models/ActivityLog';
 import { ArchiveLot } from '../src/models/ArchiveLot';
 import { LotItem } from '../src/models/LotItem';
+import { Project } from '../src/models/Project';
 import { User } from '../src/models/User';
 import { ReferenceList } from '../src/models/ReferenceList';
 import { Role } from '../src/models/Role';
@@ -83,7 +84,7 @@ function run<T>(pipeline: Pipeline, docs: unknown[]): T[] {
 
 console.log('\nVerifying the generated dataset against the real schemas and pipelines\n');
 
-const { users, lots, items, activity } = buildDataset(NOW);
+const { users, projects, lots, items, activity } = buildDataset(NOW);
 
 /* --- 1. schema validation ------------------------------------------------- */
 
@@ -111,6 +112,7 @@ function validateAll(
 }
 
 validateAll('user', User, users);
+validateAll('project', Project, projects);
 validateAll('lot', ArchiveLot, lots);
 validateAll('item profile', LotItem, items);
 validateAll('audit', ActivityLog, activity);
@@ -358,7 +360,7 @@ if (badCounts.length === 0) ok('found ≤ expected ≤ quantity on every lot');
 else fail(`${badCounts.length} lots have impossible counts`);
 
 const badDates = lots.filter(
-  (l) => (l.dateReceived as Date).getTime() > (l.stageEnteredAt as Date).getTime(),
+  (l) => l.dateReceived !== null && (l.dateReceived as Date).getTime() > (l.stageEnteredAt as Date).getTime(),
 );
 if (badDates.length === 0) ok('every lot was received before it entered its current stage');
 else fail(`${badDates.length} lots entered a stage before they were received`);
@@ -410,16 +412,39 @@ const expectAlert = (key: string, n: number) => {
   else fail(`${key} = ${actual}, expected ${n}`);
 };
 
-expectAlert('decision_overdue', 9);
-expectAlert('scan_stuck', 4);
-expectAlert('return_overdue', 6);
+expectAlert('decision_overdue', 2);
+expectAlert('scan_stuck', 1);
+expectAlert('return_overdue', 1);
 
 const totalLots = summary.totalLotCount;
-if (totalLots === 1284) ok('1,284 lots on record');
-else fail(`${totalLots} lots on record, expected 1284`);
+if (totalLots === 35) ok('35 lots on record');
+else fail(`${totalLots} lots on record, expected 35`);
+if (projects.length === 10) ok('10 projects on record');
+else fail(`${projects.length} projects, expected 10`);
+
+const lotsByProject = new Map<string, number>();
+for (const l of lots) {
+  const k = String(l.syncProjectId);
+  lotsByProject.set(k, (lotsByProject.get(k) ?? 0) + 1);
+}
+const lotCountMismatch = projects.filter((p) => lotsByProject.get(String(p._id)) !== p.lotCount);
+if (lotCountMismatch.length === 0) ok('every project.lotCount matches its lots');
+else fail(`${lotCountMismatch.length} projects have a wrong lotCount`);
+
+const itemsByLot = new Map<string, number>();
+for (const it of items) itemsByLot.set(String(it.lot), (itemsByLot.get(String(it.lot)) ?? 0) + 1);
+const qtyMismatch = lots.filter((l) => itemsByLot.get(String(l._id)) !== l.quantity);
+if (qtyMismatch.length === 0) ok('every lot has exactly `quantity` items');
+else fail(`${qtyMismatch.length} lots have the wrong number of items`);
+
+const unnamedAfterIntake = items.filter(
+  (it) => !it.name && lots.find((l) => String(l._id) === String(it.lot))!.stage !== 'intake',
+);
+if (unnamedAfterIntake.length === 0) ok('every item past intake has a name');
+else fail(`${unnamedAfterIntake.length} unnamed items past intake`);
 
 const oldest = alerts.alerts.find((a) => a.key === 'decision_overdue')?.detail ?? '';
-if (oldest.endsWith('day 11')) ok('oldest overdue decision is day 11');
+if (oldest.endsWith('day 9')) ok('oldest overdue decision is day 9');
 else fail(`oldest overdue decision detail was "${oldest}"`);
 
 /* --- 7. print the dashboard ------------------------------------------------ */

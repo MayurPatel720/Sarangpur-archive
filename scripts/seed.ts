@@ -1,7 +1,7 @@
 /**
- * Seeds MongoDB with the generated archive snapshot.
+ * Seeds MongoDB with the generated demo archive: 10 projects, 35 lots, their items.
  *
- *   npm run seed        # wipes the four collections and reseeds
+ *   npm run seed        # wipes users, projects, lots, items, activity and roles, then reseeds
  *
  * The data itself comes from scripts/dataset.ts, which has no database dependency — see
  * scripts/verify-seed.ts, which runs the dashboard pipelines over the very same
@@ -16,6 +16,8 @@ import mongoose from 'mongoose';
 import { ActivityLog } from '../src/models/ActivityLog';
 import { ArchiveLot } from '../src/models/ArchiveLot';
 import { LotItem } from '../src/models/LotItem';
+import { Project } from '../src/models/Project';
+import { Attachment } from '../src/models/Attachment';
 import { User } from '../src/models/User';
 import { ReferenceList } from '../src/models/ReferenceList';
 import { Role } from '../src/models/Role';
@@ -49,7 +51,7 @@ async function main() {
   console.log(`→ target: ${uri.replace(/\/\/([^:]+):[^@]+@/, '//$1:****@')}`);
 
   console.log('→ generating dataset…');
-  const { users, lots, items, activity } = buildDataset();
+  const { users, projects, lots, items, activity } = buildDataset();
 
   console.log('→ connecting to MongoDB…');
   await mongoose.connect(uri, { serverSelectionTimeoutMS: 8_000 });
@@ -59,6 +61,8 @@ async function main() {
     User.deleteMany({}),
     ArchiveLot.deleteMany({}),
     LotItem.deleteMany({}),
+    Project.deleteMany({}),
+    Attachment.deleteMany({}),
     ActivityLog.deleteMany({}),
     Role.deleteMany({}),
     // ReferenceList is NOT wiped: admin vocabulary edits survive reseed.
@@ -73,6 +77,9 @@ async function main() {
 
   console.log(`→ inserting ${usersWithPasswords.length} users…`);
   await insertChunked(User, usersWithPasswords);
+
+  console.log(`→ inserting ${projects.length} projects…`);
+  await insertChunked(Project, projects);
 
   console.log(`→ inserting ${lots.length} lots…`);
   await insertChunked(ArchiveLot, lots);
