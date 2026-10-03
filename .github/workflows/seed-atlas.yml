@@ -1,0 +1,36 @@
+name: Seed Atlas (destructive)
+
+# Manual only. Wipes users, roles, projects, lots, items, activity and attachments in the
+# database named by the MONGODB_URI repository secret, then loads the demo data
+# (10 projects / 35 lots / items) and the main admin account. Dropdown lists are kept.
+#
+# Setup once: Settings -> Secrets and variables -> Actions -> New repository secret
+#   MONGODB_URI            (required) the Atlas connection string
+#   SEED_ADMIN_PASSWORD    (optional) password for admin@gmail.com, default admin123
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type WIPE to confirm — this deletes existing data'
+        required: true
+        type: string
+
+jobs:
+  seed:
+    if: ${{ inputs.confirm == 'WIPE' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the database is reachable
+        run: npm run db:check
+      - name: Seed
+        run: npm run seed
