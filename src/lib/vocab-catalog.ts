@@ -281,7 +281,7 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
       { value: 'Mini DVs', label: 'Mini DVs', meta: { codePrefix: 'MDV' } },
       { value: 'U-matic', label: 'U-matic', meta: { codePrefix: 'UMA' } },
       { value: 'VHS', label: 'VHS', meta: { codePrefix: 'VHS' } },
-      { value: 'BetaCAM', label: 'BetaCAM', meta: { codePrefix: 'BET' } },
+      { value: 'BetaCAM', label: 'BetaCAM', meta: { codePrefix: 'BTC' } },
       { value: 'Digital', label: 'Digital', meta: { codePrefix: 'DIG' } },
     ]),
   },

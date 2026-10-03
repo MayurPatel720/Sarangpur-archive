@@ -105,7 +105,7 @@ individually, and the 16MB document ceiling would eventually be hit.
 | Field | Type | Notes |
 |---|---|---|
 | `lot` | ObjectId → ArchiveLot, indexed | |
-| `code` | String, **unique** | `{lotCode}-{group:2}-{item:2}` |
+| `code` | String, **unique** | `{PREFIX}-{ORIGIN}-{NNNN}-R-000`, issued per item at creation — e.g. `MDV-AHM-0002-R-000`. PREFIX = the item's own media sub-type (`MDV`, `DVC`, `BTC`, …), ORIGIN = lot origin (`OTH` until known), NNNN = running number per prefix+origin, `R` = raw (`D` = duplicate, reserved), `000` = copy number. Counters: `counters` `itemCode:{PREFIX}-{ORIGIN}` |
 | `groupNo` / `itemNo` | Number ≥1 | Roll / tape / album, then position |
 | `selectedForDigitization` | Boolean, indexed | False for items excluded at intake |
 | `notDigitizedReason` | Enum, indexed | `duplicate_in_mls` `condition_too_poor` `not_significant` `other` |

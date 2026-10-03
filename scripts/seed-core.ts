@@ -62,6 +62,8 @@ export async function seedDatabase(log: (message: string) => void = console.log)
     Attachment.deleteMany({}),
     ActivityLog.deleteMany({}),
     Role.deleteMany({}),
+    // Code counters re-derive from the freshly seeded codes on first use.
+    ArchiveLot.db.collection('counters').deleteMany({}),
     // ReferenceList is NOT wiped: admin vocabulary edits survive reseed.
     // Settings are NOT wiped: on reseed the admin's thresholds survive.
   ]);

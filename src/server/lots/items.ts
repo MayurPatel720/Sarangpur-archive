@@ -1,6 +1,8 @@
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { LotItem } from '@/models/LotItem';
+import { allocateItemCodes } from '@/server/codes';
+import { namingPrefix } from '@/server/lots/mutations';
 import { withAudit, auditActor } from '@/server/audit';
 import { assertActiveReferenceValue } from '@/server/reference';
 import type { ItemCreateInput, ItemCreateResponse } from '@/types/project';
@@ -9,7 +11,7 @@ import type { ItemCreateInput, ItemCreateResponse } from '@/types/project';
  * Manual item entry — volunteers adding individual items to a lot beyond what
  * intake auto-generated from the received quantity.
  *
- * Numbering continues the intake convention (`{lotCode}-GG-II`, 36 per group):
+ * Group / position continue the intake convention (36 per group); the code itself comes from the item scheme (`MDV-AHM-0021-R-000`):
  * appending targets the last group, rolling to a new group when it is full,
  * or an explicit `groupNo` starts/continues that group. Codes stay unique via
  * the collection's unique index; a lost append race surfaces as 409, not 500.
@@ -40,7 +42,6 @@ export async function createItem(
     title: 'Item added',
     detail: body.groupNo ? `Group ${body.groupNo}` : 'Appended to last group',
     mutate: async (lot, session) => {
-      const base = lot.namingCode ?? lot.lotReference;
 
       const groups: { _id: number; maxItemNo: number; count: number }[] =
         await LotItem.aggregate([
@@ -65,7 +66,14 @@ export async function createItem(
         }
       }
 
-      const code = `${base}-${String(groupNo).padStart(2, '0')}-${String(itemNo).padStart(2, '0')}`;
+      // Same scheme as intake: the lot's primary sub-type prefix + origin (e.g. MDV-AHM-0021-R-000).
+      const [code] = await allocateItemCodes(
+        await namingPrefix(lot.format, lot.mediaSubtype),
+        lot.originSource ?? 'OTH',
+        1,
+        session,
+      );
+      if (!code) throw new HttpError(500, 'Could not allocate an item code.');
       let itemId = '';
       try {
         const [item] = await LotItem.create(

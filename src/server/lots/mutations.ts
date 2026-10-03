@@ -13,7 +13,7 @@ import { assertActiveReferenceValue, getActiveReferenceItems, getReferenceList, 
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { assertActive } from '@/server/reference/runtime';
 import { computeVerdict, unionSignificanceFlags, type SignificanceFlags, type Verdict } from '@/server/lots/decision-rule';
-import { generateItemCodes, generateLotReference, generateNamingCode, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
+import { allocateItemCodes, generateLotReference, generateNamingCode, itemSlot, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
 import { isTerminalStage } from '@/server/lots/queries';
 import type { Stage } from '@/lib/domain';
 import type { LotCreateBody, LotPatchBody, DecisionBody, DecisionResponse, OverrideRequestBody, OverrideDecideBody } from '@/types/lot';
@@ -88,6 +88,39 @@ export async function validateLotVocab(
     ),
   );
   return { lines, subtypeKeys };
+}
+
+/**
+ * One item document per unit of every media line. Codes come from the item's OWN
+ * sub-type (`MDV-AHM-0002-R-000`), so a lot with mixed sub-types gets mixed prefixes.
+ * Group/position are a running 36-per-group index across the lot; each line's first
+ * `quantityToDigitize` items are selected for digitizing.
+ */
+async function buildItemDocs(
+  lotId: Types.ObjectId,
+  lines: NormalisedLine[],
+  origin: string,
+  session: ClientSession,
+): Promise<Record<string, unknown>[]> {
+  const docs: Record<string, unknown>[] = [];
+  let n = 0;
+  for (const [lineIndex, line] of lines.entries()) {
+    const prefix = await namingPrefix(line.format, line.mediaSubtype);
+    const codes = await allocateItemCodes(prefix, origin, line.quantity, session);
+    codes.forEach((code, idx) => {
+      const selected = idx < line.quantityToDigitize;
+      docs.push({
+        lot: lotId,
+        code,
+        ...itemSlot(n),
+        lineIndex,
+        selectedForDigitization: selected,
+        notDigitizedReason: selected ? null : line.notDigitizedReason,
+      });
+      n += 1;
+    });
+  }
+  return docs;
 }
 
 /**
@@ -173,27 +206,7 @@ export async function insertLotInSession(
   lot!.set('digitization.expectedFileCount', totalToDigitize);
   await lot!.save({ session });
 
-  // One contiguous code run, sliced per line so group/item numbers stay
-  // unique across the lot; each line's head run is selected for digitizing.
-  const codes = generateItemCodes(lotReference, totalQuantity);
-  const docs: Record<string, unknown>[] = [];
-  let offset = 0;
-  lines.forEach((line, lineIndex) => {
-    const slice = codes.slice(offset, offset + line.quantity);
-    offset += line.quantity;
-    slice.forEach((c, idx) => {
-      const selected = idx < line.quantityToDigitize;
-      docs.push({
-        lot: lot!._id,
-        code: c.code,
-        groupNo: c.groupNo,
-        itemNo: c.itemNo,
-        lineIndex,
-        selectedForDigitization: selected,
-        notDigitizedReason: selected ? null : line.notDigitizedReason,
-      });
-    });
-  });
+  const docs = await buildItemDocs(lot!._id, lines, body.originSource ?? 'OTH', session);
   for (let i = 0; i < docs.length; i += 2000) {
     await LotItem.insertMany(docs.slice(i, i + 2000), { session });
   }
@@ -338,24 +351,7 @@ export async function replaceMediaLines(
       lot.set('digitization.expectedFileCount', toDigitize);
 
       await LotItem.deleteMany({ lot: lot._id }, { session });
-      const codes = generateItemCodes(lot.namingCode ?? lot.lotReference, total);
-      const docs: Record<string, unknown>[] = [];
-      let offset = 0;
-      lines.forEach((line, lineIndex) => {
-        codes.slice(offset, offset + line.quantity).forEach((c, idx) => {
-          const selected = idx < line.quantityToDigitize;
-          docs.push({
-            lot: lot._id,
-            code: c.code,
-            groupNo: c.groupNo,
-            itemNo: c.itemNo,
-            lineIndex,
-            selectedForDigitization: selected,
-            notDigitizedReason: selected ? null : line.notDigitizedReason,
-          });
-        });
-        offset += line.quantity;
-      });
+      const docs = await buildItemDocs(lot._id, lines, lot.originSource ?? 'OTH', session);
       for (let i = 0; i < docs.length; i += 2000) {
         await LotItem.insertMany(docs.slice(i, i + 2000), { session });
       }
@@ -547,7 +543,7 @@ export async function submitForDecision(
  * format has a managed list, else the format fallback (documents/prasadi are
  * free text per SPEC Q2, so there is no item to read).
  */
-async function namingPrefix(format: string, mediaSubtype: string): Promise<string> {
+export async function namingPrefix(format: string, mediaSubtype: string): Promise<string> {
   const key = await mediaSubtypeListKeyAsync(format);
   if (key) {
     const list = await getReferenceList(key);
@@ -657,19 +653,7 @@ async function writeDecision(
             session,
           );
           lot.namingCode = namingCode;
-          // Recode every item to the naming code (SPEC §4.3), chunked.
-          const codes = generateItemCodes(namingCode, lot.quantity);
-          for (let i = 0; i < codes.length; i += 1000) {
-            await LotItem.bulkWrite(
-              codes.slice(i, i + 1000).map((c) => ({
-                updateOne: {
-                  filter: { lot: lot._id, groupNo: c.groupNo, itemNo: c.itemNo },
-                  update: { $set: { code: c.code } },
-                },
-              })),
-              { session },
-            );
-          }
+          // Items keep their own codes (issued at creation); the naming code names the lot.
         }
       } else {
         if (!body.disposition) {

@@ -1,5 +1,6 @@
 import type { ClientSession } from 'mongoose';
 import { ArchiveLot } from '@/models/ArchiveLot';
+import { LotItem } from '@/models/LotItem';
 import { connectToDatabase } from '@/lib/mongo';
 
 /**
@@ -13,7 +14,10 @@ import { connectToDatabase } from '@/lib/mongo';
  * - `lotReference` (`LOT-2026-0007`) — allocated at INTAKE, one per lot, never
  *   changes. This is the lot's permanent identity.
  * - `namingCode` (`NEG-MUM-014`) — allocated at the archive DECISION (Phase D),
- *   per prefix+origin. Items are recoded to it then.
+ *   per prefix+origin. It names the LOT; items keep their own codes (below).
+ * - item code (`MDV-AHM-0002-R-000`) — allocated per ITEM at creation, like the
+ *   archive's logging spreadsheets: sub-type prefix, origin, a running number per
+ *   prefix+origin, `R` = raw capture (`D` = duplicate, reserved), `000` = copy number.
  */
 
 interface CounterDoc {
@@ -62,10 +66,56 @@ export async function generateLotReference(session?: ClientSession): Promise<str
   return `LOT-${year}-${String(seq).padStart(4, '0')}`;
 }
 
+/** Pure formatter: `MDV-AHM-0002-R-000`. */
+export function formatItemCode(prefix: string, origin: string, seq: number, kind: 'R' | 'D' = 'R', copy = 0): string {
+  return `${prefix}-${origin}-${String(seq).padStart(4, '0')}-${kind}-${String(copy).padStart(3, '0')}`;
+}
+
 /**
- * Item codes for a lot: `{lotCode}-01-01 … {lotCode}-06-36`, `perGroup`
- * (default 36) items per group. At intake `lotCode` is the lotReference; the
- * decision step recodes items to the naming code when one is issued.
+ * Reserves `count` consecutive item numbers for `prefix`+`origin` and returns the codes.
+ * First use per key seeds the counter past any codes written outside it (the dataset
+ * seed writes codes directly); the reserve itself is one atomic $inc by `count`.
+ */
+export async function allocateItemCodes(
+  prefix: string,
+  origin: string,
+  count: number,
+  session?: ClientSession,
+): Promise<string[]> {
+  if (count <= 0) return [];
+  await connectToDatabase();
+  const key = `itemCode:${prefix}-${origin}`;
+  const collection = ArchiveLot.db.collection<CounterDoc>('counters');
+  const sess = session ? { session } : {};
+
+  const existing = await collection.findOne({ _id: key }, sess);
+  if (!existing) {
+    const [peak] = await LotItem.aggregate<{ max: number }>([
+      { $match: { code: { $regex: `^${prefix}-${origin}-\\d+-[RD]-\\d{3}$` } } },
+      { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$code', '-'] }, 2] } } } },
+      { $group: { _id: null, max: { $max: '$n' } } },
+    ]).session(session ?? null);
+    await collection.updateOne({ _id: key }, { $set: { seq: peak?.max ?? 0 } }, { upsert: true, ...sess });
+  }
+
+  const doc = await collection.findOneAndUpdate(
+    { _id: key },
+    { $inc: { seq: count } },
+    { upsert: true, returnDocument: 'after', ...sess },
+  );
+  if (!doc || typeof doc.seq !== 'number') throw new Error(`Counter '${key}' did not return a sequence.`);
+  const first = doc.seq - count + 1;
+  return Array.from({ length: count }, (_, i) => formatItemCode(prefix, origin, first + i));
+}
+
+/** Group / position of the n-th item of a lot (0-based), 36 items per group. */
+export function itemSlot(n: number, perGroup = 36): { groupNo: number; itemNo: number } {
+  return { groupNo: Math.floor(n / perGroup) + 1, itemNo: (n % perGroup) + 1 };
+}
+
+/**
+ * Legacy lot-based codes (`{lotCode}-GG-II`). Only the old triage seed script still
+ * uses this; live item creation goes through `allocateItemCodes`.
  */
 export function generateItemCodes(  lotCode: string,
   quantity: number,

@@ -16,6 +16,7 @@
 import { Types } from 'mongoose';
 import type { OriginSource, Role, Stage } from '../src/lib/domain';
 import { catalogList } from '../src/lib/vocab-catalog';
+import { formatItemCode, itemSlot } from '../src/server/codes';
 
 const DAY = 86_400_000;
 
@@ -105,10 +106,10 @@ const PROJECTS: ProjectSpec[] = [
     assignAll: 0,
     ctx: { place: 'Akshardham Gandhinagar', venue: 'Mahelav Shri Swaminarayan Mandir', event: 'Mahelav', year: 2009, month: '12', day: 23 },
     lots: [
-      L('video', [['Mini DVs', 9]], 'storage', 12, 0),
-      L('audio', [['Cassettes', 6]], 'storage', 20, 1),
-      L('photo', [['35MM Film — Negatives', 24]], 'mls_tag', 3, 2, { splitReturn: 2 }),
-      L('documents', [['Letters', 8]], 'scanning', 4, 0),
+      L('video', [['Mini DVs', 5], ['DV-CAM', 3], ['BetaCAM', 2]], 'storage', 12, 0),
+      L('audio', [['Cassettes', 4], ['Spools', 3]], 'storage', 20, 1),
+      L('photo', [['35MM Film — Negatives', 14], ['35MM Film — Slides', 8], ['Print — Print', 4]], 'mls_tag', 3, 2, { splitReturn: 2 }),
+      L('documents', [['Letters', 5], ['Invitation cards', 3]], 'scanning', 4, 0),
     ],
   },
   {
@@ -121,10 +122,10 @@ const PROJECTS: ProjectSpec[] = [
     coordinator: 'lead',
     ctx: { place: 'Sarangpur', venue: 'Sarangpur Mandir', event: 'Pushpadolotsav', year: 1998, month: '03', day: 5 },
     lots: [
-      L('video', [['VHS', 7]], 'storage', 9, 1),
+      L('video', [['VHS', 5], ['Mini DVs', 3]], 'storage', 9, 1),
       L('photo', [['Print — Print', 20], ['Print — Album', 10]], 'scanning', 5, 2),
-      L('documents', [['Invitation cards', 10]], 'metadata', 2, 1),
-      L('prasadi', [['Prasadi', 6]], 'decision', 1, 'admin'),
+      L('documents', [['Invitation cards', 6], ['Letters', 4]], 'metadata', 2, 1),
+      L('prasadi', [['Prasadi mala', 3], ['Prasadi shawl', 3]], 'decision', 1, 'admin'),
     ],
   },
   {
@@ -138,10 +139,10 @@ const PROJECTS: ProjectSpec[] = [
     assignAll: 1,
     ctx: { place: 'New Delhi', venue: 'Delhi Mandir', event: 'Mandir Pratishtha Utsav', year: 2003, month: '02', day: 14 },
     lots: [
-      L('video', [['DV-CAM', 6]], 'mls_tag', 4, 0, { splitDiscard: 1 }),
-      L('audio', [['Spools', 5]], 'storage', 25, 1),
-      L('photo', [['35MM Film — Slides', 18]], 'storage', 70, 2),
-      L('documents', [['Receipt books', 7]], 'returned', 20, 0),
+      L('video', [['DV-CAM', 4], ['Mini DVs', 2]], 'mls_tag', 4, 0, { splitDiscard: 1 }),
+      L('audio', [['Spools', 3], ['Cassettes', 2]], 'storage', 25, 1),
+      L('photo', [['35MM Film — Slides', 12], ['35MM Film — Positives', 6]], 'storage', 70, 2),
+      L('documents', [['Receipt books', 4], ['Letters', 3]], 'returned', 20, 0),
     ],
   },
   {
@@ -154,10 +155,10 @@ const PROJECTS: ProjectSpec[] = [
     coordinator: 'reviewer',
     ctx: { place: 'Nairobi', venue: 'Nairobi Mandir', event: 'Satsang Sabha', year: 1999, month: '07', day: 11 },
     lots: [
-      L('video', [['VHS', 8]], 'scanning', 6, 2),
-      L('audio', [['Cassettes', 10]], 'metadata', 2, 2),
-      L('photo', [['35MM Film — Negatives', 30]], 'decision', 9, 1),
-      L('documents', [['Newspaper clippings', 8]], 'intake', 0, 2),
+      L('video', [['VHS', 5], ['8mm', 3]], 'scanning', 6, 2),
+      L('audio', [['Cassettes', 6], ['Spools', 4]], 'metadata', 2, 2),
+      L('photo', [['35MM Film — Negatives', 20], ['120 Film — Negatives', 10]], 'decision', 9, 1),
+      L('documents', [['Newspaper clippings', 5], ['Letters', 3]], 'intake', 0, 2),
     ],
   },
   {
@@ -171,9 +172,9 @@ const PROJECTS: ProjectSpec[] = [
     assignAll: 2,
     ctx: { place: 'Kolkata', venue: 'Kolkata Mandir', event: 'Janma Jayanti Natak', year: 2003, month: '12', day: 7 },
     lots: [
-      L('video', [['Mini DVs', 7]], 'storage', 15, 0),
-      L('audio', [['Cassettes', 8]], 'scanning', 3, 1),
-      L('photo', [['Print — Print', 16]], 'decision', 2, 2),
+      L('video', [['Mini DVs', 4], ['DVD', 3]], 'storage', 15, 0),
+      L('audio', [['Cassettes', 5], ['MDC', 3]], 'scanning', 3, 1),
+      L('photo', [['Print — Print', 10], ['Print — Album', 6]], 'decision', 2, 2),
       L('prasadi', [['Prasadi', 5]], 'returned', 18, 1),
     ],
   },
@@ -188,9 +189,9 @@ const PROJECTS: ProjectSpec[] = [
     assignAll: 'admin',
     ctx: { place: 'London', venue: 'London Mandir', event: 'Suvarna Tula', year: 1985, month: '07', day: 20 },
     lots: [
-      L('video', [['U-matic', 5]], 'mls_tag', 2, 0),
-      L('photo', [['35MM Film — Slides', 22]], 'storage', 80, 1),
-      L('documents', [['Letters', 6]], 'metadata', 3, 0, { returnOverdue: true }),
+      L('video', [['U-matic', 3], ['VHS', 2]], 'mls_tag', 2, 0),
+      L('photo', [['35MM Film — Slides', 14], ['35MM Film — Negatives', 8]], 'storage', 80, 1),
+      L('documents', [['Letters', 3], ['Invitation cards', 3]], 'metadata', 3, 0, { returnOverdue: true }),
     ],
   },
   {
@@ -203,9 +204,9 @@ const PROJECTS: ProjectSpec[] = [
     coordinator: 'reviewer',
     ctx: { place: 'Bhadra / Amdavad', venue: 'Bhadra Mandir', event: 'Bal Suvarna Mahotsav', year: 2004, month: '02', day: 9 },
     lots: [
-      L('video', [['Mini DVs', 8]], 'scanning', 13, 1),
-      L('audio', [['Cassettes', 7]], 'decision', 6, 0),
-      L('photo', [['120 Film — Negatives', 14]], 'intake', 0, 2),
+      L('video', [['Mini DVs', 5], ['BetaCAM', 3]], 'scanning', 13, 1),
+      L('audio', [['Cassettes', 4], ['Spools', 3]], 'decision', 6, 0),
+      L('photo', [['120 Film — Negatives', 8], ['120 Film — Slides', 6]], 'intake', 0, 2),
     ],
   },
   {
@@ -218,9 +219,9 @@ const PROJECTS: ProjectSpec[] = [
     coordinator: 'lead',
     ctx: { place: 'Gondal', venue: 'Gondal Mandir', event: 'Sharad Purnima', year: 2002, month: '10', day: 21 },
     lots: [
-      L('audio', [['Cassettes', 9]], 'storage', 44, 2),
-      L('photo', [['Print — Album', 15]], 'decision', 1, 1),
-      L('documents', [['Sabha registers', 9]], 'intake', 0, 0),
+      L('audio', [['Cassettes', 5], ['MDC', 4]], 'storage', 44, 2),
+      L('photo', [['Print — Album', 9], ['Print — Print', 6]], 'decision', 1, 1),
+      L('documents', [['Sabha registers', 5], ['Letters', 4]], 'intake', 0, 0),
     ],
   },
   {
@@ -233,9 +234,9 @@ const PROJECTS: ProjectSpec[] = [
     coordinator: 'reviewer',
     ctx: { place: 'Chicago', venue: 'Chicago Mandir', event: 'Mahotsav', year: 2004, month: '09', day: 8 },
     lots: [
-      L('video', [['VHS', 6]], 'metadata', 2, 0, { splitReturn: 1 }),
-      L('audio', [['Cassettes', 5]], 'intake', 0, 1),
-      L('photo', [['Print — Print', 12]], 'discarded', 25, 'admin'),
+      L('video', [['VHS', 4], ['HI8', 2]], 'metadata', 2, 0, { splitReturn: 1 }),
+      L('audio', [['Cassettes', 3], ['Spools', 2]], 'intake', 0, 1),
+      L('photo', [['Print — Print', 8], ['Print — Album', 4]], 'discarded', 25, 'admin'),
     ],
   },
   {
@@ -248,9 +249,9 @@ const PROJECTS: ProjectSpec[] = [
     coordinator: 'lead',
     ctx: { place: 'Mumbai', venue: 'Mumbai Mandir', event: 'Dham Darshan', year: 2001, month: '12', day: 3 },
     lots: [
-      L('video', [['BetaCAM', 5]], 'intake', 0, 0),
-      L('audio', [['Cassettes', 6]], 'intake', 0, null),
-      L('documents', [['Letters', 6]], 'intake', 0, 1),
+      L('video', [['BetaCAM', 3], ['VHS', 2]], 'intake', 0, 0),
+      L('audio', [['Cassettes', 4], ['Spools', 2]], 'intake', 0, null),
+      L('documents', [['Letters', 4], ['Newspaper clippings', 2]], 'intake', 0, 1),
     ],
   },
 ];
@@ -322,7 +323,16 @@ function draftItem(
     base.nameOnCase = `${ctx.event} ${Math.ceil(n / 2)}`;
     base.description = `Live recording, approx ${pick([45, 60, 90])} min`;
   } else if (fmt === 'photo') {
-    const short = subtype.replace(' — ', ' ').replace('35MM Film', '35mm').replace('Negatives', 'negative strip');
+    const short =
+      {
+        '35MM Film — Negatives': '35mm negative strip',
+        '35MM Film — Slides': '35mm slide',
+        '35MM Film — Positives': '35mm positive',
+        '120 Film — Negatives': '120 negative',
+        '120 Film — Slides': '120 slide',
+        'Print — Print': 'print',
+        'Print — Album': 'album page',
+      }[subtype] ?? subtype;
     base.name = `${ctx.event} ${ctx.place} ${ctx.year} — ${short} ${n}`;
     const from = (n - 1) * 6 + 1;
     base.description = `${ctx.venue}; colour; frames ${from}–${from + 5}`;
@@ -393,6 +403,12 @@ export function buildDataset(now = new Date()): Dataset {
   const lead = users.find((u) => u.role === 'lead_reviewer')!;
 
   const seq: Record<string, number> = {};
+  const itemSeq: Record<string, number> = {};
+  const nextItemCode = (prefix: string, origin: string) => {
+    const key = `${prefix}-${origin}`;
+    itemSeq[key] = (itemSeq[key] ?? 0) + 1;
+    return formatItemCode(prefix, origin, itemSeq[key]);
+  };
   const nextCode = (prefix: string, origin: string) => {
     const key = `${prefix}-${origin}`;
     seq[key] = (seq[key] ?? 0) + 1;
@@ -488,7 +504,6 @@ export function buildDataset(now = new Date()): Dataset {
       const primary = ls.lines[0]!;
       const origin = (spec.origin ?? 'OTH') as OriginSource;
       const namingCode = archivedLot ? nextCode(codePrefix(ls.format, primary[0]), origin) : null;
-      const itemBase = namingCode ?? lotReference;
       const reviewer = pick(reviewers);
 
       /* ---- items ---- */
@@ -512,19 +527,17 @@ export function buildDataset(now = new Date()): Dataset {
       let inLine = 0;
       let foundSoFar = 0;
       let taggedSoFar = 0;
-      const unitCodes: { code: string; groupNo: number; itemNo: number }[] = [];
-      for (let g = 1; unitCodes.length < quantity; g += 1) {
-        for (let i = 1; i <= 36 && unitCodes.length < quantity; i += 1) {
-          unitCodes.push({ code: `${itemBase}-${pad2(g)}-${pad2(i)}`, groupNo: g, itemNo: i });
-        }
-      }
-
-      for (const u of unitCodes) {
+      const units = Array.from({ length: quantity }, (_, i) => i);
+      for (const unit of units) {
         while (inLine >= ls.lines[lineIndex]![1]) {
           lineIndex += 1;
           inLine = 0;
         }
         const subtype = ls.lines[lineIndex]![0];
+        const u = {
+          code: nextItemCode(codePrefix(ls.format, subtype), origin),
+          ...itemSlot(unit),
+        };
         inLine += 1;
         n += 1;
         const draft = draftItem(ls.format, subtype, n, spec.ctx, rng);
