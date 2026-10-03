@@ -36,7 +36,7 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /* --------------------------------------------------------------------- team */
 
-const TEAM: { name: string; initials: string; username: string; role: Role }[] = [
+const TEAM: { name: string; initials: string; username: string; role: Role; email?: string }[] = [
   { name: 'M. Patel', initials: 'MP', username: 'm.patel', role: 'volunteer' },
   { name: 'H. Patel', initials: 'HP', username: 'h.patel', role: 'volunteer' },
   { name: 'A. Mehta', initials: 'AM', username: 'a.mehta', role: 'volunteer' },
@@ -44,6 +44,8 @@ const TEAM: { name: string; initials: string; username: string; role: Role }[] =
   { name: 'R. Joshi', initials: 'RJ', username: 'r.joshi', role: 'reviewer' },
   { name: 'Lead Pujya Sant', initials: 'LP', username: 'lead.reviewer', role: 'lead_reviewer' },
   { name: 'S. Dave', initials: 'SD', username: 's.dave', role: 'admin' },
+  // The main admin account (password set in scripts/seed.ts).
+  { name: 'Admin', initials: 'AD', username: 'admin', role: 'admin', email: 'admin@gmail.com' },
 ];
 
 /* ----------------------------------------------------------------- the plan */
@@ -57,8 +59,8 @@ interface LotSpec {
   stage: Stage;
   /** Days since the lot entered its current stage. */
   days: number;
-  /** Index into the volunteers, or null = unassigned (admin only). */
-  assignee: number | null;
+  /** Index into the volunteers, 'admin' = the main admin account, null = unassigned. */
+  assignee: number | 'admin' | null;
   /** Archived lots only: how many items are returned / discarded item by item. */
   splitReturn?: number;
   splitDiscard?: number;
@@ -75,6 +77,8 @@ interface ProjectSpec {
   /** Days since the material was received; null = not recorded yet. */
   receivedDaysAgo: number | null;
   coordinator: 'reviewer' | 'lead';
+  /** Hands every lot of the project to one person (overrides the per-lot assignee). */
+  assignAll?: number | 'admin';
   /** Naming context for the items. */
   ctx: { place: string; venue: string; event: string; year: number; month: string; day: number };
   lots: LotSpec[];
@@ -85,7 +89,7 @@ const L = (
   lines: [string, number][],
   stage: Stage,
   days: number,
-  assignee: number | null,
+  assignee: number | 'admin' | null,
   extra: Partial<LotSpec> = {},
 ): LotSpec => ({ format, lines, stage, days, assignee, ...extra });
 
@@ -98,6 +102,7 @@ const PROJECTS: ProjectSpec[] = [
     origin: 'AHM',
     receivedDaysAgo: 140,
     coordinator: 'reviewer',
+    assignAll: 0,
     ctx: { place: 'Akshardham Gandhinagar', venue: 'Mahelav Shri Swaminarayan Mandir', event: 'Mahelav', year: 2009, month: '12', day: 23 },
     lots: [
       L('video', [['Mini DVs', 9]], 'storage', 12, 0),
@@ -119,7 +124,7 @@ const PROJECTS: ProjectSpec[] = [
       L('video', [['VHS', 7]], 'storage', 9, 1),
       L('photo', [['Print — Print', 20], ['Print — Album', 10]], 'scanning', 5, 2),
       L('documents', [['Invitation cards', 10]], 'metadata', 2, 1),
-      L('prasadi', [['Prasadi', 6]], 'decision', 1, 0),
+      L('prasadi', [['Prasadi', 6]], 'decision', 1, 'admin'),
     ],
   },
   {
@@ -130,6 +135,7 @@ const PROJECTS: ProjectSpec[] = [
     origin: 'OTH',
     receivedDaysAgo: 150,
     coordinator: 'reviewer',
+    assignAll: 1,
     ctx: { place: 'New Delhi', venue: 'Delhi Mandir', event: 'Mandir Pratishtha Utsav', year: 2003, month: '02', day: 14 },
     lots: [
       L('video', [['DV-CAM', 6]], 'mls_tag', 4, 0, { splitDiscard: 1 }),
@@ -162,6 +168,7 @@ const PROJECTS: ProjectSpec[] = [
     origin: 'MUM',
     receivedDaysAgo: 110,
     coordinator: 'lead',
+    assignAll: 2,
     ctx: { place: 'Kolkata', venue: 'Kolkata Mandir', event: 'Janma Jayanti Natak', year: 2003, month: '12', day: 7 },
     lots: [
       L('video', [['Mini DVs', 7]], 'storage', 15, 0),
@@ -178,6 +185,7 @@ const PROJECTS: ProjectSpec[] = [
     origin: 'OTH',
     receivedDaysAgo: 170,
     coordinator: 'reviewer',
+    assignAll: 'admin',
     ctx: { place: 'London', venue: 'London Mandir', event: 'Suvarna Tula', year: 1985, month: '07', day: 20 },
     lots: [
       L('video', [['U-matic', 5]], 'mls_tag', 2, 0),
@@ -227,7 +235,7 @@ const PROJECTS: ProjectSpec[] = [
     lots: [
       L('video', [['VHS', 6]], 'metadata', 2, 0, { splitReturn: 1 }),
       L('audio', [['Cassettes', 5]], 'intake', 0, 1),
-      L('photo', [['Print — Print', 12]], 'discarded', 25, 2),
+      L('photo', [['Print — Print', 12]], 'discarded', 25, 'admin'),
     ],
   },
   {
@@ -380,7 +388,8 @@ export function buildDataset(now = new Date()): Dataset {
   const users = TEAM.map((t) => ({ _id: new Types.ObjectId(), ...t, active: true }));
   const volunteers = users.filter((u) => u.role === 'volunteer');
   const reviewers = users.filter((u) => u.role === 'reviewer');
-  const admin = users.find((u) => u.role === 'admin')!;
+  const admin = users.find((u) => u.username === 's.dave')!;
+  const mainAdmin = users.find((u) => u.username === 'admin')!;
   const lead = users.find((u) => u.role === 'lead_reviewer')!;
 
   const seq: Record<string, number> = {};
@@ -468,7 +477,8 @@ export function buildDataset(now = new Date()): Dataset {
       const lotReference = `LOT-2026-${String(lotSeq).padStart(4, '0')}`;
       const stageEnteredAt = daysAgo(ls.days);
       const dateReceived = received && received.getTime() <= stageEnteredAt.getTime() ? received : (received ? stageEnteredAt : null);
-      const assignee = ls.assignee === null ? null : volunteers[ls.assignee]!;
+      const who = spec.assignAll ?? ls.assignee;
+      const assignee = who === null ? null : who === 'admin' ? mainAdmin : volunteers[who]!;
 
       const decidedStages: Stage[] = ['metadata', 'scanning', 'mls_tag', 'storage'];
       const archivedLot = decidedStages.includes(ls.stage);

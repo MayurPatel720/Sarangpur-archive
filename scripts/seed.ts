@@ -73,7 +73,13 @@ async function main() {
   // created with `scripts/create-user.ts`.
   const devPassword = process.env.SEED_DEV_PASSWORD || SEED_DEV_PASSWORD;
   const passwordHash = await hashPassword(devPassword);
-  const usersWithPasswords = users.map((u) => ({ ...u, passwordHash }));
+  // The main admin signs in with `admin` OR the email below. Override with
+  // SEED_ADMIN_PASSWORD; change it after first login.
+  const adminPasswordHash = await hashPassword(process.env.SEED_ADMIN_PASSWORD || 'admin123');
+  const usersWithPasswords = users.map((u) => ({
+    ...u,
+    passwordHash: u.username === 'admin' ? adminPasswordHash : passwordHash,
+  }));
 
   console.log(`→ inserting ${usersWithPasswords.length} users…`);
   await insertChunked(User, usersWithPasswords);
@@ -172,7 +178,8 @@ async function main() {
   console.log(`  masters        ${(bytes / 1e12).toFixed(1)} TB`);
   console.log('');
   console.log(`  Every seed user signs in with: ${devPassword}`);
-  console.log('  (try s.dave — the admin). Now run `npm run dev` and open http://localhost:3000');
+  console.log("  Main admin: admin@gmail.com (username 'admin').");
+  console.log('  Also try s.dave. Now run `npm run dev` and open http://localhost:3000');
   console.log('');
 
   await mongoose.disconnect();
