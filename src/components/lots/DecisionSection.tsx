@@ -76,13 +76,24 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
 
         {lot.stage === 'intake' ? (
           <div className="flex flex-col gap-2">
-            <p className="m-0 text-[13px] text-ink-2">
-              Intake is complete. Sending this lot to the decision queue locks nothing —
-              the record stays editable until a decision is recorded.
-            </p>
+            {lot.intakeMissing.length > 0 ? (
+              <div role="note" className="rounded-[6px] border border-line bg-surface-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
+                <span className="font-semibold text-ink">Not ready for decision.</span> Still to fill in:{' '}
+                {lot.intakeMissing.join(', ')}. Use Edit on this record
+                {lot.syncProject ? ' (it syncs to the whole project)' : ''}.
+              </div>
+            ) : (
+              <p className="m-0 text-[13px] text-ink-2">
+                Intake is complete. Sending this lot to the decision queue locks nothing —
+                the record stays editable until a decision is recorded.
+              </p>
+            )}
             {canSubmit ? (
               <div>
-                <PrimaryButton disabled={submitMut.isPending} onClick={() => submitMut.mutate()}>
+                <PrimaryButton
+                  disabled={submitMut.isPending || lot.intakeMissing.length > 0}
+                  onClick={() => submitMut.mutate()}
+                >
                   {submitMut.isPending ? 'Submitting…' : 'Submit for decision'}
                 </PrimaryButton>
               </div>

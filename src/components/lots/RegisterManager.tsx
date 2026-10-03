@@ -99,6 +99,11 @@ function columnsFor(stageLabels: (stage: string) => string): Column<LotRow>[] {
     ),
   },
   {
+    key: 'assignee',
+    header: 'Assignee',
+    render: (r) => <span className="whitespace-nowrap">{r.assigneeName ?? '—'}</span>,
+  },
+  {
     key: 'receiver',
     header: 'Receiver',
     render: (r) => <span className="whitespace-nowrap">{r.receiverName}</span>,
@@ -106,7 +111,7 @@ function columnsFor(stageLabels: (stage: string) => string): Column<LotRow>[] {
   ];
 }
 
-function toParams(filters: LotFilters, page: number, pageSize: number): Record<string, string> {
+function toParams(filters: LotFilters, page: number, pageSize: number, meId?: string): Record<string, string> {
   const p: Record<string, string> = {
     page: String(page),
     pageSize: String(pageSize),
@@ -118,6 +123,8 @@ function toParams(filters: LotFilters, page: number, pageSize: number): Record<s
   if (filters.format) p.format = filters.format;
   if (filters.dataType) p.dataType = filters.dataType;
   if (filters.receiver.trim()) p.receiver = filters.receiver.trim();
+  if (filters.assignee === 'me') p.assignee = meId ?? '';
+  else if (filters.assignee) p.assignee = filters.assignee;
   if (filters.returnStatus) p.returnStatus = filters.returnStatus;
   const from = filters.receivedFrom.trim();
   const to = filters.receivedTo.trim();
@@ -133,10 +140,12 @@ export function RegisterManager({
   initialStage,
   initialFormat,
   initialDataType,
+  initialAssignee,
 }: {
   initialStage?: string;
   initialFormat?: string;
   initialDataType?: string;
+  initialAssignee?: string;
 } = {}) {
   const router = useRouter();
   const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
@@ -151,6 +160,7 @@ export function RegisterManager({
     stage: cleanStage,
     format: cleanFormat,
     dataType: cleanDataType,
+    assignee: initialAssignee ?? '',
   });
   const me = useMe();
   const stages = useReferenceList('stage');
@@ -170,13 +180,14 @@ export function RegisterManager({
   }, [filters.q]);
 
   const params = useMemo(
-    () => toParams({ ...filters, q: debouncedQ }, page, pageSize),
-    [filters, debouncedQ, page, pageSize],
+    () => toParams({ ...filters, q: debouncedQ }, page, pageSize, me.data?.id),
+    [filters, debouncedQ, page, pageSize, me.data?.id],
   );
   const key = useMemo(() => JSON.stringify(params), [params]);
   const query = useQuery({
     queryKey: queryKeys.lots.list(key),
     queryFn: () => lotsApi.list(params),
+    // 'Assigned to me' needs the signed-in id before the first request.
     enabled: !!me.data && can,
   });
 

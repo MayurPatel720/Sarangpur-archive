@@ -1,6 +1,11 @@
 'use client';
 
+import { useState } from 'react';
 import type { LotDetailResponse } from '@/types/lot';
+import { useMe } from '@/hooks/useCan';
+import { GhostButton } from '@/components/ui/Form';
+import { EditMediaLinesDialog } from './EditMediaLinesDialog';
+import { useLotAccess } from './LotProjectBar';
 import { prettyEnum, num } from '@/lib/format';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Panel, PanelHeader } from '@/components/ui/primitives';
@@ -71,6 +76,11 @@ const COLUMNS: Column<LineRow>[] = [
  * `lineIndex`), so this renders with no extra query.
  */
 export function MediaLinesPanel({ lot }: { lot: DetailLot }) {
+  const me = useMe();
+  const access = useLotAccess(lot);
+  const [editing, setEditing] = useState(false);
+  const canEditQty =
+    lot.stage === 'intake' && access.canWork && Boolean(me.data?.grants.includes('lot:edit'));
   const rows: LineRow[] = lot.mediaLines.map((l, i) => {
     const stats = lot.lineStats.find((s) => s.lineIndex === i) ?? null;
     return {
@@ -89,7 +99,13 @@ export function MediaLinesPanel({ lot }: { lot: DetailLot }) {
 
   return (
     <Panel>
-      <PanelHeader title={`Media lines (${rows.length})`} />
+      <PanelHeader title={`Media lines (${rows.length})`}>
+        {canEditQty ? (
+          <span className="ml-auto">
+            <GhostButton onClick={() => setEditing(true)}>Edit quantities</GhostButton>
+          </span>
+        ) : null}
+      </PanelHeader>
       <DataTable
         columns={COLUMNS}
         rows={rows}
@@ -97,6 +113,7 @@ export function MediaLinesPanel({ lot }: { lot: DetailLot }) {
         emptyMessage="No media lines recorded for this lot yet."
         getRowKey={(r) => String(r.index)}
       />
+      {editing ? <EditMediaLinesDialog lot={lot} onClose={() => setEditing(false)} /> : null}
     </Panel>
   );
 }

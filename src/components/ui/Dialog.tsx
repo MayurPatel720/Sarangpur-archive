@@ -11,11 +11,14 @@ export function Dialog({
   subtitle,
   onClose,
   children,
+  wide = false,
 }: {
   title: string;
   subtitle?: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  /** Wider panel for table-heavy content (media lines). Still full-width on phones. */
+  wide?: boolean;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -43,7 +46,7 @@ export function Dialog({
         onClick={onClose}
         className="absolute inset-0 bg-black/40 border-0 cursor-default"
       />
-      <div className="relative w-full sm:w-[520px] sm:max-w-[520px] max-h-[92dvh] overflow-y-auto overflow-x-hidden bg-surface border border-line rounded-t-[12px] sm:rounded-[12px] shadow-panel">
+      <div className={`relative w-full ${wide ? 'sm:w-[900px] sm:max-w-[calc(100vw-3rem)]' : 'sm:w-[520px] sm:max-w-[520px]'} max-h-[92dvh] overflow-y-auto overflow-x-hidden bg-surface border border-line rounded-t-[12px] sm:rounded-[12px] shadow-panel`}>
         <div className="sticky top-0 z-10 bg-surface border-b border-line-soft px-4 md:px-5 py-3 flex flex-col items-start text-left gap-0.5">
           <h2 className="m-0 text-[14px] font-semibold leading-snug text-ink break-words text-left">{title}</h2>
           {subtitle ? (

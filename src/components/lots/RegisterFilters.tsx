@@ -13,6 +13,8 @@ export interface LotFilters {
   format: string;
   dataType: string;
   receiver: string;
+  /** User id, or 'me' for the signed-in user. */
+  assignee: string;
   returnStatus: string;
   sort: string;
   receivedFrom: string;
@@ -26,6 +28,7 @@ export const EMPTY_FILTERS: LotFilters = {
   format: '',
   dataType: '',
   receiver: '',
+  assignee: '',
   returnStatus: '',
   sort: '-dateReceived',
   receivedFrom: '',
@@ -56,6 +59,7 @@ export function RegisterFilters({
     filters.format !== '' ||
     filters.dataType !== '' ||
     filters.receiver !== '' ||
+    filters.assignee !== '' ||
     filters.returnStatus !== '' ||
     filters.receivedFrom !== '' ||
     filters.receivedTo !== '';
@@ -148,6 +152,21 @@ export function RegisterFilters({
               ) : null}
             </Select>
           )}
+        </Field>
+        <Field label="Assignee">
+          <Select
+            value={filters.assignee}
+            onChange={(e) => set('assignee')(e.target.value)}
+            aria-label="Assignee"
+          >
+            <option value="">Anyone</option>
+            <option value="me">Assigned to me</option>
+            {(receivers.data?.users ?? []).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Return status">
           <Select value={filters.returnStatus} onChange={(e) => set('returnStatus')(e.target.value)}>

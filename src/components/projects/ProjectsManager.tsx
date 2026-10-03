@@ -13,7 +13,6 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Field, TextInput } from '@/components/ui/Form';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
-import { ProjectFormDialog } from './ProjectFormDialog';
 
 type ProjectRow = ProjectListResponse['rows'][number];
 
@@ -61,29 +60,18 @@ export function ProjectsManager() {
   const me = useMe();
   const canView = me.data ? me.data.grants.includes('project:view') : false;
   const canCreate = me.data ? me.data.grants.includes('project:create') : false;
-  const [showNew, setShowNew] = useState(false);
-  // Sidebar "New project" tile deep-links /projects?new=1 — open the dialog.
+  // Legacy sidebar deep-link /projects?new=1 → the wizard page.
   useEffect(() => {
     if (me.data && canCreate && new URLSearchParams(window.location.search).get('new') === '1') {
-      setShowNew(true);
+      router.replace('/projects/new');
     }
-  }, [me.data, canCreate]);
+  }, [me.data, canCreate, router]);
 
   const [debounced, setDebounced] = useState('');
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(search.trim()), 300);
     return () => window.clearTimeout(t);
   }, [search]);
-
-  /** Close + drop `?new=1` so the sidebar tile can re-trigger the dialog. */
-  const closeNew = () => {
-    setShowNew(false);
-    const url = new URL(window.location.href);
-    if (url.searchParams.get('new') === '1') {
-      url.searchParams.delete('new');
-      router.replace(`${url.pathname}${url.search}`);
-    }
-  };
 
   const key = useMemo(() => JSON.stringify({ page, pageSize, search: debounced }), [page, pageSize, debounced]);
   const query = useQuery({
@@ -137,7 +125,7 @@ export function ProjectsManager() {
           <div className="sm:ml-auto">
             <button
               type="button"
-              onClick={() => setShowNew(true)}
+              onClick={() => router.push('/projects/new')}
               className="inline-flex items-center justify-center h-10 px-4 bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold cursor-pointer"
             >
               New project
@@ -194,8 +182,6 @@ export function ProjectsManager() {
           />
         ) : null}
       </Panel>
-
-      {showNew ? <ProjectFormDialog mode="create" onClose={closeNew} /> : null}
     </div>
   );
 }

@@ -27,6 +27,7 @@ import {
   IconBox,
   IconTag,
   IconPlus,
+  IconUser,
   IconReturn,
   IconDiscard,
 } from '@/components/ui/icons';
@@ -36,8 +37,9 @@ type NavItem = { icon: React.ElementType; label: string; href: string };
 const WORKFLOW_ITEMS = [
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard', perm: 'dashboard:view' },
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
+  { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
   { icon: IconBox, label: 'Projects', href: '/projects', perm: 'project:view' },
-  { icon: IconPlus, label: 'New project', href: '/projects?new=1', perm: 'project:create' },
+  { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
   { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconAlertTriangle, label: 'Alerts', href: '/alerts', perm: null },
 ] as const;
@@ -249,7 +251,7 @@ export function Sidebar() {
       item: isPicker ? item : { ...item, href: scopedHref(item.href, ctxFormat) },
       active:
         item.href === '/register'
-          ? onRegister && pathname !== '/register/new' && !formatParam && !stageParam
+          ? onRegister && pathname !== '/register/new' && !formatParam && !stageParam && searchParams.get('assignee') !== 'me'
           : isPicker
             ? pathname === '/dashboard' || pathname.startsWith('/dashboard/')
             : pathname === bare && queryMatches,

@@ -21,13 +21,15 @@ export type ContactRow = LotContactInput & { id: string };
  */
 export function makeContactColumns(
   update: (id: string, patch: Partial<ContactRow>) => void,
+  opts: { nameRequired?: boolean } = {},
 ): EditableColumn<ContactRow>[] {
+  const nameRequired = opts.nameRequired ?? true;
   return [
     {
       key: 'name',
       header: 'Name',
       className: 'min-w-[160px]',
-      required: true,
+      required: nameRequired,
       render: ({ row, rowId, rowLabel, error, autoFocus }) => (
         <TextInput
           aria-label={`${rowLabel}, name`}

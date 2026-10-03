@@ -23,13 +23,15 @@ import {
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { GhostButton } from '@/components/ui/Form';
+import { GhostButton, Select } from '@/components/ui/Form';
+import { useUserPicker } from '@/hooks/useUserPicker';
 import { IconButton } from '@/components/ui/IconButton';
 import { useToast } from '@/components/ui/Toast';
 import type { ProjectDetailResponse } from '@/types/project';
 import type { Severity } from '@/types/dashboard';
 import { ProjectFormDialog } from './ProjectFormDialog';
 import { AssignLotDialog } from './AssignLotDialog';
+import { AddMediaDialog } from './AddMediaDialog';
 
 type LotRow = ProjectDetailResponse['lots']['rows'][number];
 type ActivityEntry = ProjectDetailResponse['recentActivity'][number];
@@ -61,7 +63,17 @@ const lotColumns = (stageLabel: (s: string) => string): Column<LotRow>[] => [
   {
     key: 'owner',
     header: 'Owner',
-    render: (r) => <span className="truncate">{r.ownerName}</span>,
+    render: (r) => <span className="truncate">{r.ownerName || '—'}</span>,
+  },
+  {
+    key: 'assignee',
+    header: 'Assignee',
+    render: (r) =>
+      r.assigneeName ? (
+        <span className="whitespace-nowrap">{r.assigneeName}</span>
+      ) : (
+        <Badge severity="warning">Unassigned</Badge>
+      ),
   },
   {
     key: 'media',
@@ -122,6 +134,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const { page, pageSize, setPage, setPageSize } = useUrlPagination(25, 'lots');
   const [showEdit, setShowEdit] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
+  const [showAddMedia, setShowAddMedia] = useState(false);
+  const users = useUserPicker();
   const [removeTarget, setRemoveTarget] = useState<LotRow | null>(null);
 
   const canView = me.data ? me.data.grants.includes('project:view') : false;
@@ -151,6 +165,16 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         e instanceof ApiRequestError ? e.message : undefined,
       );
     },
+  });
+
+  const reassign = useMutation({
+    mutationFn: (v: { lotId: string; assigneeId: string | null }) => projectsApi.setAssignee(v.lotId, v.assigneeId),
+    onSuccess: (res) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.detail(res.lotId) });
+      toast.success(res.assigneeName ? `Assigned to ${res.assigneeName}` : 'Assignee removed');
+    },
+    onError: (e) => toast.error('Could not change assignee', e instanceof ApiRequestError ? e.message : undefined),
   });
 
   if (me.isLoading || detail.isLoading) {
@@ -211,8 +235,10 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             ) : null}
           </div>
           {canEdit ? (
-            <div className="sm:ml-auto flex-shrink-0">
+            <div className="sm:ml-auto flex flex-wrap gap-2 flex-shrink-0">
               <GhostButton onClick={() => setShowEdit(true)}>Edit</GhostButton>
+              <GhostButton onClick={() => router.push(`/projects/${projectId}/shared`)}>Shared details</GhostButton>
+              <GhostButton onClick={() => setShowAddMedia(true)}>Add media</GhostButton>
             </div>
           ) : null}
         </div>
@@ -226,12 +252,12 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           <Definition label="Start">{project.startDate ? date(project.startDate) : '—'}</Definition>
           <Definition label="Target">{project.targetDate ? date(project.targetDate) : '—'}</Definition>
           <div className="col-span-2 md:col-span-4">
-            <Definition label="Team">
+            <Definition label="Team (assignees)">
               {project.team.length > 0 ? (
                 <span className="flex flex-wrap gap-1.5">
                   {project.team.map((t) => (
                     <Badge key={t.userId} severity="neutral">
-                      {t.userName}{t.label ? ` · ${t.label}` : ''}
+                      {t.userName} · {t.lotCount} {t.lotCount === 1 ? 'lot' : 'lots'}
                     </Badge>
                   ))}
                 </span>
@@ -240,6 +266,62 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
               )}
             </Definition>
           </div>
+        </div>
+      </Panel>
+
+      {project.missing.length > 0 ? (
+        <div role="note" className="rounded-[8px] border border-line bg-surface-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
+          <span className="font-semibold text-ink">Still to fill in: {project.missing.join(', ')}.</span>{' '}
+          Assignees can enter these on their lot — they sync to the whole project, and lots can&apos;t leave Intake until
+          they&apos;re filled.
+          {canEdit ? (
+            <>
+              {' '}
+              <Link href={`/projects/${projectId}/shared`} className="text-accent no-underline hover:underline">
+                Fill in now
+              </Link>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <Panel>
+        <PanelHeader title="Assignments" />
+        <div className="p-3 md:p-4">
+          {project.lotsByFormat.length === 0 ? (
+            <p className="m-0 text-[12.5px] text-ink-3">No lots yet.</p>
+          ) : (
+            <ul className="m-0 p-0 list-none flex flex-col gap-2">
+              {project.lotsByFormat.map((l) => (
+                <li
+                  key={l.lotId}
+                  className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_240px] gap-2 sm:gap-3 items-center rounded-[6px] border border-line-soft p-3"
+                >
+                  <Link href={`/register/${l.lotId}`} className="min-w-0 no-underline">
+                    <span className="font-mono text-[12.5px] font-semibold text-ink">{l.lotReference}</span>
+                    <span className="text-[12px] text-ink-3 capitalize"> · {l.format} · {num(l.quantity)} items</span>
+                  </Link>
+                  {canAssign ? (
+                    <Select
+                      value={l.assigneeId ?? ''}
+                      disabled={reassign.isPending}
+                      onChange={(e) => reassign.mutate({ lotId: l.lotId, assigneeId: e.target.value || null })}
+                      aria-label={`Assignee for ${l.lotReference}`}
+                    >
+                      <option value="">Unassigned (admin only)</option>
+                      {(users.data?.users ?? []).map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <span className="text-[12.5px] text-ink-2">{l.assigneeName ?? 'Unassigned'}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </Panel>
 
@@ -341,10 +423,17 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       </p>
 
       {showEdit ? (
-        <ProjectFormDialog mode="edit" project={project} onClose={() => setShowEdit(false)} />
+        <ProjectFormDialog project={project} onClose={() => setShowEdit(false)} />
       ) : null}
       {showAssign ? (
         <AssignLotDialog projectId={projectId} projectCode={project.code} onClose={() => setShowAssign(false)} />
+      ) : null}
+      {showAddMedia ? (
+        <AddMediaDialog
+          projectId={projectId}
+          existingFormats={[...new Set(project.lotsByFormat.map((l) => l.format))]}
+          onClose={() => setShowAddMedia(false)}
+        />
       ) : null}
       {removeTarget ? (
         <ConfirmDialog

@@ -227,6 +227,11 @@ function QueueTableInner({
                   ),
                 },
                 {
+                  key: 'assignee',
+                  header: 'Assignee',
+                  render: (r) => <span className="text-ink-2 whitespace-nowrap">{r.assigneeName ?? '—'}</span>,
+                },
+                {
                   key: 'received',
                   header: 'Received',
                   render: (r) => <span className="text-ink-2">{date(r.dateReceived)}</span>,

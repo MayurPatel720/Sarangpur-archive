@@ -8,7 +8,7 @@ import { queryKeys } from '@/lib/query-keys';
 import type { LotContactInput, LotDetailResponse, LotPatchBody } from '@/types/lot';
 import { STAGE_LABELS } from '@/lib/domain';
 import { useReferenceList } from '@/hooks/useReferenceList';
-import { date, dateTime12, num, prettyEnum, severityMark } from '@/lib/format';
+import { date, dateTime12, dmyToIso, num, prettyEnum, severityMark } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
 import { Field, FormError, GhostButton, PrimaryButton, Textarea, TextInput } from '@/components/ui/Form';
 import {
@@ -41,6 +41,7 @@ import { MediaLinesPanel } from './MediaLinesPanel';
 import { ItemsPanel } from './ItemsPanel';
 import { ActivityPanel } from './ActivityPanel';
 import { LotProjectsSection } from './LotProjectsSection';
+import { LotProjectBar } from './LotProjectBar';
 
 type LotDetail = LotDetailResponse['lot'];
 
@@ -698,11 +699,12 @@ function LotDetailInner({ lotId }: { lotId: string }) {
   const { tab, setTab } = useUrlTab(TAB_IDS, 'overview');
   const originList = useReferenceList('originSource');
   const stageList = useReferenceList('stage');
-  const canEdit = me.data ? me.data.grants.includes('lot:edit') : false;
+  const canEditRole = me.data ? me.data.grants.includes('lot:edit') : false;
   const [editing, setEditing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Edit state (initialised when entering edit mode)
+  const [dateReceived, setDateReceived] = useState('');
   const [originSource, setOriginSource] = useState('');
   const [owner, setOwner] = useState<ContactRow>({ ...EMPTY_CONTACT, id: 'owner' });
   const [pocs, setPocs] = useState<ContactRow[]>([]);
@@ -762,7 +764,17 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     );
   }
 
+  // The assignee rule (server-enforced in withAudit): an assigned / project lot is
+  // changeable only by its assignee or a project:assign holder.
+  const restricted = Boolean(lot.assignee) || Boolean(lot.syncProject);
+  const canWork =
+    !restricted ||
+    Boolean(me.data?.grants.includes('project:assign')) ||
+    Boolean(me.data && lot.assignee && lot.assignee.id === me.data.id);
+  const canEdit = canEditRole && canWork;
+
   const startEdit = () => {
+    setDateReceived(lot.dateReceived ? date(lot.dateReceived) : '');
     setOriginSource(lot.originSource ?? '');
     setOwner({ ...contactToInput(lot.owner), id: 'owner' });
     editRowN.current = 0;
@@ -784,11 +796,19 @@ function LotDetailInner({ lotId }: { lotId: string }) {
 
   const save = () => {
     setFormError(null);
-    if (!owner.name.trim()) return setFormError('Owner name is required.');
+    // A project lot may still be waiting for its owner — only block CLEARING one that exists.
+    if (!owner.name.trim() && lot.owner.name) return setFormError('Owner name is required.');
+    if (!owner.name.trim() && (owner.phone || owner.email || owner.address)) {
+      return setFormError('Owner name is required once other owner details are filled.');
+    }
+    if (dateReceived.trim() && !dmyToIso(dateReceived)) {
+      return setFormError('Date received must be dd/mm/yyyy (e.g. 23/09/2026).');
+    }
+    if (!dateReceived.trim() && lot.dateReceived) return setFormError('Date received cannot be cleared.');
     if (!mediaSubtype.trim()) return setFormError('Media sub-type is required.');
     const qtd = Number(quantityToDigitize);
     if (!Number.isInteger(qtd) || qtd < 0) return setFormError('Quantity to digitize must be 0 or more.');
-    if (!conditionPhotoUrl.trim()) return setFormError('A condition photo reference is required.');
+    if (!conditionPhotoUrl.trim() && lot.conditionPhotoUrl) return setFormError('A condition photo reference is required.');
     for (const [i, p] of pocs.entries()) {
       if (!p.name.trim()) return setFormError(`Point of contact ${i + 1} needs a name.`);
     }
@@ -797,9 +817,14 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     }
 
     const body: Record<string, unknown> = { version: lot.version };
+    const newDateIso = dateReceived.trim() ? dmyToIso(dateReceived) : null;
+    const oldDateIso = lot.dateReceived ? lot.dateReceived.slice(0, 10) : null;
+    if (newDateIso && newDateIso !== oldDateIso) {
+      body.dateReceived = new Date(`${newDateIso}T00:00:00`).toISOString();
+    }
     if ((lot.originSource ?? '') !== originSource && originSource) body.originSource = originSource;
     const cleanOwner = cleanContact(owner);
-    if (!sameContact(contactToInput(lot.owner), owner)) body.owner = cleanOwner;
+    if (owner.name.trim() && !sameContact(contactToInput(lot.owner), owner)) body.owner = cleanOwner;
     const cleanPocs = pocs.map(cleanContact);
     if (JSON.stringify(lot.pointsOfContact.map(contactToInput).map(cleanContact)) !== JSON.stringify(cleanPocs)) {
       body.pointsOfContact = cleanPocs;
@@ -812,7 +837,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     if (lot.quantityToDigitize !== qtd) body.quantityToDigitize = qtd;
     if ((lot.quantityRemarks ?? '') !== quantityRemarks.trim()) body.quantityRemarks = quantityRemarks.trim() || null;
     if ((lot.conditionNotes ?? '') !== conditionNotes.trim()) body.conditionNotes = conditionNotes.trim() || null;
-    if ((lot.conditionPhotoUrl ?? '') !== conditionPhotoUrl.trim()) body.conditionPhotoUrl = conditionPhotoUrl.trim();
+    if (conditionPhotoUrl.trim() && (lot.conditionPhotoUrl ?? '') !== conditionPhotoUrl.trim()) body.conditionPhotoUrl = conditionPhotoUrl.trim();
     if ((lot.reasonForSending ?? '') !== reasonForSending.trim()) body.reasonForSending = reasonForSending.trim() || null;
     if ((lot.senderRemarks ?? '') !== senderRemarks.trim()) body.senderRemarks = senderRemarks.trim() || null;
     const rights = {
@@ -853,7 +878,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
   const provenance = [
     `${num(lot.quantity)} × ${lot.mediaSubtypeLabel}`,
     originLabel,
-    `Received ${date(lot.dateReceived)} · ${lot.receiver.name}`,
+    `${lot.dateReceived ? `Received ${date(lot.dateReceived)}` : 'Date received not set'} · ${lot.receiver.name}`,
     lot.namingCode ? `Naming code ${lot.namingCode}` : 'Naming code issued at decision',
     `Record v${lot.version}`,
   ]
@@ -891,7 +916,16 @@ function LotDetailInner({ lotId }: { lotId: string }) {
           <div className="p-3 md:p-4 flex flex-col gap-5">
             <StepBlocks>
               <FormSection legend="Media &amp; origin">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <Field label="Date received">
+                    <TextInput
+                      value={dateReceived}
+                      onChange={(e) => setDateReceived(e.target.value)}
+                      placeholder="dd/mm/yyyy"
+                      inputMode="numeric"
+                      autoComplete="off"
+                    />
+                  </Field>
                   <Field label="Origin source">
                     <RefSelect
                       listKey="originSource"
@@ -1057,6 +1091,8 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <Stepper stage={lot.stage} />
       </header>
 
+      <LotProjectBar lot={lot} />
+
       <FormError message={formError} />
 
       <Tabs tabs={tabs} value={tab} onChange={(id) => setTab(id as TabId)} ariaLabel="Lot record sections" />
@@ -1072,7 +1108,10 @@ function LotDetailInner({ lotId }: { lotId: string }) {
       </TabPanel>
 
       <TabPanel id="workflow" active={tab === 'workflow'}>
-        <WorkflowSteps lot={lot} onChanged={onChanged} />
+        {/* A disabled fieldset disables every native control inside — the server rejects the rest. */}
+        <fieldset disabled={!canWork} className="m-0 p-0 border-0 min-w-0 flex flex-col gap-3.5 md:gap-4 disabled:opacity-70">
+          <WorkflowSteps lot={lot} onChanged={onChanged} />
+        </fieldset>
       </TabPanel>
 
       <TabPanel id="record" active={tab === 'record'}>

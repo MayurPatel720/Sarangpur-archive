@@ -10,9 +10,9 @@ export const metadata: Metadata = {
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ stage?: string; format?: string; dataType?: string }>;
+  searchParams: Promise<{ stage?: string; format?: string; dataType?: string; assignee?: string }>;
 }) {
-  const { stage, format, dataType } = await searchParams;
+  const { stage, format, dataType, assignee } = await searchParams;
   // Only a real format name locks the list; bogus values fall back to global.
   const initialFormat =
     format && (FORMATS as readonly string[]).includes(format) ? format : undefined;
@@ -22,6 +22,7 @@ export default async function RegisterPage({
         initialStage={stage}
         initialFormat={initialFormat}
         initialDataType={dataType}
+        initialAssignee={assignee === 'me' ? 'me' : undefined}
       />
     </Suspense>
   );
