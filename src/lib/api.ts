@@ -110,14 +110,21 @@ async function authorize(
   }
 
   const { Role } = await import('@/models/Role');
-  const { can } = await import('@/server/permissions');
+  const { can, SYSTEM_ROLE_GRANTS } = await import('@/server/permissions');
   const { connectToDatabase } = await import('@/lib/mongo');
   await connectToDatabase();
   const roleDoc = await Role.findOne({ key: session.user.roleKey }).lean();
   if (!roleDoc || !roleDoc.active) {
     throw new HttpError(403, 'Your role is no longer active.');
   }
-  if (permission && !can(roleDoc.permissions, permission)) {
+  // Self-heal: the built-in `admin` role always holds at least its seed grants, so an
+  // admin role document created before a permission shipped (format:*, project:*, …)
+  // can never lock the admin out. Append-only — extra grants on the document are kept.
+  const grants =
+    roleDoc.key === 'admin'
+      ? [...new Set([...roleDoc.permissions, ...SYSTEM_ROLE_GRANTS.admin])]
+      : roleDoc.permissions;
+  if (permission && !can(grants, permission)) {
     throw new HttpError(403, 'Your role does not allow this action.');
   }
 
@@ -125,7 +132,7 @@ async function authorize(
     userId: session.user.id,
     userName: session.user.name ?? 'Unknown',
     roleKey: session.user.roleKey,
-    grants: roleDoc.permissions,
+    grants,
   };
 }
 
