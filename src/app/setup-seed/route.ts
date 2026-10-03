@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { HttpError, authorize } from '@/lib/api';
 import { connectToDatabase } from '@/lib/mongo';
 import { seedDatabase } from '../../../scripts/seed-core';
 
@@ -10,9 +10,10 @@ export const maxDuration = 60;
  *
  * DESTRUCTIVE: wipes users, roles, projects, lots, items, activity and attachments in
  * the configured database, then loads the demo archive and the main admin account.
- * Dropdown lists and settings survive. Disabled unless the `SEED_TOKEN` environment
- * variable is set (12+ characters); a request must present it AND type WIPE.
- * DELETE THIS FILE (and its entry in src/proxy.ts) once the data is loaded.
+ * Dropdown lists and settings survive. Requires a signed-in user holding
+ * `user:manage` (admin) AND typing WIPE. After it runs, the signed-in account no
+ * longer exists — sign in again as admin@gmail.com.
+ * DELETE THIS FILE once the data is loaded.
  */
 
 const page = (body: string, status = 200) =>
@@ -24,23 +25,30 @@ const page = (body: string, status = 200) =>
     { status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } },
   );
 
-function tokenOk(given: string): boolean {
-  const expected = process.env.SEED_TOKEN ?? '';
-  if (expected.length < 12) return false;
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+async function requireAdmin(): Promise<Response | null> {
+  try {
+    await authorize('user:manage');
+    return null;
+  } catch (e) {
+    const status = e instanceof HttpError ? e.status : 500;
+    return page(
+      `<h2>${status === 401 ? 'Sign in first' : 'Admins only'}</h2><p>${
+        status === 401
+          ? 'Open the site, sign in as an admin, then come back to this page.'
+          : 'Your role cannot load demo data. Sign in as an admin.'
+      }</p>`,
+      status,
+    );
+  }
 }
 
 export async function GET() {
-  if ((process.env.SEED_TOKEN ?? '').length < 12) {
-    return page('<h2>Disabled</h2><p>Set a <code>SEED_TOKEN</code> environment variable (12+ characters) and redeploy.</p>', 404);
-  }
+  const denied = await requireAdmin();
+  if (denied) return denied;
   return page(
     `<h2>Load demo data</h2>
-     <p><b>This deletes all users, roles, lots, items and activity</b> in this database, then loads 10 projects / 35 lots and the admin account <code>admin@gmail.com</code>.</p>
+     <p><b>This deletes all users, roles, lots, items and activity</b> in this database, then loads 10 projects / 35 lots and the admin account <code>admin@gmail.com</code>. You will be signed out; sign in again as that account.</p>
      <form method="post">
-       <input name="token" type="password" placeholder="SEED_TOKEN" autocomplete="off" required>
        <input name="confirm" placeholder="Type WIPE to confirm" autocomplete="off" required>
        <button>Wipe and load demo data</button>
      </form>`,
@@ -48,11 +56,12 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await requireAdmin();
+  if (denied) return denied;
   const form = await req.formData();
-  const token = String(form.get('token') ?? '');
   const confirm = String(form.get('confirm') ?? '').trim();
-  if (!tokenOk(token) || confirm !== 'WIPE') {
-    return page('<h2>Refused</h2><p>Wrong token, or you did not type WIPE.</p>', 403);
+  if (confirm !== 'WIPE') {
+    return page('<h2>Not confirmed</h2><p>You did not type WIPE. Nothing was changed.</p>', 400);
   }
   const lines: string[] = [];
   try {
@@ -64,7 +73,7 @@ export async function POST(req: Request) {
       `  users ${r.users} · projects ${r.projects} · lots ${r.lots} · items ${r.items}`,
       "  Sign in: admin@gmail.com (or username 'admin'). Other seed users: password per SEED_DEV_PASSWORD.",
       '',
-      'Now delete src/app/setup-seed and remove SEED_TOKEN.',
+      'Now delete src/app/setup-seed.',
     );
     return page(`<h2>Done</h2><pre>${lines.join('\n')}</pre>`);
   } catch (e) {

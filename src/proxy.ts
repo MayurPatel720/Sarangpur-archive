@@ -14,7 +14,7 @@ import { getToken } from 'next-auth/jwt';
  */
 
 // Health is unauthenticated so uptime checks and the login screen can poll it.
-const PUBLIC = [/^\/login$/, /^\/api\/auth\//, /^\/api\/health$/, /^\/setup-seed$/];
+const PUBLIC = [/^\/login$/, /^\/api\/auth\//, /^\/api\/health$/];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

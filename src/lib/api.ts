@@ -100,7 +100,7 @@ export interface MutationContext {
  * Imported lazily by callers so `lib/api.ts` stays importable from scripts and
  * tests that never touch auth.
  */
-async function authorize(
+export async function authorize(
   permission?: import('@/server/permissions').Permission,
 ): Promise<MutationContext> {
   const { auth } = await import('@/lib/auth');
