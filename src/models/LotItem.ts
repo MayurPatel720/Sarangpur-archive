@@ -38,6 +38,54 @@ const lotItemSchema = new Schema(
     taggedInMls: { type: Boolean, required: true, default: false, index: true },
     mlsDuplicate: { type: Boolean, required: true, default: false, index: true },
     mlsDuplicateOf: { type: String, trim: true, default: null },
+
+    /*
+     * Item details, filled in by the lot's assignee in the Items grid. Only `name`
+     * is required before an item may get a decision. `physicalSource` and
+     * `itemCondition` are admin-managed reference lists (open vocabulary).
+     */
+    name: { type: String, trim: true, default: null },
+    nameOnCase: { type: String, trim: true, default: null },
+    description: { type: String, trim: true, default: null },
+    year: { type: Number, default: null, min: 1800, max: 2200 },
+    /** Free text: "07", "11/12", "08/09". */
+    month: { type: String, trim: true, default: null },
+    place: { type: String, trim: true, default: null },
+    event: { type: String, trim: true, default: null },
+    people: { type: String, trim: true, default: null },
+    physicalSource: { type: String, trim: true, default: null },
+    itemCondition: { type: String, trim: true, default: null },
+    remarks: { type: String, trim: true, default: null },
+    /** Filled by capture / reconcile, read-only in the grid. */
+    digitalSource: { type: String, trim: true, default: null },
+
+    /**
+     * Per-item decision. Answers are Yes / No / unanswered (null). `verdict` is
+     * computed by the server with the same rule as the lot checklist
+     * (decision-rule.ts); `disposition` is chosen only when the verdict is
+     * return_or_discard. The drop reason reuses `notDigitizedReason`.
+     */
+    decision: {
+      existsInMls: { type: Boolean, default: null },
+      newCopyIsBetter: { type: Boolean, default: null },
+      conditionUsable: { type: Boolean, default: null },
+      significant: { type: Boolean, default: null },
+      verdict: { type: String, enum: ['archive', 'return_or_discard', null], default: null },
+      disposition: { type: String, enum: ['return', 'discard', null], default: null },
+      decidedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+      decidedAt: { type: Date, default: null },
+    },
+    /**
+     * Item-level return/discard handling for lots that were otherwise archived
+     * ("split by item"): pending until someone in the Returns / Discards queue marks
+     * it done. Null when the whole lot was returned or discarded (the lot-level
+     * flow handles those).
+     */
+    dispositionStatus: { type: String, enum: ['pending', 'done', null], default: null },
+    dispositionDoneAt: { type: Date, default: null },
+    dispositionDoneByName: { type: String, trim: true, default: null },
+    /** Denormalised at finalise time for the item return/discard queues (no $lookup). */
+    lotReference: { type: String, trim: true, default: null },
   },
   { timestamps: true, collection: 'lotitems' },
 );
@@ -46,6 +94,7 @@ lotItemSchema.index({ lot: 1, groupNo: 1, itemNo: 1 });
 lotItemSchema.index({ lot: 1, lineIndex: 1 }); // per-media-type progress
 lotItemSchema.index({ lot: 1, digitized: 1 }); // per-lot scan progress
 lotItemSchema.index({ selectedForDigitization: 1, notDigitizedReason: 1 }); // exclusion report
+lotItemSchema.index({ 'decision.disposition': 1, dispositionStatus: 1 }); // item return/discard queues
 
 export type LotItemDoc = InferSchemaType<typeof lotItemSchema>;
 

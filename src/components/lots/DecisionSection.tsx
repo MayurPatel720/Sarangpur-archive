@@ -9,7 +9,6 @@ import { date } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Textarea } from '@/components/ui/Form';
 import { Badge, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
-import { DecisionTriage } from './DecisionTriage';
 
 type DetailLot = LotDetailResponse['lot'];
 
@@ -17,7 +16,6 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
   const me = useMe();
   const grants = me.data ? me.data.grants : [];
   const canSubmit = grants.includes('lot:edit');
-  const canDecide = grants.includes('decision:record');
   const canRequest = grants.includes('override:request');
   const canApprove = grants.includes('override:approve');
 
@@ -140,14 +138,15 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
           ) : null
         )}
 
-        {showChecklist ? (
-          canDecide ? (
-            <div className="flex flex-col gap-3 border-t border-line-soft pt-4">
-              <DecisionTriage lot={lot} onChanged={onChanged} revisit={canRevisit} />
-            </div>
-          ) : (
-            <p className="m-0 text-[13px] text-ink-3">You don&apos;t have permission to record decisions.</p>
-          )
+        {showChecklist || lot.stage === 'intake' ? (
+          <div className="flex flex-col gap-2 border-t border-line-soft pt-4">
+            <p className="m-0 text-[13px] text-ink-2">
+              Decisions are made item by item. Open the <a href="?tab=items" className="text-accent font-semibold no-underline hover:underline">Items</a>{' '}
+              tab, name each item and answer its questions — when every item is decided, the lot moves on by itself:
+              archived items go to digitization, the rest to Returns or Discards.
+              {canRevisit ? ' An approved override has reopened the item decisions.' : ''}
+            </p>
+          </div>
         ) : null}
 
         {showRequest ? (

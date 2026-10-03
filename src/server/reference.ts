@@ -1,3 +1,4 @@
+import { catalogList, catalogToSeedDoc } from '@/lib/vocab-catalog';
 import type { ClientSession } from 'mongoose';
 import { ReferenceList } from '@/models/ReferenceList';
 import { connectToDatabase } from '@/lib/mongo';
@@ -82,18 +83,32 @@ function toItems(doc: {
 }
 
 /** All items of a vocabulary, sorted. Throws 404 when the list does not exist. */
-export async function getReferenceList(key: string): Promise<ReferenceItem[]> {
+/**
+ * Loads a list document. A catalog list added after this database was seeded
+ * (e.g. `physicalSource`) is created from the seed catalog on first use instead of
+ * 404-ing — upsert with $setOnInsert so concurrent first reads cannot clobber each other.
+ */
+async function loadListDoc(key: string) {
   await connectToDatabase();
-  const doc = await ReferenceList.findOne({ key }).lean();
+  let doc = await ReferenceList.findOne({ key }).lean();
+  if (!doc) {
+    const seed = catalogList(key);
+    if (seed) {
+      await ReferenceList.updateOne({ key }, { $setOnInsert: catalogToSeedDoc(seed) }, { upsert: true });
+      doc = await ReferenceList.findOne({ key }).lean();
+    }
+  }
   if (!doc) throw new HttpError(404, `Reference list '${key}' not found.`);
-  return toItems(doc);
+  return doc;
+}
+
+export async function getReferenceList(key: string): Promise<ReferenceItem[]> {
+  return toItems(await loadListDoc(key));
 }
 
 /** Vocabulary identity for admin screens and lookup headers. Throws 404 when missing. */
 export async function getReferenceListMeta(key: string): Promise<{ key: string; label: string; group: string }> {
-  await connectToDatabase();
-  const doc = await ReferenceList.findOne({ key }).lean();
-  if (!doc) throw new HttpError(404, `Reference list '${key}' not found.`);
+  const doc = await loadListDoc(key);
   return { key: doc.key, label: doc.label, group: doc.group };
 }
 

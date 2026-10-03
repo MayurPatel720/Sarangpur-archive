@@ -157,6 +157,7 @@ export const ACTIVITY_KINDS = [
   'project_lot_removed',
   'item_created',
   'lot_assigned',
+  'items_updated',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -188,6 +189,7 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   project_lot_removed: 'warning',
   item_created: 'neutral',
   lot_assigned: 'info',
+  items_updated: 'neutral',
 };
 
 /**

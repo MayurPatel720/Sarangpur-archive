@@ -38,7 +38,7 @@ import {
 } from './lot-form-fields';
 import { WorkflowSteps } from './WorkflowSteps';
 import { MediaLinesPanel } from './MediaLinesPanel';
-import { ItemsPanel } from './ItemsPanel';
+import { ItemsGrid } from './ItemsGrid';
 import { ActivityPanel } from './ActivityPanel';
 import { LotProjectsSection } from './LotProjectsSection';
 import { LotProjectBar } from './LotProjectBar';
@@ -1119,7 +1119,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
       </TabPanel>
 
       <TabPanel id="items" active={tab === 'items'}>
-        <ItemsPanel lotId={lot.id} />
+        <ItemsGrid lotId={lot.id} />
       </TabPanel>
 
       <TabPanel id="activity" active={tab === 'activity'}>

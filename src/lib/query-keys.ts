@@ -43,9 +43,12 @@ export const queryKeys = {
     activity: (id: string, page: number, pageSize: number) =>
       [...queryKeys.lots.all, 'activity', id, page, pageSize] as const,
     triage: (id: string) => [...queryKeys.lots.all, 'triage', id] as const,
+    itemsGrid: (id: string) => [...queryKeys.lots.all, 'items-grid', id] as const,
   },
   queues: {
     all: ['queues'] as const,
+    itemDispositions: (kind: string, status: string, page: number, pageSize: number) =>
+      ['queues', 'item-dispositions', kind, status, page, pageSize] as const,
     decision: (page: number, pageSize: number, format?: string) =>
       [...queryKeys.queues.all, 'decision', page, pageSize, format ?? 'all'] as const,
     digitize: (page: number, pageSize: number, format?: string) =>

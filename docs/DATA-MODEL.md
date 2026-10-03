@@ -113,9 +113,26 @@ individually, and the 16MB document ceiling would eventually be hit.
 | `fileName` / `fileBytes` / `sha256` | | `sha256` is the fixity anchor |
 | `taggedInMls` | Boolean, indexed | |
 | `mlsDuplicate` / `mlsDuplicateOf` | | |
+| `name` | String | Item title. **Required before the item may get a decision** |
+| `nameOnCase` / `description` / `month` / `place` / `event` / `people` / `remarks` | String | Filled in the Items grid |
+| `year` | Number 1800–2200 | |
+| `physicalSource` / `itemCondition` | String | Admin lists `physicalSource`, `itemCondition` |
+| `digitalSource` | String | System-filled at capture |
+| `decision.existsInMls` / `newCopyIsBetter` / `conditionUsable` / `significant` | Boolean \| null | Three-state answers |
+| `decision.verdict` | `archive` \| `return_or_discard` \| null | Server-computed with `computeVerdict` per item |
+| `decision.disposition` | `return` \| `discard` \| null | Chosen when verdict is return_or_discard; reason in `notDigitizedReason` |
+| `decision.decidedBy` / `decidedAt` | | Set when the item's result becomes final |
+| `dispositionStatus` | `pending` \| `done` \| null | Item-level return/discard inside an otherwise archived lot |
+| `dispositionDoneAt` / `dispositionDoneByName` / `lotReference` | | Denormalised for the item queues |
 
 Indexes: `{ lot, groupNo, itemNo }` · `{ lot, digitized }` ·
-`{ selectedForDigitization, notDigitizedReason }`
+`{ selectedForDigitization, notDigitizedReason }` · `{ decision.disposition, dispositionStatus }`
+
+**Per-item decisions ("split by item").** When every item of a lot has a final result,
+the lot is decided automatically (`finalizeItemDecisions`): any archived item → lot
+archived (stage metadata, naming code, only archived items selected), other items queued
+item by item in Returns / Discards; no archived item → lot-level return (any return) or
+discard.
 
 ---
 

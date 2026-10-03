@@ -88,6 +88,17 @@ import {
   type ScanResponse,
 } from '@/types/ops';
 import {
+  itemDispositionDoneResponseSchema,
+  itemDispositionListSchema,
+  itemsBulkResponseSchema,
+  itemsGridResponseSchema,
+  type ItemDispositionDoneBody,
+  type ItemDispositionList,
+  type ItemsBulkBody,
+  type ItemsBulkResponse,
+  type ItemsGridResponse,
+} from '@/types/items';
+import {
   searchResponseSchema,
   type SearchResponse,
 } from '@/types/search';
@@ -426,6 +437,25 @@ export const queuesApi = {
     getJson<LotListResponse>(queueUrl('returns', page, pageSize, format), lotListResponseSchema),
   discards: (page: number, pageSize: number, format?: string) =>
     getJson<LotListResponse>(queueUrl('discards', page, pageSize, format), lotListResponseSchema),
+};
+
+export const itemsGridApi = {
+  get: (lotId: string) =>
+    getJson<ItemsGridResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/grid`, itemsGridResponseSchema),
+  update: (lotId: string, body: ItemsBulkBody) =>
+    sendJson<ItemsBulkResponse>(
+      `/api/lots/${encodeURIComponent(lotId)}/items/grid`,
+      'PATCH',
+      body,
+      itemsBulkResponseSchema,
+    ),
+  dispositions: (kind: 'return' | 'discard', status: 'pending' | 'done', page: number, pageSize: number) =>
+    getJson<ItemDispositionList>(
+      `/api/queues/item-dispositions?${new URLSearchParams({ kind, status, page: String(page), pageSize: String(pageSize) })}`,
+      itemDispositionListSchema,
+    ),
+  markDone: (body: ItemDispositionDoneBody) =>
+    sendJson<{ updated: number }>('/api/items/dispositions', 'POST', body, itemDispositionDoneResponseSchema),
 };
 
 export const projectsApi = {

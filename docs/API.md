@@ -166,6 +166,12 @@ piece of logic where a bug has consequences that cannot be undone.
 |---|---|---|
 | GET | `/api/lots/[lotId]/items` | DONE — Paginated. Filters: `groupNo`, `digitized`, `taggedInMls`, `mlsDuplicate` |
 | GET | `/api/lots/[lotId]/activity` | DONE — Paginated audit trail, newest first |
+| GET | `/api/lots/[lotId]/items/grid` | DONE — Every item with details + decision, summary, what the viewer may edit. `lot:view` |
+| PATCH | `/api/lots/[lotId]/items/grid` | DONE — `{ itemIds, set }` bulk set; assignee rule applies; deciding the last item decides the lot. `lot:edit` |
+| PUT | `/api/lots/[lotId]/media-lines` | DONE — Replace quantities while in Intake (refused once items have names/decisions/files). `lot:edit` |
+| PUT | `/api/lots/[lotId]/assignee` | DONE — `{ assigneeId \| null }`. `project:assign` |
+| GET | `/api/queues/item-dispositions` | DONE — `kind=return\|discard&status=pending\|done`, paginated |
+| POST | `/api/items/dispositions` | DONE — `{ kind, itemIds }` mark done. Needs `return:manage` / `discard:confirm` |
 | GET | `/api/lots/[lotId]/attachments` | TODO |
 | POST | `/api/lots/[lotId]/attachments` | TODO — Multipart. Validate type and size; store the key, never the bytes |
 

@@ -310,10 +310,19 @@ export async function replaceMediaLines(
       }
       const touched = await LotItem.countDocuments({
         lot: lot._id,
-        $or: [{ digitized: true }, { taggedInMls: true }, { fileName: { $ne: null } }],
+        $or: [
+          { digitized: true },
+          { taggedInMls: true },
+          { fileName: { $ne: null } },
+          { name: { $nin: [null, ''] } },
+          { 'decision.verdict': { $ne: null } },
+        ],
       }).session(session);
       if (touched > 0) {
-        throw new HttpError(409, 'Items on this lot already have files or progress, so the quantities are locked.');
+        throw new HttpError(
+          409,
+          'Items on this lot already have names, decisions or files, so the quantities are locked. Use "Add item" in the Items tab instead.',
+        );
       }
 
       const primary = lines[0]!;
@@ -858,6 +867,59 @@ export async function recordTriageDecision(
         selectedForDigitization: true,
       }).session(session);
       lot.set('digitization.expectedFileCount', selectedCount);
+    },
+  );
+}
+
+/**
+ * Items-grid entry point: every item of the lot has its own final result
+ * (archive / return / discard), so the LOT decision follows from them —
+ * "split by item":
+ * - any archived item → lot verdict archive: stage metadata, naming code issued,
+ *   only archived items stay selected; the return/discard items are queued item by
+ *   item (`dispositionStatus: 'pending'`) in the Returns / Discards queues.
+ * - no archived item → lot-level return (any item to return) or discard; the
+ *   existing lot return/discard flow handles it.
+ * Runs through the shared `writeDecision` core so guards, gate, recode and side
+ * effects stay in one place. Called by the grid save, never directly by a route.
+ */
+export async function finalizeItemDecisions(lotId: string, ctx: MutationContext): Promise<DecisionResponse> {
+  const lotObjectId = new Types.ObjectId(lotId);
+  const [archive, ret, discard, total] = await Promise.all([
+    LotItem.countDocuments({ lot: lotObjectId, 'decision.verdict': 'archive' }),
+    LotItem.countDocuments({ lot: lotObjectId, 'decision.verdict': 'return_or_discard', 'decision.disposition': 'return' }),
+    LotItem.countDocuments({ lot: lotObjectId, 'decision.verdict': 'return_or_discard', 'decision.disposition': 'discard' }),
+    LotItem.countDocuments({ lot: lotObjectId }),
+  ]);
+  if (archive + ret + discard !== total) {
+    throw new HttpError(400, 'Every item needs a decision before the lot can move on.');
+  }
+  const questionCount = await significanceQuestionCount();
+  const anyArchive = archive > 0;
+  const significanceFlags = Array.from({ length: questionCount }, (_, i) => anyArchive && i === 0);
+  const disposition: 'return' | 'discard' | undefined = anyArchive ? undefined : ret > 0 ? 'return' : 'discard';
+  const summary = `Decided item by item: ${archive} archive, ${ret} return, ${discard} discard.`;
+  return writeDecision(
+    lotId,
+    {
+      existsInMls: false,
+      conditionUsable: true,
+      significanceFlags,
+      notes: summary,
+      disposition,
+      discardNotes: disposition === 'discard' ? summary : undefined,
+    },
+    ctx,
+    `Decision recorded (items) — ${anyArchive ? 'archive' : disposition}`,
+    async (lot, session) => {
+      lot.set('digitization.expectedFileCount', archive);
+      if (anyArchive && ret + discard > 0) {
+        await LotItem.updateMany(
+          { lot: lot._id, 'decision.verdict': 'return_or_discard' },
+          { $set: { dispositionStatus: 'pending', lotReference: lot.lotReference } },
+          { session },
+        );
+      }
     },
   );
 }
