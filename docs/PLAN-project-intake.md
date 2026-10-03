@@ -132,7 +132,7 @@ Today `mediaLines` are frozen after intake. New endpoint (or `patchLot` field), 
 
 1. Is an assignee required on every child lot at creation? [No. An unassigned lot is admin-only until assigned.]
 2. A lot already synced to project A gets attached to project B: allow? [No, refuse with a clear message. It can still be a plain member without sync.]
-3. Should standalone **New intake** also get a "Project" picker that pre-fills from a project and makes the new lot a synced child? [Yes. It's cheap once Phase 4 exists.]
+3. ~~Project picker on standalone New intake~~ **Decided: no.** New intake stays standalone. Only admins create projects and put lots into them (wizard or attach).
 4. Media lines editable only while the lot is in Intake? [Yes.]
 5. Who counts as "admin" for the assignee rule? [Anyone holding `project:assign`.]
 6. Child lots' `receiver` (shown as "Received by"): [the admin who created the project.]
