@@ -33,8 +33,6 @@ export function shapeProjectRow(doc: {
   name: string;
   description?: string | null;
   lotCount: number;
-  startDate?: Date | null;
-  targetDate?: Date | null;
   coordinatorName?: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -45,8 +43,6 @@ export function shapeProjectRow(doc: {
     name: doc.name,
     description: doc.description ?? null,
     lotCount: doc.lotCount,
-    startDate: doc.startDate ? new Date(doc.startDate).toISOString() : null,
-    targetDate: doc.targetDate ? new Date(doc.targetDate).toISOString() : null,
     coordinatorName: doc.coordinatorName ?? null,
     createdAt: new Date(doc.createdAt).toISOString(),
     updatedAt: new Date(doc.updatedAt).toISOString(),

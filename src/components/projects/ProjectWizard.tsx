@@ -10,7 +10,6 @@ import { useUserPicker } from '@/hooks/useUserPicker';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { todayDmy } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea, TextInput } from '@/components/ui/Form';
-import { DatePicker } from '@/components/ui/DatePicker';
 import { ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { focusEditableCell } from '@/components/ui/EditableTable';
 import { FormSection, StepBlocks } from '@/components/ui/FormSection';
@@ -37,7 +36,7 @@ import {
 
 /**
  * New-project wizard — the intake form plus a project step in front and an
- * assignment step at the end. Only the project code/name and the media
+ * assignment step at the end. Only the project name and the media
  * quantities are required; everything else may be filled in later by the people
  * the lots are assigned to, and syncs back here.
  */
@@ -55,7 +54,7 @@ const S_MEDIA = 3;
 const S_ASSIGN = 4;
 
 const INTROS: readonly (string | null)[] = [
-  'Name the project. The code is unique and can never change.',
+  'Name the project. Its code is assigned automatically.',
   'Optional here — anything left blank is filled in by the assignees and shared across the project.',
   'Optional here — condition on arrival, why it was sent, and any return request.',
   null,
@@ -76,12 +75,9 @@ export function ProjectWizard() {
     // Project mode: no pre-filled receipt date — the assignee records the real one.
     dateReceived: '',
   }));
-  const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [coordinatorId, setCoordinatorId] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [targetDate, setTargetDate] = useState('');
   const [assignees, setAssignees] = useState<Record<string, string>>({});
   const [bulkAssignee, setBulkAssignee] = useState('');
   const [step, setStep] = useState(0);
@@ -118,12 +114,9 @@ export function ProjectWizard() {
   const create = useMutation({
     mutationFn: () =>
       projectsApi.create({
-        code: code.trim(),
         name: name.trim(),
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(coordinatorId ? { coordinatorId } : {}),
-        ...(startDate ? { startDate: new Date(`${startDate}T00:00:00`).toISOString() } : {}),
-        ...(targetDate ? { targetDate: new Date(`${targetDate}T00:00:00`).toISOString() } : {}),
         shared: buildSharedFields(draft),
         mediaLines: buildMediaLines(draft),
         assignments: groups
@@ -165,7 +158,6 @@ export function ProjectWizard() {
 
   const validateProject = (): FieldErrors => {
     const errs: FieldErrors = {};
-    if (!code.trim()) errs['project.code'] = 'Project code is required.';
     if (!name.trim()) errs['project.name'] = 'Project name is required.';
     return errs;
   };
@@ -250,20 +242,7 @@ export function ProjectWizard() {
         {step === S_PROJECT ? (
           <StepBlocks>
             <FormSection legend="Project">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Code" required hint="Unique, immutable. e.g. DWARKA-2026." error={fieldErrors['project.code']}>
-                  <TextInput
-                    value={code}
-                    onChange={(e) => {
-                      setCode(e.target.value);
-                      clearPrefix('project.code');
-                    }}
-                    placeholder="DWARKA-2026"
-                    maxLength={40}
-                    aria-label="Project code"
-                    autoComplete="off"
-                  />
-                </Field>
+              <div>
                 <Field label="Name" required error={fieldErrors['project.name']}>
                   <TextInput
                     value={name}
@@ -289,26 +268,6 @@ export function ProjectWizard() {
                 </Field>
               </div>
             </FormSection>
-            <FormSection legend="People &amp; dates (optional)">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <Field label="Coordinator" hint="Who runs this project.">
-                  <Select value={coordinatorId} onChange={(e) => setCoordinatorId(e.target.value)} aria-label="Project coordinator">
-                    <option value="">No coordinator</option>
-                    {userOptions.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-                <Field label="Start date">
-                  <DatePicker value={startDate} onChange={setStartDate} aria-label="Project start date" />
-                </Field>
-                <Field label="Target date">
-                  <DatePicker value={targetDate} onChange={setTargetDate} aria-label="Project target date" />
-                </Field>
-              </div>
-            </FormSection>
           </StepBlocks>
         ) : null}
 
@@ -319,6 +278,21 @@ export function ProjectWizard() {
         {step === S_ASSIGN ? (
           <StepBlocks>
             <RightsSection ctx={ctx} />
+
+            <FormSection legend="Coordinator (optional)">
+              <div className="max-w-[420px]">
+                <Field label="Coordinator">
+                  <Select value={coordinatorId} onChange={(e) => setCoordinatorId(e.target.value)} aria-label="Project coordinator">
+                    <option value="">No coordinator</option>
+                    {userOptions.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            </FormSection>
 
             <FormSection
               legend="Assign lots"
@@ -378,8 +352,6 @@ export function ProjectWizard() {
 
             <FormSection legend="Review">
               <div className="mb-3 rounded-[6px] border border-line-soft p-3 text-[13px]">
-                <span className="font-mono font-semibold text-ink">{code.trim() || '—'}</span>
-                <span className="text-ink-3"> · </span>
                 <span className="text-ink">{name.trim() || '—'}</span>
                 <div className="text-[12px] text-ink-3 mt-0.5">
                   {totalQuantity(draft.lines)} items → {groups.length} {groups.length === 1 ? 'lot' : 'lots'}

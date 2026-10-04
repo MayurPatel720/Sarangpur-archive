@@ -37,6 +37,14 @@ const activityLogSchema = new Schema(
     project: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     projectCode: { type: String, trim: true, default: null },
 
+    /**
+     * Set for task events (created, reassigned, status, comment, checklist). Task
+     * rows carry no lot/project/format, so they never appear on lot trails or the
+     * format-scoped dashboard feed; the task drawer reads its history by this id.
+     */
+    task: { type: Schema.Types.ObjectId, ref: 'Task', default: null },
+    taskTitle: { type: String, trim: true, default: null },
+
     kind: { type: String, required: true, enum: ACTIVITY_KINDS, index: true },
     title: { type: String, required: true, trim: true },
     detail: { type: String, trim: true },
@@ -79,6 +87,7 @@ const activityLogSchema = new Schema(
 activityLogSchema.index({ at: -1 }); // global recent activity
 activityLogSchema.index({ lot: 1, at: -1 }); // per-record audit trail
 activityLogSchema.index({ project: 1, at: -1 }); // per-project audit trail
+activityLogSchema.index({ task: 1, at: -1 }); // per-task history (drawer)
 activityLogSchema.index({ format: 1, at: -1 }); // format-scoped dashboard feed
 
 export type ActivityLogDoc = InferSchemaType<typeof activityLogSchema>;

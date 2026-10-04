@@ -55,6 +55,12 @@ export function todayDmy(): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
+/** Today's calendar day as `YYYY-MM-DD` (local) — what the task API calls `today`. */
+export function todayIso(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
 /** `dd/mm/yyyy, HH:mm` — 24-hour clock (local). */
 export function dateTime(value: string | Date | null | undefined): string {
   if (value === null || value === undefined || value === '') return '—';

@@ -62,14 +62,12 @@ async function main() {
   const photo = await sample('photo');
   const video = await sample('video');
 
-  const code = `VERIFY-${Date.now()}`;
   const createdProjects: Types.ObjectId[] = [];
   const extraLots: string[] = [];
   try {
     console.log('\nCreate project (one lot per format)');
     const created = await createProject(
       {
-        code,
         name: 'Verify project',
         shared: { owner: { name: 'Test Owner' } },
         mediaLines: [
@@ -154,7 +152,7 @@ async function main() {
     await assignLot(created.id, { lotId: standalone.id, assigneeId: String(u3._id) }, admin);
     const attached = await getLotDetail(standalone.id);
     check('attach: project wins (owner overwritten)', attached.lot.owner.name === 'Test Owner', attached.lot.owner);
-    check('attach: synced + assigned', attached.lot.syncProject?.code === code && attached.lot.assignee?.id === String(u3._id));
+    check('attach: synced + assigned', attached.lot.syncProject?.code === created.code && attached.lot.assignee?.id === String(u3._id));
     await unassignLot(created.id, standalone.id, admin);
     const detached = await getLotDetail(standalone.id);
     check('detach stops syncing, keeps values', detached.lot.syncProject === null && detached.lot.owner.name === 'Test Owner');

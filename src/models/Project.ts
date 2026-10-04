@@ -35,8 +35,6 @@ const projectSchema = new Schema(
      */
     shared: { type: Schema.Types.Mixed, default: () => ({}) },
 
-    startDate: { type: Date, default: null },
-    targetDate: { type: Date, default: null },
 
     /** Counter cache: lots currently carrying this project's id. See note above. */
     lotCount: { type: Number, required: true, default: 0, min: 0 },

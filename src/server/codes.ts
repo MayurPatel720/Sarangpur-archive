@@ -1,6 +1,7 @@
 import type { ClientSession } from 'mongoose';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
+import { Project } from '@/models/Project';
 import { connectToDatabase } from '@/lib/mongo';
 
 /**
@@ -181,4 +182,28 @@ export async function generateNamingCode(
 
   const seq = await nextSequence(key, session);
   return `${prefix}-${origin}-${String(seq).padStart(3, '0')}`;
+}
+
+/** `PRJ-2026-0003`. Auto-assigned at project creation; per calendar year, never typed. */
+export async function generateProjectCode(session?: ClientSession): Promise<string> {
+  const year = new Date().getFullYear();
+  const key = `projectCode:${year}`;
+  await connectToDatabase();
+  const collection = ArchiveLot.db.collection<CounterDoc>('counters');
+  const sess = session ? { session } : {};
+
+  const existing = await collection.findOne({ _id: key }, sess);
+  if (!existing) {
+    const peak = await Project.find({ code: { $regex: `^PRJ-${year}-` } })
+      .sort({ code: -1 })
+      .limit(1)
+      .select('code')
+      .session(session ?? null)
+      .lean();
+    const maxSeq = peak[0] ? Number.parseInt(peak[0].code.slice(-4), 10) || 0 : 0;
+    await collection.updateOne({ _id: key }, { $set: { seq: maxSeq } }, { upsert: true, ...sess });
+  }
+
+  const seq = await nextSequence(key, session);
+  return `PRJ-${year}-${String(seq).padStart(4, '0')}`;
 }

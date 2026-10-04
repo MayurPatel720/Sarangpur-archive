@@ -3,7 +3,8 @@
 import { useRef, useState, type ReactNode } from 'react';
 import type { LotContactInput } from '@/types/lot';
 import { useReferenceList } from '@/hooks/useReferenceList';
-import { date, dmyToIso } from '@/lib/format';
+import { date, dmyToIso, isoToDmy } from '@/lib/format';
+import { DatePicker } from '@/components/ui/DatePicker';
 import { Field, Select, Textarea, TextInput } from '@/components/ui/Form';
 import { EditableTable, type EditableColumn } from '@/components/ui/EditableTable';
 import { RefSelect, SubtypeCell } from '@/components/ui/RefSelect';
@@ -68,6 +69,18 @@ export interface IntakeDraft {
   rightsType: string;
   deedReference: string;
   rightsNotes: string;
+}
+
+/** ISO due date = date received (dd/mm/yyyy; today if blank) + N days. '' when days is empty. */
+function dueDateFrom(receivedDmy: string, days: string): string {
+  const n = Number(days);
+  if (!Number.isInteger(n) || n <= 0) return '';
+  const base = dmyToIso(receivedDmy);
+  const d = base ? new Date(`${base}T00:00:00`) : new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 export function emptyDraft(seedLine: Omit<MediaLineForm, 'id'>, today: string): IntakeDraft {
@@ -244,7 +257,7 @@ export function buildSharedFields(d: IntakeDraft) {
       ? {
           returnRequested: true,
           ...(d.returnFormat ? { returnFormat: d.returnFormat } : {}),
-          ...(d.returnDuration.trim() ? { returnDuration: d.returnDuration.trim() } : {}),
+          ...(Number(d.returnDuration) > 0 ? { returnDuration: `${Number(d.returnDuration)} ${Number(d.returnDuration) === 1 ? 'day' : 'days'}` } : {}),
           ...(d.returnDueDate ? { returnDueAt: new Date(`${d.returnDueDate}T00:00:00`).toISOString() } : {}),
         }
       : {}),
@@ -301,20 +314,18 @@ export function OriginContactsStep({ ctx }: { ctx: StepCtx }) {
       <FormSection legend="Receipt">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Date received" required={req} error={errors.dateReceived}>
-            <TextInput
-              value={draft.dateReceived}
-              onChange={(e) => {
-                patch({ dateReceived: e.target.value });
+            <DatePicker
+              value={dmyToIso(draft.dateReceived) ?? ''}
+              onChange={(iso) => {
+                const dmy = isoToDmy(iso);
+                patch({
+                  dateReceived: dmy,
+                  ...(draft.returnDuration ? { returnDueDate: dueDateFrom(dmy, draft.returnDuration) } : {}),
+                });
                 clearPrefix('dateReceived');
               }}
-              placeholder="dd/mm/yyyy"
-              inputMode="numeric"
-              autoComplete="off"
-              aria-describedby="date-received-hint"
+              aria-label="Date received"
             />
-            <span id="date-received-hint" className="sr-only">
-              Format dd/mm/yyyy
-            </span>
           </Field>
           <Field label="Origin source" required={req} error={errors.originSource}>
             <RefSelect
@@ -512,18 +523,23 @@ export function ConditionStep({ ctx }: { ctx: StepCtx }) {
                 createLabel="return format"
               />
             </Field>
-            <Field label="Return duration">
+            <Field label="Return duration (days)">
               <TextInput
                 value={draft.returnDuration}
-                onChange={(e) => patch({ returnDuration: e.target.value })}
-                placeholder="e.g. Within 30 days"
+                onChange={(e) => {
+                  const days = e.target.value.replace(/D/g, '').slice(0, 4);
+                  patch({ returnDuration: days, returnDueDate: dueDateFrom(draft.dateReceived, days) });
+                }}
+                placeholder="e.g. 30"
+                inputMode="numeric"
+                autoComplete="off"
               />
             </Field>
-            <Field label="Return by (date)" hint="Calendar due date for the return.">
-              <TextInput
-                type="date"
+            <Field label="Return by (date)" hint="Set automatically from the duration; change it to override.">
+              <DatePicker
                 value={draft.returnDueDate}
-                onChange={(e) => patch({ returnDueDate: e.target.value })}
+                onChange={(iso) => patch({ returnDueDate: iso })}
+                aria-label="Return by date"
               />
             </Field>
           </div>
@@ -832,7 +848,7 @@ export function ReviewSummary({
           label="Return requested"
           value={
             d.returnRequested
-              ? `Yes${d.returnFormat ? ` · ${labelFor(returnFormatList.data, d.returnFormat)}` : ''}${d.returnDuration ? ` · ${d.returnDuration}` : ''}${d.returnDueDate ? ` · by ${date(d.returnDueDate)}` : ''}`
+              ? `Yes${d.returnFormat ? ` · ${labelFor(returnFormatList.data, d.returnFormat)}` : ''}${Number(d.returnDuration) > 0 ? ` · ${d.returnDuration} ${Number(d.returnDuration) === 1 ? 'day' : 'days'}` : ''}${d.returnDueDate ? ` · by ${date(d.returnDueDate)}` : ''}`
               : 'No'
           }
         />
@@ -897,7 +913,7 @@ export function draftFromShared(
     peopleInPhoto: shared.peopleInPhoto ?? '',
     returnRequested: shared.returnRequested ?? false,
     returnFormat: shared.returnFormat ?? '',
-    returnDuration: shared.returnDuration ?? '',
+    returnDuration: /^d+/.exec(shared.returnDuration ?? '')?.[0] ?? '',
     returnDueDate: shared.returnDueAt ? shared.returnDueAt.slice(0, 10) : '',
     rightsType: shared.rights?.type ?? '',
     deedReference: shared.rights?.deedReference ?? '',

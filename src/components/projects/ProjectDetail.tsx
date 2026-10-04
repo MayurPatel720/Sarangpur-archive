@@ -249,8 +249,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         <div className="p-3 md:p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
           <Definition label="Coordinator">{project.coordinatorName ?? '—'}</Definition>
           <Definition label="Lots">{num(project.lotCount)}</Definition>
-          <Definition label="Start">{project.startDate ? date(project.startDate) : '—'}</Definition>
-          <Definition label="Target">{project.targetDate ? date(project.targetDate) : '—'}</Definition>
           <div className="col-span-2 md:col-span-4">
             <Definition label="Team (assignees)">
               {project.team.length > 0 ? (

@@ -162,6 +162,51 @@ archive (likely none — this is a permanent legal record).
 
 ---
 
+## `tasks` — DONE (`src/models/Task.ts`)
+
+Daily-work tasks: an admin assigns one or more people, any of whom can move it along. Everything a card shows is
+denormalised at write time and never back-filled (no `$lookup` on read).
+
+| Field | Notes |
+|---|---|
+| `title` / `description` | ≤160 / ≤2000 |
+| `format` | one of `FORMATS`; **inherited from the linked lot** server-side when `lot` is set |
+| `status` | `todo` → `in_progress` → `blocked` → `done`, plus `cancelled` (admin only) |
+| `blockedReason` | required while `blocked`; cleared on leaving it |
+| `priority` | `urgent` | `normal` | `low` |
+| `dueDate` | `YYYY-MM-DD` string or null (calendar day, compares as a string) |
+| `assignees[]` | 1+ `{ id, name }` (any active users; name denormalised, `_id: false`). One shared `status` / checklist for the task. Replaces the old single `assignee` / `assigneeName` — convert existing docs with `npm run db:backfill-task-assignees`; reads tolerate un-migrated docs, list filters / visibility do not |
+| `createdBy` / `createdByName` | the admin who set it; name denormalised |
+| `lot` / `lotCode`, `project` / `projectCode` | optional links, code denormalised (`namingCode ?? lotReference`) |
+| `checklist[]` | embedded `{ _id, text, done }`, ≤50; counters `checklistTotal` / `checklistDone` |
+| `comments[]` | embedded `{ _id, author, authorName, text, at }`, ≤200; counter `commentCount` |
+| `doneAt` / `cancelledAt` | set on entering `done` / `cancelled`, cleared on leaving |
+
+History is not embedded: it is `activitylogs` rows with `task` set (kinds `task_created`,
+`task_updated`, `task_reassigned` (assignee added / removed: "Assignees: added X, removed Y"), `task_status_changed`, `task_comment_added`,
+`task_checklist_updated`), written by `withTaskAudit()` in the same transaction.
+
+Indexes: `{'assignees.id',status,dueDate}` (multikey: tasks where I am an assignee, per-person counts) · `{createdBy,status,dueDate}`
+· `{format,status,dueDate}` (format dashboards) · `{status,doneAt:-1}` (done recently) ·
+`{lot}` · `{project}`.
+
+**Derived rows.** Lots assigned to the viewer (`ArchiveLot.assignee`, in-flight stages) are shown
+read-only in Today's tasks, labelled by stage (Decide / Scan / Tag / …). No Task document exists.
+
+## `notifications` — DONE (`src/models/Notification.ts`)
+
+Per-user inbox behind the header bell (dashboard alerts are computed from lot data and cannot
+carry events). `{ user, kind, task, taskTitle, text, actorName, createdAt, readAt }`; kinds
+`task_assigned` `task_reassigned` `task_removed` `task_comment` `task_blocked` `task_done` `task_status`
+`task_cancelled`. Inserted in the same transaction as the task change; the actor is never notified
+of their own action. Indexes `{user,createdAt:-1}`, `{user,readAt}`. Marking read is personal
+read-state and is not audited.
+
+`activitylogs` gained `task` (ObjectId) + `taskTitle` and the index `{task,at:-1}`; task rows carry
+no lot / project / format so they never reach lot trails or format feeds.
+
+---
+
 ## `fileindexes` — **TODO** (`src/models/FileIndex.ts`)
 
 The reconciliation engine's source of truth. Lets reconciliation be a database diff

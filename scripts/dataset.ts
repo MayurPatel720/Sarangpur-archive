@@ -477,8 +477,6 @@ export function buildDataset(now = new Date()): Dataset {
       coordinator: coordinator._id,
       coordinatorName: coordinator.name,
       shared,
-      startDate: received,
-      targetDate: new Date(now.getTime() + int(rng, 20, 120) * DAY),
       lotCount: spec.lots.length,
       createdAt: received ?? daysAgo(2),
       updatedAt: daysAgo(1),

@@ -158,6 +158,12 @@ export const ACTIVITY_KINDS = [
   'item_created',
   'lot_assigned',
   'items_updated',
+  'task_created',
+  'task_updated',
+  'task_reassigned',
+  'task_status_changed',
+  'task_comment_added',
+  'task_checklist_updated',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -190,6 +196,12 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   item_created: 'neutral',
   lot_assigned: 'info',
   items_updated: 'neutral',
+  task_created: 'info',
+  task_updated: 'neutral',
+  task_reassigned: 'info',
+  task_status_changed: 'neutral',
+  task_comment_added: 'neutral',
+  task_checklist_updated: 'neutral',
 };
 
 /**
@@ -208,3 +220,71 @@ export const ORIGIN_LABELS: Record<OriginSource, string> = {
 /** Format prefixes used in the naming code, e.g. NEG-MUM-014. */
 export const CODE_PREFIXES = ['NEG', 'PRT', 'SLD', 'VHS', 'AUD', 'DIG'] as const;
 export type CodePrefix = (typeof CODE_PREFIXES)[number];
+
+/* -------------------------------------------------------------------- tasks */
+
+/** Daily-work task lifecycle. `cancelled` is admin-only; everything else the assignee drives. */
+export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'done', 'cancelled'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'To do',
+  in_progress: 'In progress',
+  blocked: 'Blocked',
+  done: 'Done',
+  cancelled: 'Cancelled',
+};
+
+/** Statuses that still count as work to do (overdue / due-today / upcoming buckets). */
+export const TASK_OPEN_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'blocked'];
+
+/** Dot colour for the status Badge — never the only signal, the label always renders. */
+export const TASK_STATUS_SEVERITY: Record<TaskStatus, Severity> = {
+  todo: 'neutral',
+  in_progress: 'info',
+  blocked: 'critical',
+  done: 'good',
+  cancelled: 'neutral',
+};
+
+export const TASK_PRIORITIES = ['urgent', 'normal', 'low'] as const;
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+
+export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  urgent: 'Urgent',
+  normal: 'Normal',
+  low: 'Low',
+};
+
+export const TASK_PRIORITY_SEVERITY: Record<TaskPriority, Severity> = {
+  urgent: 'critical',
+  normal: 'neutral',
+  low: 'neutral',
+};
+
+/** Notification kinds raised by task events (see models/Notification.ts). */
+export const NOTIFICATION_KINDS = [
+  'task_assigned',
+  'task_reassigned',
+  'task_removed',
+  'task_comment',
+  'task_blocked',
+  'task_done',
+  'task_status',
+  'task_cancelled',
+] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+
+/**
+ * The verb a lot assigned to someone asks of them at each in-flight stage. Used for the
+ * read-only derived rows in Today's tasks. Stages are an open vocabulary (admin list),
+ * so callers fall back to `WORK_ON_LOT_VERB` for a key not listed here.
+ */
+export const STAGE_ACTION_LABELS: Record<string, string> = {
+  intake: 'Finish intake',
+  decision: 'Decide',
+  metadata: 'Add metadata',
+  scanning: 'Scan',
+  mls_tag: 'Tag',
+};
+export const WORK_ON_LOT_VERB = 'Work on';

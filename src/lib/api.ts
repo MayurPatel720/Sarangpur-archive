@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import type { ZodType } from 'zod';
+import type { ZodType, ZodTypeDef } from 'zod';
 import { describeDbError } from '@/lib/mongo';
 
 /**
@@ -15,6 +15,24 @@ export class HttpError extends Error {
     this.name = 'HttpError';
     this.status = status;
   }
+}
+
+/**
+ * Zod-parses a request's query string, throwing a 400 `HttpError` on failure. Lets a
+ * GET route stay a one-liner: call it inside the `handleQuery` callback.
+ */
+export function parseQueryParams<T>(schema: ZodType<T, ZodTypeDef, unknown>, req: Request): T {
+  const parsed = schema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  if (!parsed.success) {
+    const first = parsed.error.issues[0];
+    throw new HttpError(
+      400,
+      first
+        ? `Invalid query: ${first.path.join('.') || 'query'} — ${first.message}`
+        : 'Invalid query.',
+    );
+  }
+  return parsed.data;
 }
 
 /** Maps an unknown throw to its `{ status, error }` response shape. */

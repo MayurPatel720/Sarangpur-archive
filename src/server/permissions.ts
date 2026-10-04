@@ -57,6 +57,12 @@ export const PERMISSIONS = [
   'project:assign',
   /** Manually add an individual item to a lot (beyond intake auto-generation). */
   'item:create',
+  // Daily work (tasks). `view` = tasks assigned to / created by you, plus acting on them.
+  'task:view',
+  /** Create, edit, reassign and cancel tasks. Admin-only by seed; assignable to custom roles. */
+  'task:assign',
+  /** See every user's tasks (and filter by assignee). Admin-only by seed. */
+  'task:viewAll',
   // Admin
   'user:manage',
   'settings:manage',
@@ -113,6 +119,7 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'discards:view',
     'attachment:upload',
     'project:view',
+    'task:view',
     'item:create',
     ...FORMAT_PERMISSIONS,
   ],
@@ -135,6 +142,7 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'discard:confirm',
     'attachment:upload',
     'project:view',
+    'task:view',
     'item:create',
     ...FORMAT_PERMISSIONS,
   ],
@@ -159,6 +167,7 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'discard:confirm',
     'attachment:upload',
     'project:view',
+    'task:view',
     'item:create',
     ...FORMAT_PERMISSIONS,
   ],
@@ -174,6 +183,7 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'discards:view',
     'storage:view',
     'project:view',
+    'task:view',
     ...FORMAT_PERMISSIONS,
   ],
 };

@@ -100,8 +100,6 @@ export const projectRowSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   lotCount: z.number(),
-  startDate: z.string().nullable(),
-  targetDate: z.string().nullable(),
   coordinatorName: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -148,12 +146,9 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 
 export const projectCreateBodySchema = z
   .object({
-    code: z.string().trim().min(1).max(40),
     name: z.string().trim().min(1).max(160),
     description: z.string().trim().max(2000).optional(),
     coordinatorId: objectIdSchema.optional(),
-    startDate: z.string().datetime({ offset: true }).optional(),
-    targetDate: z.string().datetime({ offset: true }).optional(),
     /** Intake details every child lot will share. All optional — assignees fill gaps later. */
     shared: projectSharedSchema.default({}),
     /** Mandatory: the quantities. One child lot is created per distinct format. */
@@ -185,8 +180,6 @@ export const projectUpdateBodySchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
   coordinatorId: objectIdSchema.nullable().optional(),
-  startDate: z.string().datetime({ offset: true }).nullable().optional(),
-  targetDate: z.string().datetime({ offset: true }).nullable().optional(),
   /** Shared intake values — applied to the project AND every synced child lot. */
   shared: projectSharedPatchSchema.optional(),
 });

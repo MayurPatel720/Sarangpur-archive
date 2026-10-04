@@ -7,6 +7,7 @@ import { ArchiveLot } from '@/models/ArchiveLot';
 import { ActivityLog } from '@/models/ActivityLog';
 import { User } from '@/models/User';
 import { withAudit, auditActor } from '@/server/audit';
+import { generateProjectCode } from '@/server/codes';
 import { insertLotInSession, validateLotVocab, replaceMediaLines, type LotInsertBody } from '@/server/lots/mutations';
 import type {
   LotAssigneeBody,
@@ -116,9 +117,7 @@ export async function createProject(
     const lots: { id: string; lotReference: string; format: string }[] = [];
     await session.withTransaction(async () => {
       lots.length = 0;
-      code = body.code.trim();
-      const existing = await Project.findOne({ code }).session(session).lean();
-      if (existing) throw new HttpError(409, `Project code "${code}" is already in use.`);
+      code = await generateProjectCode(session);
 
       const userIds = [
         ...(body.coordinatorId ? [body.coordinatorId] : []),
@@ -136,8 +135,6 @@ export async function createProject(
             coordinator: body.coordinatorId ? new Types.ObjectId(body.coordinatorId) : null,
             coordinatorName: body.coordinatorId ? (names.get(body.coordinatorId) ?? null) : null,
             shared,
-            startDate: body.startDate ? new Date(body.startDate) : null,
-            targetDate: body.targetDate ? new Date(body.targetDate) : null,
             lotCount: 0,
           },
         ],
@@ -246,16 +243,6 @@ export async function updateProject(
         track('shared', before, next);
         project.set('shared', next);
         project.markModified('shared');
-      }
-      if (body.startDate !== undefined) {
-        const next = body.startDate ? new Date(body.startDate) : null;
-        track('startDate', project.startDate?.toISOString() ?? null, next?.toISOString() ?? null);
-        project.startDate = next;
-      }
-      if (body.targetDate !== undefined) {
-        const next = body.targetDate ? new Date(body.targetDate) : null;
-        track('targetDate', project.targetDate?.toISOString() ?? null, next?.toISOString() ?? null);
-        project.targetDate = next;
       }
 
       await project.save({ session });

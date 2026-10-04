@@ -20,7 +20,7 @@ export function FormSection({
         {legend}
       </legend>
       {description ? (
-        <p className="m-0 mb-3 text-[12px] text-ink-3 max-w-[68ch]">{description}</p>
+        <p className="m-0 mb-3 text-[12px] text-ink-3">{description}</p>
       ) : null}
       {children}
     </fieldset>

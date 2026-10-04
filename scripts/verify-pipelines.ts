@@ -50,6 +50,14 @@ import {
 } from '../src/server/projects/pipelines';
 import { shapeProjectActivity } from '../src/server/projects/queries';
 import { projectProgressSchema } from '../src/types/project';
+import {
+  taskListPipeline,
+  taskMatch,
+  taskPanelPipeline,
+  taskPeoplePipeline,
+} from '../src/server/tasks/pipelines';
+import { shapeTaskRow } from '../src/server/tasks/queries';
+import { taskRowSchema } from '../src/types/task';
 
 const DAY = 86_400_000;
 const NOW = new Date('2026-09-18T12:00:00.000Z');
@@ -451,6 +459,98 @@ check(
   'project feed: severity is derived from the event kind',
   shapedProjectActivity.map((e) => e.severity),
   ['info', 'info'],
+);
+
+/* --- 10. task pipelines -------------------------------------------------- */
+
+const TODAY = '2026-09-18';
+function task(over: Record<string, unknown>) {
+  return {
+    description: null, blockedReason: null, priority: 'normal', dueDate: null,
+    assignees: [{ id: 'A', name: 'Asha' }], createdBy: 'ADM', createdByName: 'Admin',
+    lot: null, lotCode: null, project: null, projectCode: null,
+    checklistTotal: 0, checklistDone: 0, commentCount: 0, doneAt: null,
+    format: 'photo', status: 'todo', title: 'Task', checklist: [], comments: [],
+    createdAt: ago(3), updatedAt: ago(1),
+    ...over,
+  };
+}
+const TASKS = [
+  task({ _id: 'T1', priority: 'urgent', dueDate: '2026-09-16' }),
+  task({ _id: 'T2', status: 'in_progress', dueDate: '2026-09-10' }),
+  task({ _id: 'T3', assignees: [{ id: 'B', name: 'Bala' }], format: 'video', status: 'blocked', blockedReason: 'Deck broken', dueDate: TODAY, createdAt: ago(4) }),
+  task({ _id: 'T4', priority: 'urgent' }),
+  task({ _id: 'T5', title: 'Scan the Diwali reels', dueDate: '2026-09-25', assignees: [{ id: 'A', name: 'Asha' }, { id: 'B', name: 'Bala' }] }),
+  task({ _id: 'T6', status: 'done', doneAt: ago(1), dueDate: '2026-09-17' }),
+  task({ _id: 'T7', assignees: [{ id: 'B', name: 'Bala' }], status: 'done', doneAt: ago(10) }),
+  task({ _id: 'T8', status: 'cancelled', dueDate: '2026-09-01' }),
+  task({ _id: 'T9', assignees: [{ id: 'B', name: 'Bala' }], priority: 'low', dueDate: TODAY, createdAt: ago(1) }),
+];
+const ids = (rows: { _id?: unknown }[]) => rows.map((r) => r._id);
+const taskList = (f: Parameters<typeof taskMatch>[0]) =>
+  (run<{ rows: { _id: string }[]; total: { n: number }[] }>(
+    taskListPipeline(taskMatch(f, TODAY), TODAY, 0, 50),
+    TASKS,
+  )[0])!;
+
+check(
+  'tasks: overdue first, then urgent, then due date, finished work last',
+  taskList({}).rows.map((r) => r._id),
+  ['T2', 'T1', 'T4', 'T9', 'T3', 'T5', 'T8', 'T6', 'T7'],
+);
+check('tasks: total counts every match', taskList({}).total[0]?.n, 9);
+check('tasks: non-admin sees assigned-to or created-by only', taskList({ visibleTo: 'A' }).rows.map((r) => r._id), ['T2', 'T1', 'T4', 'T5', 'T8', 'T6']);
+check('tasks: a second assignee sees the task too', taskList({ visibleTo: 'B' }).rows.map((r) => r._id), ['T9', 'T3', 'T5', 'T7']);
+check('tasks: assignee filter matches ANY assignee', taskList({ assignee: 'B' }).rows.map((r) => r._id), ['T9', 'T3', 'T5', 'T7']);
+check('tasks: search matches any assignee name', taskList({ q: 'bala' }).rows.map((r) => r._id), ['T9', 'T3', 'T5', 'T7']);
+check('tasks: a user who neither got nor set any sees none', taskList({ visibleTo: 'Z' }).rows.length, 0);
+check('tasks: format filter', taskList({ format: 'video' }).rows.map((r) => r._id), ['T3']);
+check('tasks: due=overdue is open + past due only', taskList({ due: 'overdue' }).rows.map((r) => r._id), ['T2', 'T1']);
+check('tasks: due=today', taskList({ due: 'today' }).rows.map((r) => r._id), ['T9', 'T3']);
+check('tasks: due=upcoming excludes undated', taskList({ due: 'upcoming' }).rows.map((r) => r._id), ['T5']);
+check('tasks: due=none is open undated', taskList({ due: 'none' }).rows.map((r) => r._id), ['T4']);
+check('tasks: assignee + status filter', taskList({ assignee: 'B', status: 'blocked' }).rows.map((r) => r._id), ['T3']);
+check('tasks: due range', taskList({ dueFrom: '2026-09-17', dueTo: '2026-09-18' }).rows.map((r) => r._id), ['T9', 'T3', 'T6']);
+check('tasks: text search is case-insensitive', taskList({ q: 'diwali' }).rows.map((r) => r._id), ['T5']);
+check('tasks: search escapes regex characters', taskList({ q: '(' }).rows.length, 0);
+check(
+  'tasks: paging slices after the sort',
+  (run<{ rows: { _id: string }[] }>(taskListPipeline({}, TODAY, 2, 3), TASKS)[0])!.rows.map((r) => r._id),
+  ['T4', 'T9', 'T3'],
+);
+check(
+  'tasks: list rows carry no checklist/comments bodies',
+  Object.keys(taskList({}).rows[0] as object).some((k) => k === 'checklist' || k === 'comments'),
+  false,
+);
+const shapedTasks = taskList({}).rows.map((r) => shapeTaskRow(r as never, TODAY));
+check('tasks: shaped rows match the Zod contract', taskRowSchema.array().safeParse(shapedTasks).success, true);
+check('tasks: overdue flag is open + before today', shapedTasks.filter((t) => t.overdue).map((t) => t.id), ['T2', 'T1']);
+
+const panel = run<Record<string, { _id: string; n?: number }[]>>(
+  taskPanelPipeline({}, TODAY, ago(3), 25),
+  TASKS,
+)[0]!;
+check('panel: overdue group, urgent first', ids(panel.overdue ?? []), ['T1', 'T2']);
+check('panel: due-today group', ids(panel.dueToday ?? []), ['T9', 'T3']);
+check('panel: upcoming holds later + undated, urgent first', ids(panel.upcoming ?? []), ['T4', 'T5']);
+check('panel: done recently excludes old and cancelled', ids(panel.doneRecently ?? []), ['T6']);
+check(
+  'panel: true totals per group',
+  [panel.overdueTotal, panel.dueTodayTotal, panel.upcomingTotal, panel.doneRecentlyTotal].map((t) => t?.[0]?.n),
+  [2, 2, 2, 1],
+);
+const cappedPanel = run<Record<string, unknown[]>>(taskPanelPipeline({}, TODAY, ago(3), 1), TASKS)[0]!;
+check('panel: cap limits rows but not totals', [cappedPanel.overdue?.length, (cappedPanel.overdueTotal?.[0] as { n: number }).n], [1, 2]);
+
+const people = run<{ _id: string; userName: string; open: number; overdue: number; blocked: number }>(
+  taskPeoplePipeline({}, TODAY),
+  TASKS,
+);
+check(
+  'people strip: open / overdue / blocked per assignee, worst first',
+  people.map((p) => [p._id, p.open, p.overdue, p.blocked]),
+  [['A', 4, 2, 0], ['B', 3, 0, 1]],
 );
 
 /* ------------------------------------------------------------------ verdict */

@@ -18,6 +18,7 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
+  IconCheckCircle,
   IconClipboardList,
   IconDashboard,
   IconIntake,
@@ -38,6 +39,7 @@ const WORKFLOW_ITEMS = [
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard', perm: 'dashboard:view' },
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
   { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
+  { icon: IconCheckCircle, label: 'Tasks', href: '/tasks', perm: 'task:view' },
   { icon: IconBox, label: 'Projects', href: '/projects', perm: 'project:view' },
   { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
   { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
@@ -237,6 +239,8 @@ export function Sidebar() {
 
   for (const item of WORKFLOW_ITEMS) {
     if (!showCore(item.perm)) continue;
+    // Admin runs the whole archive rather than owning lots, so "My lots" is hidden for them.
+    if (item.label === 'My lots' && me?.roleKey === 'admin') continue;
     // `/dashboard` is the format-block picker itself — keep it unscoped.
     const isPicker = item.href === '/dashboard';
     // Some rows deep-link with a query (e.g. `/projects?new=1`) — active only

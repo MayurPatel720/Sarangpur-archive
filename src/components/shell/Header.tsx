@@ -2,11 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { signOut } from 'next-auth/react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { dashboardApi } from '@/lib/api-client';
-import { scopedHref } from '@/lib/dashboard-links';
-import { queryKeys } from '@/lib/query-keys';
-import { useFormatContext } from '@/hooks/useFormatParam';
+import { useQueryClient } from '@tanstack/react-query';
 import { useMe } from '@/hooks/useCan';
 import { THEME_OPTIONS, useTheme } from '@/hooks/useTheme';
 import {
@@ -19,6 +15,7 @@ import {
   IconSettings,
 } from '@/components/ui/icons';
 import { useDrawer } from '@/components/shell/drawer-context';
+import { NotificationBell } from '@/components/shell/NotificationBell';
 import { SearchOverlay } from '@/components/shell/SearchOverlay';
 import { Kbd } from '@/components/ui/Kbd';
 
@@ -173,7 +170,7 @@ export function Header({ page }: { page: string }) {
             </a>
           }
         >
-          <AlertBell />
+          <NotificationBell />
         </Suspense>
 
         {/* User button + dropdown */}
@@ -283,34 +280,5 @@ export function Header({ page }: { page: string }) {
         </Suspense>
       ) : null}
     </header>
-  );
-}
-
-/**
- * Bell count + destination follow the active format block (`?format=` or
- * `/dashboard/[format]`); global when no block is open. Reads useSearchParams,
- * so Header renders it behind a local Suspense boundary.
- */
-function AlertBell() {
-  const format = useFormatContext();
-  const alerts = useQuery({
-    queryKey: queryKeys.dashboard.alerts(format),
-    queryFn: () => dashboardApi.alerts(format),
-  });
-  const openAlerts = alerts.data?.totalOpen ?? 0;
-
-  return (
-    <a
-      href={scopedHref('/alerts', format)}
-      aria-label={`Alerts, ${openAlerts} open`}
-      className="relative w-10 h-10 bg-surface border border-line rounded-[6px] shadow-control text-ink-2 flex items-center justify-center cursor-pointer"
-    >
-      <IconBell size={17} />
-      {openAlerts > 0 && (
-        <span className="absolute -top-[5px] -right-[5px] min-w-[17px] h-[17px] px-1 box-border bg-danger-mark border-2 border-surface rounded-full text-white text-[9.5px] font-semibold leading-[13px] text-center tnum">
-          {openAlerts}
-        </span>
-      )}
-    </a>
   );
 }

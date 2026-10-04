@@ -21,3 +21,5 @@ export {
 export { ReferenceList, type ReferenceListDoc } from './ReferenceList';
 export { Role, type RoleDoc } from './Role';
 export { Project, type ProjectDoc } from './Project';
+export { Task, type TaskDoc } from './Task';
+export { Notification, type NotificationDoc } from './Notification';

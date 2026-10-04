@@ -6,7 +6,6 @@ import { useQuery } from '@tanstack/react-query';
 import { projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
-import { date } from '@/lib/format';
 import type { ProjectListResponse } from '@/types/project';
 import { ErrorState, Panel, PanelHeader } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -45,11 +44,6 @@ const columns: Column<ProjectRow>[] = [
     render: (r) => (
       <span className="whitespace-nowrap">{r.coordinatorName ? r.coordinatorName : '—'}</span>
     ),
-  },
-  {
-    key: 'target',
-    header: 'Target',
-    render: (r) => <span className="whitespace-nowrap">{r.targetDate ? date(r.targetDate) : '—'}</span>,
   },
 ];
 

@@ -130,6 +130,28 @@ import {
   type TriageItemsResponse,
 } from '@/types/triage';
 
+import {
+  taskDetailResponseSchema,
+  taskListResponseSchema,
+  taskMutationResponseSchema,
+  taskPanelResponseSchema,
+  type TaskChecklistBody,
+  type TaskCommentBody,
+  type TaskCreateInput,
+  type TaskDetailResponse,
+  type TaskListResponse,
+  type TaskPanelResponse,
+  type TaskStatusBody,
+  type TaskUpdateBody,
+} from '@/types/task';
+import {
+  notificationListResponseSchema,
+  notificationReadResponseSchema,
+  type NotificationListResponse,
+  type NotificationReadBody,
+  type NotificationReadResponse,
+} from '@/types/notification';
+
 /**
  * Thrown when a route returns a non-2xx. Carries the server's own message so the UI
  * can show "Cannot reach MongoDB…" rather than a generic failure.
@@ -512,5 +534,67 @@ export const projectsApi = {
       'DELETE',
       {},
       projectAssignResponseSchema,
+    ),
+};
+
+const qs = (params: Record<string, string>) => {
+  const q = new URLSearchParams(params).toString();
+  return q ? `?${q}` : '';
+};
+
+export const tasksApi = {
+  list: (params: Record<string, string>) =>
+    getJson<TaskListResponse>(`/api/tasks${qs(params)}`, taskListResponseSchema),
+  panel: (params: Record<string, string>) =>
+    getJson<TaskPanelResponse>(`/api/tasks/panel${qs(params)}`, taskPanelResponseSchema),
+  detail: (id: string, today: string) =>
+    getJson<TaskDetailResponse>(
+      `/api/tasks/${encodeURIComponent(id)}${qs({ today })}`,
+      taskDetailResponseSchema,
+    ),
+  create: (body: TaskCreateInput) =>
+    sendJson<TaskDetailResponse>('/api/tasks', 'POST', body, taskMutationResponseSchema),
+  update: (id: string, body: TaskUpdateBody) =>
+    sendJson<TaskDetailResponse>(
+      `/api/tasks/${encodeURIComponent(id)}`,
+      'PATCH',
+      body,
+      taskMutationResponseSchema,
+    ),
+  setStatus: (id: string, body: TaskStatusBody) =>
+    sendJson<TaskDetailResponse>(
+      `/api/tasks/${encodeURIComponent(id)}/status`,
+      'POST',
+      body,
+      taskMutationResponseSchema,
+    ),
+  comment: (id: string, body: TaskCommentBody) =>
+    sendJson<TaskDetailResponse>(
+      `/api/tasks/${encodeURIComponent(id)}/comments`,
+      'POST',
+      body,
+      taskMutationResponseSchema,
+    ),
+  setChecklist: (id: string, body: TaskChecklistBody) =>
+    sendJson<TaskDetailResponse>(
+      `/api/tasks/${encodeURIComponent(id)}/checklist`,
+      'PUT',
+      body,
+      taskMutationResponseSchema,
+    ),
+};
+
+export const notificationsApi = {
+  list: (page = 1, pageSize = 15) =>
+    getJson<NotificationListResponse>(
+      `/api/notifications${qs({ page: String(page), pageSize: String(pageSize) })}`,
+      notificationListResponseSchema,
+    ),
+  markRead: (body: NotificationReadBody) =>
+    sendJson<NotificationReadResponse>(
+      '/api/notifications/read',
+      'POST',
+      body,
+      notificationReadResponseSchema,
     ),
 };

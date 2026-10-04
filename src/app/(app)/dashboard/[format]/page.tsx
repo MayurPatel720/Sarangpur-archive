@@ -5,7 +5,7 @@ import { Header } from '@/components/shell/Header';
 import { FormatGate } from '@/components/dashboard/FormatGate';
 import { PageHeading } from '@/components/dashboard/PageHeading';
 import { KpiRow } from '@/components/dashboard/KpiRow';
-import { DataTypeRow } from '@/components/dashboard/DataTypeRow';
+import { TodaysTasks } from '@/components/tasks/TodaysTasks';
 import { PipelineBoard } from '@/components/dashboard/PipelineBoard';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { ActivityFeed } from '@/components/dashboard/ActivityFeed';
@@ -41,7 +41,7 @@ export default async function FormatDashboardPage({
         <FormatGate format={known}>
           <PageHeading format={known} />
           <KpiRow format={known} />
-          <DataTypeRow format={known} />
+          <TodaysTasks format={known} />
           <PipelineBoard format={known} />
           <div className="flex-1 min-h-[200px] lg:min-h-[320px] flex flex-col lg:flex-row gap-4">
             <AlertsPanel format={known} />

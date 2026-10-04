@@ -71,4 +71,14 @@ export const queryKeys = {
     lotProjects: (lotId: string) =>
       [...queryKeys.projects.all, 'lot-projects', lotId] as const,
   },
+  tasks: {
+    all: ['tasks'] as const,
+    list: (params: string) => [...queryKeys.tasks.all, 'list', params] as const,
+    panel: (params: string) => [...queryKeys.tasks.all, 'panel', params] as const,
+    detail: (id: string) => [...queryKeys.tasks.all, 'detail', id] as const,
+  },
+  notifications: {
+    all: ['notifications'] as const,
+    list: (page: number) => [...queryKeys.notifications.all, 'list', page] as const,
+  },
 } as const;

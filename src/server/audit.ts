@@ -1,7 +1,9 @@
-import type { ClientSession, HydratedDocument } from 'mongoose';
-import type { ActivityKind } from '@/lib/domain';
+import { Types, type ClientSession, type HydratedDocument } from 'mongoose';
+import type { ActivityKind, NotificationKind } from '@/lib/domain';
 import { ArchiveLot, type ArchiveLotDoc } from '@/models/ArchiveLot';
 import { ActivityLog } from '@/models/ActivityLog';
+import { Task, type TaskDoc } from '@/models/Task';
+import { Notification } from '@/models/Notification';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
 import { assertCanWorkLot } from '@/server/lots/access';
@@ -144,6 +146,110 @@ export async function withAudit<T>(opts: {
         ],
         { session },
       );
+    });
+    return result;
+  } finally {
+    await session.endSession();
+  }
+}
+
+/* -------------------------------------------------------------------- tasks */
+
+export interface TaskAuditEntry {
+  kind: ActivityKind;
+  title: string;
+  detail?: string;
+  changes?: ChangeEntry[];
+}
+
+/** A per-user inbox entry raised by the same change. The actor is never notified of their own action. */
+export interface TaskNotice {
+  userId: string;
+  kind: NotificationKind;
+  text: string;
+}
+
+/**
+ * `withAudit()` for tasks. `withAudit` itself is lot-scoped, so — like the project
+ * mutations — task events get their own wrapper with the same all-or-nothing contract:
+ * in one transaction it (1) loads the task (404; skipped for a create), (2) runs
+ * `mutate`, which changes the document and returns the audit `entries` and any
+ * notifications, (3) saves the task, (4) inserts the `ActivityLog` rows (task set,
+ * actorName denormalised) and (5) inserts the `Notification` rows.
+ *
+ * For a create, omit `taskId` and have `mutate` return a `new Task(...)`.
+ */
+export async function withTaskAudit<T>(opts: {
+  taskId?: string;
+  actor: AuditActor;
+  mutate: (
+    task: HydratedDocument<TaskDoc> | null,
+    session: ClientSession,
+  ) => Promise<{
+    task: HydratedDocument<TaskDoc>;
+    result: T;
+    entries: TaskAuditEntry[];
+    notices?: TaskNotice[];
+  }>;
+}): Promise<T> {
+  await connectToDatabase();
+  const session = await Task.startSession();
+
+  try {
+    let result!: T;
+    await session.withTransaction(async () => {
+      let existing: HydratedDocument<TaskDoc> | null = null;
+      if (opts.taskId !== undefined) {
+        existing = Types.ObjectId.isValid(opts.taskId)
+          ? await Task.findById(opts.taskId).session(session)
+          : null;
+        if (!existing) throw new HttpError(404, 'Task not found.');
+      }
+
+      const out = await opts.mutate(existing, session);
+      result = out.result;
+
+      try {
+        await out.task.save({ session });
+      } catch (error) {
+        if (error instanceof Error && error.name === 'VersionError') {
+          throw new HttpError(409, 'This task changed since you opened it. Reload and try again.');
+        }
+        throw error;
+      }
+
+      const at = new Date();
+      if (out.entries.length > 0) {
+        await ActivityLog.create(
+          out.entries.map((e) => ({
+            task: out.task._id,
+            taskTitle: out.task.title,
+            kind: e.kind,
+            title: e.title,
+            detail: e.detail,
+            actor: new Types.ObjectId(opts.actor.id),
+            actorName: opts.actor.name,
+            at,
+            changes: e.changes ?? [],
+          })),
+          { session, ordered: true },
+        );
+      }
+
+      const notices = (out.notices ?? []).filter((n) => n.userId !== opts.actor.id);
+      if (notices.length > 0) {
+        await Notification.create(
+          notices.map((n) => ({
+            user: new Types.ObjectId(n.userId),
+            kind: n.kind,
+            task: out.task._id,
+            taskTitle: out.task.title,
+            text: n.text,
+            actorName: opts.actor.name,
+          })),
+          { session, ordered: true },
+        );
+      }
     });
     return result;
   } finally {

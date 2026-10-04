@@ -239,6 +239,32 @@ Still TODO:
 
 ---
 
+## 7b. Tasks & notifications — DONE (`src/types/task.ts`, `src/types/notification.ts`)
+
+Grants: `task:view` (every role — own tasks, and acting on them), `task:assign` (create / edit /
+reassign / cancel; admin), `task:viewAll` (see everyone's tasks + the per-person strip; admin).
+Rows carry `assignees: [{id,name}]` (1+). Non-admins are confined server-side to tasks they are an assignee or the creator of (someone else's task
+is a 404, not a 403). Every write runs through `withTaskAudit()`.
+
+| Method | Path | Grant | Notes |
+|---|---|---|---|
+| GET | `/api/tasks` | `task:view` | `{rows,total,page,pageSize}`. Query: `page` `pageSize` `format` `assignee` (id or `me`; matches ANY assignee) `status` `priority` `due` (`overdue`|`today`|`upcoming`|`none`) `dueFrom` `dueTo` `lot` `project` `q` `today` (caller's `YYYY-MM-DD`). Sort: overdue, urgent, due date, finished last |
+| GET | `/api/tasks/panel` | `task:view` | Today's tasks: `overdue` / `dueToday` / `upcoming` / `doneRecently` (`{rows,total}`, 25 per group), `derived` lot rows, `people` (admin only; a task with two assignees counts for each of them). Query `format` `assignee` (admin) `today` |
+| POST | `/api/tasks` | `task:assign` | → 201. `assigneeIds` (1–20 active users). Format required unless `lotId` is given |
+| GET | `/api/tasks/[taskId]` | `task:view` | task + checklist + comments + history + `can` flags |
+| PATCH | `/api/tasks/[taskId]` | `task:assign` | admin edit of any field, also on a done task; `assigneeIds` is the FULL new set (≥1; added → `task_assigned`, removed → `task_removed`); setting `lotId` makes `format` follow the lot, removing the lot keeps the format; `format` is refused while a lot is linked |
+| POST | `/api/tasks/[taskId]/status` | `task:view` + any assignee/creator | `{status, blockedReason?}`; blocked requires a reason; `cancelled` needs `task:assign` |
+| POST | `/api/tasks/[taskId]/comments` | `task:view` + assignee/creator | → 201 |
+| PUT | `/api/tasks/[taskId]/checklist` | `task:view` + assignee/creator | full replacement `{items:[{id?,text,done}]}` |
+| GET | `/api/notifications` | `task:view` | caller's inbox `{rows,total,page,pageSize,unreadCount}` |
+| POST | `/api/notifications/read` | `task:view` | `{ids}` or `{all:true}` |
+
+Notifications (the actor is never notified): create / added to a task → each new assignee; removed → that person (`task_removed`); comment and status change → all other assignees + the creator; blocked / done → the creator (`task_blocked` / `task_done`); cancel → everyone on the task.
+
+Pipelines (`src/server/tasks/pipelines.ts`, covered in `scripts/verify-pipelines.ts`): list, panel, people.
+
+---
+
 ## 8. Worker-facing — TODO
 
 Not public. Called by `worker/` over localhost, or skipped entirely by having the worker
