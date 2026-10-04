@@ -10,8 +10,8 @@ type Item =
   | { type: 'event'; at: string; id: string; event: TaskHistoryEntry };
 
 /**
- * One chronological timeline (oldest first) merging comments and history, with the
- * comment box at the bottom. The history's own "comment added" rows are dropped — the
+ * One timeline (newest first) merging comments and history, with the comment box
+ * on top so a new comment lands right under it. The history's own "comment added" rows are dropped — the
  * comment itself is already in the timeline.
  */
 export function TaskActivity({
@@ -34,10 +34,33 @@ export function TaskActivity({
     ...history
       .filter((h) => h.kind !== 'task_comment_added')
       .map((h): Item => ({ type: 'event', at: h.at, id: `h-${h.id}`, event: h })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
+  ].sort((a, b) => b.at.localeCompare(a.at));
 
   return (
     <div className="flex flex-col gap-3">
+      {canComment ? (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (text.trim()) onPost(text.trim(), () => setText(''));
+          }}
+        >
+          <Textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Write a comment…"
+            maxLength={2000}
+            rows={2}
+            aria-label="New comment"
+          />
+          <div className="flex justify-end">
+            <PrimaryButton type="submit" disabled={pending || text.trim() === ''}>
+              {pending ? 'Posting…' : 'Comment'}
+            </PrimaryButton>
+          </div>
+        </form>
+      ) : null}
       {items.length === 0 ? <p className="m-0 text-[12.5px] text-ink-3">No activity yet.</p> : null}
       <ul className="m-0 p-0 list-none flex flex-col gap-3">
         {items.map((item) =>
@@ -64,29 +87,6 @@ export function TaskActivity({
           ),
         )}
       </ul>
-      {canComment ? (
-        <form
-          className="flex flex-col gap-2 pt-1"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (text.trim()) onPost(text.trim(), () => setText(''));
-          }}
-        >
-          <Textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Write a comment…"
-            maxLength={2000}
-            rows={2}
-            aria-label="New comment"
-          />
-          <div className="flex justify-end">
-            <PrimaryButton type="submit" disabled={pending || text.trim() === ''}>
-              {pending ? 'Posting…' : 'Comment'}
-            </PrimaryButton>
-          </div>
-        </form>
-      ) : null}
     </div>
   );
 }

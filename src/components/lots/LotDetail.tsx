@@ -875,12 +875,18 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     ? (originList.data?.items.find((o) => o.value === lot.originSource)?.label ?? lot.originSource)
     : null;
 
-  const provenance = [
-    `${num(lot.quantity)} × ${lot.mediaSubtypeLabel}`,
-    originLabel,
-    `${lot.dateReceived ? `Received ${date(lot.dateReceived)}` : 'Date received not set'} · ${lot.receiver.name}`,
-    lot.namingCode ? `Naming code ${lot.namingCode}` : 'Naming code issued at decision',
-    `Record v${lot.version}`,
+  // One count per media subtype, merged across lines, so a multi-subtype lot isn't summarised by its first line.
+  const subtypeCounts = new Map<string, number>();
+  for (const l of lot.mediaLines) {
+    subtypeCounts.set(l.mediaSubtypeLabel, (subtypeCounts.get(l.mediaSubtypeLabel) ?? 0) + l.quantity);
+  }
+  const contents =
+    subtypeCounts.size > 1
+      ? [`${num(lot.quantity)} items`, ...[...subtypeCounts].map(([label, n]) => `${label} (${num(n)})`)].join('  ·  ')
+      : `${num(lot.quantity)} ${lot.quantity === 1 ? 'item' : 'items'}  ·  ${lot.mediaSubtypeLabel}`;
+  const origin = [
+    originLabel ? `Origin: ${originLabel}` : null,
+    lot.dateReceived ? `Received ${date(lot.dateReceived)} by ${lot.receiver.name}` : 'Date not recorded yet',
   ]
     .filter(Boolean)
     .join('  ·  ');
@@ -1075,10 +1081,18 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         </button>
         <div className="flex flex-col sm:flex-row sm:items-start gap-3 sm:gap-4">
           <div className="flex flex-col gap-1.5 min-w-0">
-            <h1 className="m-0 font-display text-[26px] md:text-[32px] font-semibold tracking-[-0.01em] leading-tight text-ink">
-              {lot.lotReference}
-            </h1>
-            <p className="m-0 text-[12.5px] leading-relaxed text-ink-3">{provenance}</p>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="m-0 font-display text-[26px] md:text-[32px] font-semibold tracking-[-0.01em] leading-tight text-ink">
+                {lot.lotReference}
+              </h1>
+              {lot.namingCode ? (
+                <span className="inline-flex items-center h-6 px-2 rounded-[4px] border border-line bg-surface-sunken font-mono text-[11.5px] font-semibold text-ink-2">
+                  {lot.namingCode}
+                </span>
+              ) : null}
+            </div>
+            <p className="m-0 text-[12.5px] leading-relaxed text-ink-3">{contents}</p>
+            <p className="m-0 text-[12.5px] leading-relaxed text-ink-3">{origin}</p>
           </div>
           <div className="sm:ml-auto flex items-center gap-2 flex-shrink-0">
             <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>{stageLabel}</Badge>
