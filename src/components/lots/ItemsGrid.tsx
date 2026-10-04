@@ -2,39 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  CellValueChangedEvent,
-  ColDef,
-  ColGroupDef,
-  GridApi,
-  GridReadyEvent,
-  ICellRendererParams,
-  SelectionChangedEvent,
-  ValueSetterParams,
-} from 'ag-grid-community';
+import type { GridApi } from 'ag-grid-community';
 import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useReferenceList } from '@/hooks/useReferenceList';
-import { AgGridReact, agGridTheme } from '@/components/ui/AgGridShell';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
-import type { GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
+import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { ItemEditDialog } from './ItemEditDialog';
 import { AddItemDialog } from './AddItemDialog';
+import { ItemFamilyGrid, type ColumnGroup } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
 
 /**
- * The lot's Items tab: one AG Grid row per physical item. The assignee fills in
- * the item details and answers the decision questions (Yes / No / blank); the
- * server computes each item's result. Tick rows to set the same values on many
- * items at once. Deciding the last item decides the lot ("split by item").
+ * The lot's Items tab: items grouped into one collapsible AG Grid per media-subtype
+ * family (see src/lib/item-columns.ts). The assignee fills in the item details and
+ * answers the decision questions (Yes / No / blank); the server computes each item's
+ * result. Tick rows to set the same values on many items at once. Deciding the last
+ * item decides the lot ("split by item").
  */
-
-type Tri = boolean | null;
-const TRI_VALUES = ['Yes', 'No', ''] as const;
-const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
-const triParse = (s: unknown): Tri => (s === 'Yes' ? true : s === 'No' ? false : null);
 
 type Filter = 'all' | 'unnamed' | 'undecided' | 'archive' | 'return' | 'discard';
 const FILTERS: { id: Filter; label: string }[] = [
@@ -45,8 +32,6 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'return', label: 'Return' },
   { id: 'discard', label: 'Discard' },
 ];
-
-type ColumnGroup = 'details' | 'decision' | 'digitization';
 
 function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(false);
@@ -60,29 +45,27 @@ function useNarrow(): boolean {
   return narrow;
 }
 
-function ResultCell({ data }: ICellRendererParams<GridItem>) {
-  if (!data) return null;
-  if (data.result === 'archive') return <Badge severity="good">Archive</Badge>;
-  if (data.result === 'return') return <Badge severity="info">Return</Badge>;
-  if (data.result === 'discard') return <Badge severity="critical">Discard</Badge>;
-  if (data.verdict === 'return_or_discard') return <Badge severity="warning">Return or discard?</Badge>;
-  return <span className="text-ink-4 text-[12px]">Undecided</span>;
-}
+const ROW_PX = 42;
+const matchesFilter = (r: GridItem, f: Filter) =>
+  f === 'unnamed' ? !r.name : f === 'undecided' ? !r.result : f === 'all' ? true : r.result === f;
 
 export function ItemsGrid({ lotId }: { lotId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const narrow = useNarrow();
-  const gridApi = useRef<GridApi<GridItem> | null>(null);
+  const gridApis = useRef<Map<string, GridApi<GridItem>>>(new Map());
   const [filter, setFilter] = useState<Filter>('all');
   const [hidden, setHidden] = useState<Record<ColumnGroup, boolean>>({
     details: false,
     decision: false,
     digitization: true,
   });
-  const [selected, setSelected] = useState<string[]>([]);
+  /** Explicit open/closed per family; null until the user touches it (then: first family open). */
+  const [expanded, setExpanded] = useState<Record<string, boolean> | null>(null);
+  const [selectedBy, setSelectedBy] = useState<Record<string, string[]>>({});
   const [editing, setEditing] = useState<GridItem | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const me = useMe();
   const canAdd = Boolean(me.data?.grants.includes('item:create'));
 
@@ -93,6 +76,9 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
   const physical = useReferenceList('physicalSource');
   const conditions = useReferenceList('itemCondition');
   const reasons = useReferenceList('notDigitizedReason');
+  const physicalItems = useMemo(() => physical.data?.items ?? [], [physical.data]);
+  const conditionItems = useMemo(() => conditions.data?.items ?? [], [conditions.data]);
+  const reasonItems = useMemo(() => reasons.data?.items ?? [], [reasons.data]);
 
   const save = useMutation({
     mutationFn: (v: { itemIds: string[]; set: ItemsBulkSet }) => itemsGridApi.update(lotId, v),
@@ -121,177 +107,59 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
   const canDetails = data?.editable.details ?? false;
   const canDecide = data?.editable.decision ?? false;
 
-  const refLabel = useCallback(
-    (list: { items: { value: string; label: string }[] } | undefined, v: string | null) =>
-      v ? (list?.items.find((i) => i.value === v)?.label ?? v) : '',
-    [],
-  );
-
-  const columnDefs = useMemo<(ColDef<GridItem> | ColGroupDef<GridItem>)[]>(() => {
-    const text = (field: keyof GridItem, headerName: string, width = 160, extra: Partial<ColDef<GridItem>> = {}): ColDef<GridItem> => ({
-      field,
-      headerName,
-      width,
-      editable: canDetails,
-      cellEditor: 'agTextCellEditor',
-      ...extra,
-    });
-    const refSelect = (
-      field: 'physicalSource' | 'itemCondition',
-      headerName: string,
-      list: { items: { value: string; label: string; active?: boolean }[] } | undefined,
-    ): ColDef<GridItem> => ({
-      field,
-      headerName,
-      width: 170,
-      editable: canDetails,
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: ['', ...(list?.items ?? []).map((i) => i.value)] },
-      valueFormatter: (p) => refLabel(list, p.value as string | null),
-      refData: Object.fromEntries((list?.items ?? []).map((i) => [i.value, i.label])),
-    });
-    const tri = (field: 'existsInMls' | 'newCopyIsBetter' | 'conditionUsable' | 'significant', headerName: string, extra: Partial<ColDef<GridItem>> = {}): ColDef<GridItem> => ({
-      colId: field,
-      headerName,
-      width: 128,
-      valueGetter: (p) => triText((p.data?.[field] ?? null) as Tri),
-      valueSetter: (p: ValueSetterParams<GridItem>) => {
-        if (!p.data) return false;
-        (p.data as Record<string, unknown>)[field] = triParse(p.newValue);
-        return true;
-      },
-      editable: canDecide,
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: [...TRI_VALUES] },
-      ...extra,
-    });
-
-    return [
-      {
-        field: 'code',
-        headerName: 'Item code',
-        width: narrow ? 150 : 190,
-        pinned: 'left',
-        cellClass: 'font-mono',
-        tooltipValueGetter: () => 'Open the full item form',
-        onCellClicked: (p) => p.data && setEditing(p.data),
-        cellRenderer: (p: ICellRendererParams<GridItem>) => (
-          <button type="button" className="bg-transparent border-0 p-0 text-accent cursor-pointer font-mono text-[12.5px]">
-            {p.value as string}
-          </button>
-        ),
-      },
-      {
-        ...text('name', 'Name / title *', narrow ? 170 : 240),
-        pinned: narrow ? undefined : 'left',
-        cellClassRules: { 'ag-cell-missing': (p) => !p.value },
-      },
-      {
-        field: 'subtypeLabel',
-        headerName: 'Media type',
-        width: 170,
-        valueGetter: (p) => (p.data ? `${p.data.format} · ${p.data.subtypeLabel}` : ''),
-      },
-      {
-        headerName: 'Details',
-        children: ([
-          text('nameOnCase', 'Name on case', 180),
-          text('description', 'Description', 240, { cellEditor: 'agLargeTextCellEditor', cellEditorPopup: true, cellEditorParams: { maxLength: 4000, rows: 6, cols: 50 } }),
-          {
-            field: 'year',
-            headerName: 'Year',
-            width: 96,
-            editable: canDetails,
-            cellEditor: 'agNumberCellEditor',
-            cellEditorParams: { min: 1800, max: 2200, precision: 0 },
-          },
-          text('month', 'Month', 96),
-          text('place', 'Place', 150),
-          text('event', 'Event', 180),
-          text('people', 'People', 180),
-          refSelect('physicalSource', 'Physical source', physical.data),
-          refSelect('itemCondition', 'Condition', conditions.data),
-          text('remarks', 'Remarks', 200),
-        ] as ColDef<GridItem>[]).map((c) => ({ ...c, hide: hidden.details })),
-      },
-      {
-        headerName: 'Decision',
-        children: ([
-          tri('existsInMls', 'In MLS?'),
-          tri('newCopyIsBetter', 'New copy better?', {
-            width: 150,
-            editable: (p) => canDecide && p.data?.existsInMls === true,
-          }),
-          tri('conditionUsable', 'Usable?'),
-          tri('significant', 'Significant?'),
-          { colId: 'result', headerName: 'Result', width: 170, cellRenderer: ResultCell },
-          {
-            field: 'disposition',
-            headerName: 'Return / discard',
-            width: 150,
-            editable: (p) => canDecide && p.data?.verdict === 'return_or_discard',
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['', 'return', 'discard'] },
-            valueFormatter: (p) => (p.value === 'return' ? 'Return' : p.value === 'discard' ? 'Discard' : ''),
-          },
-          {
-            field: 'reason',
-            headerName: 'Reason',
-            width: 220,
-            editable: (p) => canDecide && p.data?.verdict === 'return_or_discard',
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['', ...(reasons.data?.items ?? []).map((i) => i.value)] },
-            valueFormatter: (p) => refLabel(reasons.data, p.value as string | null),
-          },
-        ] as ColDef<GridItem>[]).map((c) => ({ ...c, hide: hidden.decision })),
-      },
-      {
-        headerName: 'Digitization',
-        children: ([
-          {
-            field: 'captureStatus',
-            headerName: 'Capture',
-            width: 120,
-            valueFormatter: (p) => (p.value === 'captured' ? 'Captured' : p.value === 'missing' ? 'Missing' : 'Not started'),
-          },
-          { field: 'digitalSource', headerName: 'Digital source', width: 150 },
-          { field: 'fileName', headerName: 'File', width: 220 },
-          { field: 'taggedInMls', headerName: 'MLS tagged', width: 110, valueFormatter: (p) => (p.value ? 'Yes' : '–') },
-          { field: 'mlsDuplicateOf', headerName: 'Duplicate of', width: 160 },
-        ] as ColDef<GridItem>[]).map((c) => ({ ...c, hide: hidden.digitization })),
-      },
-    ];
-  }, [canDetails, canDecide, narrow, hidden, physical.data, conditions.data, reasons.data, refLabel]);
-
-  const rows = useMemo(() => {
-    const all = data?.items ?? [];
-    switch (filter) {
-      case 'unnamed':
-        return all.filter((r) => !r.name);
-      case 'undecided':
-        return all.filter((r) => !r.result);
-      case 'archive':
-      case 'return':
-      case 'discard':
-        return all.filter((r) => r.result === filter);
-      default:
-        return all;
+  /** One group per exact media subtype, in order of first appearance, with all items (for progress) and filtered rows. */
+  const families = useMemo(() => {
+    const map = new Map<string, { all: GridItem[]; rows: GridItem[] }>();
+    for (const it of data?.items ?? []) {
+      const fam = it.subtypeLabel.trim() || 'Other';
+      let g = map.get(fam);
+      if (!g) map.set(fam, (g = { all: [], rows: [] }));
+      g.all.push(it);
+      if (matchesFilter(it, filter)) g.rows.push(it);
     }
+    return [...map.entries()].map(([name, g]) => ({ name, ...g }));
   }, [data, filter]);
 
-  const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
-    if (!e.data) return;
-    const colId = e.column.getColId();
-    const field = (colId === 'subtypeLabel' ? null : colId) as keyof ItemsBulkSet | null;
-    if (!field) return;
-    let value: unknown = (e.data as Record<string, unknown>)[field];
-    if (typeof value === 'string' && value.trim() === '') value = null;
-    if (field === 'year' && value !== null) value = Number(value);
-    save.mutate({ itemIds: [e.data.id], set: { [field]: value } as ItemsBulkSet });
-  };
+  const isOpen = (name: string, index: number) => (expanded ? (expanded[name] ?? false) : index === 0);
+  const setAll = (open: boolean) => setExpanded(Object.fromEntries(families.map((f) => [f.name, open])));
+  const toggle = (name: string) =>
+    setExpanded(Object.fromEntries(families.map((f, i) => [f.name, f.name === name ? !isOpen(f.name, i) : isOpen(f.name, i)])));
 
-  const onSelectionChanged = (e: SelectionChangedEvent<GridItem>) =>
-    setSelected(e.api.getSelectedRows().map((r) => r.id));
+  const selected = useMemo(() => Object.values(selectedBy).flat(), [selectedBy]);
+  const onSelectionChange = useCallback(
+    (family: string, ids: string[]) =>
+      setSelectedBy((prev) => {
+        const cur = prev[family] ?? [];
+        if (cur.length === ids.length && cur.every((v, i) => v === ids[i])) return prev;
+        if (ids.length === 0 && !(family in prev)) return prev;
+        return { ...prev, [family]: ids };
+      }),
+    [],
+  );
+  const onApi = useCallback((family: string, api: GridApi<GridItem> | null) => {
+    if (api) gridApis.current.set(family, api);
+    else gridApis.current.delete(family);
+  }, []);
+  const deselectAll = () => gridApis.current.forEach((api) => api.deselectAll());
+  const onSave = useCallback((itemIds: string[], set: ItemsBulkSet) => save.mutate({ itemIds, set }), [save]);
+
+  // Full screen: lock page scroll; Escape exits (unless a dialog or a cell editor/popup is using it).
+  useEffect(() => {
+    if (!fullscreen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || editing || showAdd) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('.ag-cell-inline-editing, .ag-popup, .ag-cell-editing-error')) return;
+      setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [fullscreen, editing, showAdd]);
 
   if (grid.isLoading) {
     return (
@@ -313,14 +181,21 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
   }
 
   const s = data.summary;
+  const single = families.length <= 1;
+
+  const gridHeight = (rowCount: number) => {
+    if (single) return fullscreen ? '100%' : 'max(420px, calc(100dvh - 320px))';
+    const natural = 100 + rowCount * ROW_PX;
+    return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, 560)}px`;
+  };
+
   return (
     <Panel>
       <PanelHeader title={`Items (${s.total})`}>
-        {canAdd && canDetails ? (
-          <span className="ml-auto">
-            <GhostButton onClick={() => setShowAdd(true)}>Add item</GhostButton>
-          </span>
-        ) : null}
+        <span className="ml-auto flex items-center gap-2">
+          <GhostButton onClick={() => setFullscreen(true)}>Full screen</GhostButton>
+          {canAdd && canDetails ? <GhostButton onClick={() => setShowAdd(true)}>Add item</GhostButton> : null}
+        </span>
       </PanelHeader>
       <div className="p-3 md:p-4 flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-ink-2">
@@ -357,79 +232,143 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Show items" className="flex flex-wrap gap-1.5">
-            {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                aria-pressed={filter === f.id}
-                onClick={() => setFilter(f.id)}
-                className={`min-h-[32px] px-2.5 rounded-[6px] border text-[12px] font-semibold cursor-pointer ${
-                  filter === f.id ? 'bg-accent-soft border-accent text-accent' : 'bg-surface border-line text-ink-2'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div role="group" aria-label="Column groups" className="flex flex-wrap gap-3 sm:ml-auto text-[12px] text-ink-2">
-            {(['details', 'decision', 'digitization'] as ColumnGroup[]).map((g) => (
-              <label key={g} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer capitalize">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-accent"
-                  checked={!hidden[g]}
-                  onChange={(e) => setHidden((prev) => ({ ...prev, [g]: !e.target.checked }))}
-                />
-                {g}
-              </label>
-            ))}
-          </div>
-        </div>
+        {/* The spreadsheet part. Same element in both modes (class swap, no portal) so grids never remount. */}
+        <div
+          className={
+            fullscreen
+              ? 'fixed inset-0 z-[90] bg-surface text-ink flex flex-col gap-3 p-3 md:p-4'
+              : 'flex flex-col gap-3'
+          }
+        >
+          {fullscreen ? (
+            <div className="flex items-center gap-2">
+              <h2 className="m-0 text-[15px] font-semibold text-ink">Items ({s.total})</h2>
+              <GhostButton onClick={() => setFullscreen(false)} className="ml-auto">
+                Exit full screen
+              </GhostButton>
+            </div>
+          ) : null}
 
-        {selected.length > 0 && canDetails ? (
-          <BulkBar
-            count={selected.length}
-            canDecide={canDecide}
-            physical={physical.data?.items ?? []}
-            conditions={conditions.data?.items ?? []}
-            reasons={reasons.data?.items ?? []}
-            pending={save.isPending}
-            onApply={(set) =>
-              save.mutate(
-                { itemIds: selected, set },
-                {
-                  onSuccess: (res) => {
-                    toast.success(`Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`);
-                    gridApi.current?.deselectAll();
+          <div className="flex flex-wrap items-center gap-2">
+            <div role="group" aria-label="Show items" className="flex flex-wrap gap-1.5">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  aria-pressed={filter === f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`min-h-[32px] px-2.5 rounded-[6px] border text-[12px] font-semibold cursor-pointer ${
+                    filter === f.id ? 'bg-accent-soft border-accent text-accent' : 'bg-surface border-line text-ink-2'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {!single ? (
+              <div role="group" aria-label="Sections" className="flex gap-1.5">
+                <GhostButton onClick={() => setAll(true)}>Expand all</GhostButton>
+                <GhostButton onClick={() => setAll(false)}>Collapse all</GhostButton>
+              </div>
+            ) : null}
+            <div role="group" aria-label="Column groups" className="flex flex-wrap gap-3 sm:ml-auto text-[12px] text-ink-2">
+              {(['details', 'decision', 'digitization'] as ColumnGroup[]).map((g) => (
+                <label key={g} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer capitalize">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-accent"
+                    checked={!hidden[g]}
+                    onChange={(e) => setHidden((prev) => ({ ...prev, [g]: !e.target.checked }))}
+                  />
+                  {g}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {selected.length > 0 && canDetails ? (
+            <BulkBar
+              count={selected.length}
+              canDecide={canDecide}
+              physical={physicalItems}
+              conditions={conditionItems}
+              reasons={reasonItems}
+              pending={save.isPending}
+              onApply={(set) =>
+                save.mutate(
+                  { itemIds: selected, set },
+                  {
+                    onSuccess: (res) => {
+                      toast.success(`Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`);
+                      deselectAll();
+                    },
                   },
-                },
-              )
-            }
-            onClear={() => gridApi.current?.deselectAll()}
-          />
-        ) : null}
+                )
+              }
+              onClear={deselectAll}
+            />
+          ) : null}
 
-        <div className="w-full h-[calc(100dvh-320px)] min-h-[420px]">
-          <AgGridReact<GridItem>
-            theme={agGridTheme}
-            rowData={rows}
-            columnDefs={columnDefs}
-            getRowId={(p) => p.data.id}
-            rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
-            selectionColumnDef={{ pinned: 'left', width: 48 }}
-            onGridReady={(e: GridReadyEvent<GridItem>) => {
-              gridApi.current = e.api;
-            }}
-            onSelectionChanged={onSelectionChanged}
-            onCellValueChanged={onCellValueChanged}
-            singleClickEdit
-            stopEditingWhenCellsLoseFocus
-            enterNavigatesVerticallyAfterEdit
-            tooltipShowDelay={400}
-            overlayNoRowsTemplate="<span>No items match this filter.</span>"
-          />
+          <div className={fullscreen ? 'flex-1 min-h-0 overflow-y-auto flex flex-col gap-3' : 'flex flex-col gap-3'}>
+            {families.length === 0 ? <p className="m-0 text-[12.5px] text-ink-3">No items yet.</p> : null}
+            {families.map((f, i) => {
+              const open = isOpen(f.name, i);
+              const gridBox = (
+                <ItemFamilyGrid
+                  family={f.name}
+                  rows={f.rows}
+                  hidden={hidden}
+                  canDetails={canDetails}
+                  canDecide={canDecide}
+                  narrow={narrow}
+                  physical={physicalItems}
+                  conditions={conditionItems}
+                  reasons={reasonItems}
+                  height={gridHeight(f.rows.length)}
+                  onEdit={setEditing}
+                  onSave={onSave}
+                  onSelectionChange={onSelectionChange}
+                  onApi={onApi}
+                />
+              );
+              if (single) {
+                return (
+                  <div key={f.name} className={fullscreen ? 'flex-1 min-h-0' : undefined}>
+                    {gridBox}
+                  </div>
+                );
+              }
+              const decided = f.all.filter((r) => r.result).length;
+              const scanned = f.all.filter((r) => r.captureStatus === 'captured').length;
+              const tagged = f.all.filter((r) => r.taggedInMls).length;
+              const empty = f.rows.length === 0;
+              return (
+                <section key={f.name} aria-label={`${f.name} items`} className="rounded-[8px] border border-line overflow-hidden">
+                  <button
+                    type="button"
+                    aria-expanded={open && !empty}
+                    disabled={empty}
+                    onClick={() => toggle(f.name)}
+                    className={`w-full flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 bg-surface-sunken border-0 text-left ${
+                      empty ? 'cursor-default' : 'cursor-pointer'
+                    }`}
+                  >
+                    <span aria-hidden className="text-ink-3 text-[12px] w-3">
+                      {open && !empty ? '▾' : '▸'}
+                    </span>
+                    <span className="text-[13px] font-semibold text-ink">{f.name}</span>
+                    <span className="text-[12px] text-ink-2 tabular-nums">
+                      {empty ? `0 match (of ${f.all.length})` : `${f.rows.length}${f.rows.length === f.all.length ? '' : ` of ${f.all.length}`} ${f.all.length === 1 ? 'item' : 'items'}`}
+                    </span>
+                    <span className="text-[12px] text-ink-3 tabular-nums sm:ml-auto">
+                      {decided}/{f.all.length} decided · {scanned} scanned · {tagged} tagged
+                    </span>
+                  </button>
+                  {open && !empty ? <div className="border-t border-line">{gridBox}</div> : null}
+                </section>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -447,9 +386,9 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
           item={editing}
           canDetails={canDetails}
           canDecide={canDecide}
-          physical={physical.data?.items ?? []}
-          conditions={conditions.data?.items ?? []}
-          reasons={reasons.data?.items ?? []}
+          physical={physicalItems}
+          conditions={conditionItems}
+          reasons={reasonItems}
           pending={save.isPending}
           onSave={(set) => save.mutate({ itemIds: [editing.id], set }, { onSuccess: () => setEditing(null) })}
           onClose={() => setEditing(null)}
