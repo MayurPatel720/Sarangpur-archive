@@ -87,10 +87,12 @@ export function TodaysTasks({ format }: { format?: Format }) {
   };
 
   const data = panel.data;
+  // Admin doesn't own lots, so their own panel has no "assigned lots" block; picking a person still shows theirs.
+  const showDerived = !isAdmin || !!assignee;
   const empty =
     data !== undefined &&
     data.overdue.total + data.dueToday.total + data.upcoming.total + data.doneRecently.total === 0 &&
-    data.derived.total === 0;
+    (!showDerived || data.derived.total === 0);
 
   return (
     <Panel className="flex flex-col overflow-hidden">
@@ -140,7 +142,7 @@ export function TodaysTasks({ format }: { format?: Format }) {
             {renderGroup('Due today', data.dueToday, 'due=today')}
             {renderGroup('Upcoming', data.upcoming, 'due=upcoming')}
             {renderGroup('Done recently', data.doneRecently, 'status=done')}
-            {data.derived.total > 0 ? (
+            {showDerived && data.derived.total > 0 ? (
               <div>
                 <GroupHeading
                   label={isAdmin && assignee ? 'Assigned lots' : 'Your assigned lots'}
