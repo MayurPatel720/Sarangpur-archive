@@ -7,6 +7,7 @@ import { ApiRequestError, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
 import { useRowAssign } from '@/hooks/useRowAssign';
+import { usePhotoUploads } from '@/hooks/usePhotoUploads';
 import { buildAssignPayload, formatFromTaskError } from '@/lib/row-assign';
 import { todayIso } from '@/lib/format';
 import { Field, FormError, GhostButton, PrimaryButton, Textarea, TextInput } from '@/components/ui/Form';
@@ -17,6 +18,7 @@ import { useToast } from '@/components/ui/Toast';
 import { RowAssignButton } from '@/components/tasks/RowAssignButton';
 import { RowAssignDialog } from '@/components/tasks/RowAssignDialog';
 import { Stepper } from '@/components/lots/Stepper';
+import { ProjectPhotoPicker, type PickedPhoto } from './ProjectPhotoPicker';
 import {
   ConditionStep,
   EMPTY_LINE,
@@ -74,6 +76,9 @@ export function ProjectWizard() {
   const [showReview, setShowReview] = useState(false);
   const [stepsDone, setStepsDone] = useState<boolean[]>(() => STEPS.map(() => false));
   const [formError, setFormError] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photoUploads = usePhotoUploads();
   const markDone = (i: number, done: boolean) =>
     setStepsDone((prev) => (prev[i] === done ? prev : prev.map((v, k) => (k === i ? done : v))));
 
@@ -100,10 +105,22 @@ export function ProjectWizard() {
         ...buildAssignPayload(rowAssign.drafts, lotFormats, rowAssign.canAssignTasks),
         today: todayIso(),
       }),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
       toast.success('Project created', `${res.code} · ${res.lots.length} ${res.lots.length === 1 ? 'lot' : 'lots'}`);
+      // Photos never block creation: upload them now, report failures, go to the project either way.
+      if (photos.length > 0) {
+        setUploadingPhotos(true);
+        const failed = await photoUploads
+          .start(res.id, photos.map((p) => ({ file: p.file, caption: p.caption, format: p.format })))
+          .catch(() => photos.length);
+        if (failed > 0) {
+          toast.error(
+            `${failed} ${failed === 1 ? 'photo' : 'photos'} failed — add ${failed === 1 ? 'it' : 'them'} from the project page`,
+          );
+        }
+      }
       router.push(`/projects/${res.id}`);
     },
     onError: (e) => {
@@ -117,6 +134,8 @@ export function ProjectWizard() {
       }
     },
   });
+
+  const busy = create.isPending || uploadingPhotos;
 
   if (me.isLoading) {
     return (
@@ -269,6 +288,18 @@ export function ProjectWizard() {
               )}
             />
 
+            <FormSection
+              legend="Photos of the physical items (optional)"
+              description="Add pictures of the items as received. You can add or change them later from the project page."
+            >
+              <ProjectPhotoPicker photos={photos} onChange={setPhotos} disabled={busy} />
+              {uploadingPhotos ? (
+                <p role="status" className="m-0 mt-3 text-[12.5px] font-medium text-ink-2">
+                  Uploading photos… {photoUploads.entries.filter((e) => e.status === 'done').length} of {photoUploads.entries.length} done
+                </p>
+              ) : null}
+            </FormSection>
+
             {showReview ? (
             <FormSection legend="Review">
               <div className="mb-3 rounded-[6px] border border-line-soft p-3 text-[13px]">
@@ -290,23 +321,23 @@ export function ProjectWizard() {
 
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-line-soft">
           {step > 0 ? (
-            <GhostButton disabled={create.isPending} onClick={goBack}>
+            <GhostButton disabled={busy} onClick={goBack}>
               Back
             </GhostButton>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
-            <GhostButton disabled={create.isPending} onClick={() => router.push('/register?tab=projects')}>
+            <GhostButton disabled={busy} onClick={() => router.push('/register?tab=projects')}>
               Cancel
             </GhostButton>
             {step < STEPS.length - 1 ? (
               <PrimaryButton onClick={goNext}>Next</PrimaryButton>
             ) : (
               <>
-                <GhostButton disabled={create.isPending} onClick={() => setShowReview((v) => !v)}>
+                <GhostButton disabled={busy} onClick={() => setShowReview((v) => !v)}>
                   {showReview ? 'Hide review' : 'View review'}
                 </GhostButton>
-                <PrimaryButton disabled={create.isPending} onClick={submit}>
-                  {create.isPending ? 'Creating…' : 'Create project'}
+                <PrimaryButton disabled={busy} onClick={submit}>
+                  {uploadingPhotos ? 'Uploading photos…' : create.isPending ? 'Creating…' : 'Create project'}
                 </PrimaryButton>
               </>
             )}

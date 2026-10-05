@@ -201,6 +201,15 @@ export function can(grants: readonly string[], permission: Permission): boolean 
   return grants.includes(permission);
 }
 
+/**
+ * Project photos: add / edit / replace / delete. Allowed for holders of `project:edit`
+ * OR anyone assigned to at least one lot of the project (the caller resolves
+ * `isLotAssignee` from the database). Viewing rides on `project:view`.
+ */
+export function canManageProjectImages(grants: readonly string[], isLotAssignee: boolean): boolean {
+  return can(grants, 'project:edit') || isLotAssignee;
+}
+
 /** Grants that confer full system management (used by the lockout invariants). */
 const MANAGEMENT_GRANTS: Permission[] = ['user:manage', 'roles:manage'];
 

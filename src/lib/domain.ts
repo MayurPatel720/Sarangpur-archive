@@ -164,6 +164,10 @@ export const ACTIVITY_KINDS = [
   'task_status_changed',
   'task_comment_added',
   'task_checklist_updated',
+  'project_image_added',
+  'project_image_updated',
+  'project_image_replaced',
+  'project_image_deleted',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -202,6 +206,10 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   task_status_changed: 'neutral',
   task_comment_added: 'neutral',
   task_checklist_updated: 'neutral',
+  project_image_added: 'info',
+  project_image_updated: 'neutral',
+  project_image_replaced: 'neutral',
+  project_image_deleted: 'warning',
 };
 
 /**

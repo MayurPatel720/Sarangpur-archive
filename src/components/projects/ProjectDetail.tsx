@@ -23,6 +23,7 @@ import { ProjectKpis } from './ProjectKpis';
 import { ProjectInfoCard } from './ProjectInfoCard';
 import { ProjectLotsTable } from './ProjectLotsTable';
 import { ProjectTasksCard } from './ProjectTasksCard';
+import { ProjectPhotosCard } from './ProjectPhotosCard';
 import { ProjectProgressCard } from './ProjectProgressCard';
 import { ProjectActivityCard } from './ProjectActivityCard';
 
@@ -158,6 +159,8 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         onAddLots={() => setShowAssign(true)}
         onRemove={setRemoveTarget}
       />
+
+      <ProjectPhotosCard projectId={projectId} />
 
       {canViewTasks ? (
         <ProjectTasksCard projectId={projectId} projectCode={project.code} canAssign={canAssignTasks} />

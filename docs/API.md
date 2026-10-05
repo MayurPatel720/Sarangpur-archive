@@ -327,3 +327,25 @@ pre-formatted strings — **except** where the server already owns the phrasing 
 
 Severity is always one of `neutral` `info` `good` `warning` `critical`, and the client maps
 it to colour through `src/lib/format.ts`. Never send a colour from the server.
+
+---
+
+## 7d. Project photos (`src/types/project-image.ts`)
+
+Photos of the physical items belong to a project; bytes live in Cloudinary (folder `archive-tracker/projects/<projectId>`, `CLOUDINARY_*` env),
+metadata in `projectimages`. Each photo: `{ id, url, fileName, contentType, sizeBytes, width, height,
+caption, format | null, uploadedById, uploadedByName, createdAt, updatedAt }`.
+
+| Endpoint | Body | Response |
+|---|---|---|
+| `GET /api/projects/[projectId]/images` (`project:view`) | | `{ images[] newest first, can: { manage } }` |
+| `POST /api/projects/[projectId]/images` | multipart: `file`, `caption?`, `format?`, `width?`, `height?` (one file per request) | **201** `{ image }` |
+| `PATCH .../images/[imageId]` | JSON `{ caption?, format?: Format | null }` | `{ image }` |
+| `PUT .../images/[imageId]` | multipart `file` (replace; caption and tag kept, old asset destroyed) | `{ image }` |
+| `DELETE .../images/[imageId]` | `{}` | `{ ok: true }` |
+
+Writes need `project:edit` OR being the assignee of at least one lot of the project
+(`canManageProjectImages`, `src/server/permissions.ts`) - else **403**. Image only (SVG rejected), file
+<= 4 MB (the browser resizes to <= 1600 px JPEG first; Vercel caps function bodies at 4.5 MB) - else **400/413**.
+Missing Cloudinary config on a write: **503** "Photo storage isn't configured: set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET".
+Every write logs `project_image_added | _updated | _replaced | _deleted` to the project trail in the same transaction.

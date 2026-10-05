@@ -208,6 +208,7 @@ Set these in **Project → Settings → Environment Variables**. Only the first 
 | `ALERT_DECISION_PENDING_DAYS` | no | Days before a pending decision is flagged. Defaults to `5` |
 | `ALERT_SCAN_STUCK_DAYS` | no | Days before a stuck scan is flagged. Defaults to `10` |
 | `ARCHIVE_STORAGE_CAPACITY_TB` | no | Denominator for the sidebar storage meter. Defaults to `96` |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | no | Cloudinary credentials (console Dashboard, API Keys) for **project photos**. Without them photo uploads return 503 and the rest of the app works |
 
 `VERCEL=1` is set by the platform automatically — the code reads it to switch off the
 standalone build output and to shrink the connection pool. You do not set it yourself.

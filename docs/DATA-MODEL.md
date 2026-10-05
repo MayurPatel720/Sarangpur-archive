@@ -164,6 +164,15 @@ archive (likely none — this is a permanent legal record).
 
 ---
 
+## `projectimages` — DONE (`src/models/ProjectImage.ts`)
+
+Photos of a project's physical items. Bytes are in Cloudinary; this holds metadata only.
+`{ project, url (secure_url), publicId (Cloudinary public_id), fileName, contentType, sizeBytes, width?, height?, caption (''), format (nullable, one of FORMATS),
+uploadedBy, uploadedByName (denormalised, never back-filled), createdAt, updatedAt }`.
+Index: `(project, createdAt -1)` - the gallery read. Deleting a photo removes the document and destroys its Cloudinary asset.
+
+---
+
 ## `tasks` — DONE (`src/models/Task.ts`)
 
 Daily-work tasks: an admin assigns one or more people, any of whom can move it along. Everything a card shows is

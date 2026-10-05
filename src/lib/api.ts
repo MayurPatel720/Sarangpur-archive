@@ -204,3 +204,50 @@ export async function handleMutation<TBody, T>(
     return NextResponse.json({ error: message }, { status });
   }
 }
+
+/**
+ * Multipart counterpart to `handleMutation` (file uploads). Same auth and response
+ * contract; the body is read with `request.formData()` and handed to `run` raw — the
+ * caller validates the fields. `maxBytes` rejects an oversized body from its declared
+ * Content-Length BEFORE it is buffered (Vercel caps function request bodies at 4.5 MB).
+ */
+export async function handleMultipart<T>(
+  req: Request,
+  responseSchema: ZodType<T>,
+  opts: {
+    permission: import('@/server/permissions').Permission;
+    run: (form: FormData, ctx: MutationContext) => Promise<T>;
+    maxBytes: number;
+    status?: number;
+  },
+): Promise<NextResponse> {
+  try {
+    const ctx = await authorize(opts.permission);
+
+    const declared = Number(req.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > opts.maxBytes) {
+      throw new HttpError(413, 'That upload is too large.');
+    }
+    let form: FormData;
+    try {
+      form = await req.formData();
+    } catch {
+      throw new HttpError(400, 'Request body must be multipart form data.');
+    }
+
+    const data = await opts.run(form, ctx);
+    const parsed = responseSchema.safeParse(data);
+    if (!parsed.success) {
+      console.error('[api] upload response failed its own contract:', parsed.error.flatten());
+      return NextResponse.json({ error: 'The server produced a malformed response.' }, { status: 500 });
+    }
+    return NextResponse.json(parsed.data, {
+      status: opts.status ?? 200,
+      headers: { 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
+    const { status, error: message } = toErrorResponse(error);
+    console.error('[api]', message);
+    return NextResponse.json({ error: message }, { status });
+  }
+}

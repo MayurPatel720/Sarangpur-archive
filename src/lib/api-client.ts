@@ -126,6 +126,14 @@ import {
   type ProjectUpdateResponse,
 } from '@/types/project';
 import {
+  projectImageDeleteResponseSchema,
+  projectImageResponseSchema,
+  projectImagesResponseSchema,
+  type ProjectImagePatchBody,
+  type ProjectImageResponse,
+  type ProjectImagesResponse,
+} from '@/types/project-image';
+import {
   triageBulkResponseSchema,
   triageItemsResponseSchema,
   type TriageBulkBody,
@@ -535,6 +543,68 @@ export const projectsApi = {
       'DELETE',
       {},
       projectAssignResponseSchema,
+    ),
+};
+
+/** Multipart send (photo upload / replace). The browser sets the boundary header itself. */
+async function sendForm<T>(
+  path: string,
+  method: 'POST' | 'PUT',
+  form: FormData,
+  schema: ZodType<T>,
+): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, { method, headers: { accept: 'application/json' }, body: form });
+  } catch {
+    throw new ApiRequestError(0, 'Network error — check your connection and retry.');
+  }
+  if (!res.ok) {
+    let message = res.status === 413 ? 'That photo is too large to upload.' : `Request failed with ${res.status}`;
+    try {
+      const parsed = (await res.json()) as { error?: string };
+      if (parsed.error) message = parsed.error;
+    } catch {
+      /* the body was not JSON — keep the status message */
+    }
+    throw new ApiRequestError(res.status, message);
+  }
+  return schema.parse(await res.json());
+}
+
+export const projectImagesApi = {
+  list: (projectId: string) =>
+    getJson<ProjectImagesResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/images`,
+      projectImagesResponseSchema,
+    ),
+  upload: (projectId: string, form: FormData) =>
+    sendForm<ProjectImageResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/images`,
+      'POST',
+      form,
+      projectImageResponseSchema,
+    ),
+  update: (projectId: string, imageId: string, body: ProjectImagePatchBody) =>
+    sendJson<ProjectImageResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`,
+      'PATCH',
+      body,
+      projectImageResponseSchema,
+    ),
+  replace: (projectId: string, imageId: string, form: FormData) =>
+    sendForm<ProjectImageResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`,
+      'PUT',
+      form,
+      projectImageResponseSchema,
+    ),
+  remove: (projectId: string, imageId: string) =>
+    sendJson<{ ok: true }>(
+      `/api/projects/${encodeURIComponent(projectId)}/images/${encodeURIComponent(imageId)}`,
+      'DELETE',
+      {},
+      projectImageDeleteResponseSchema,
     ),
 };
 
