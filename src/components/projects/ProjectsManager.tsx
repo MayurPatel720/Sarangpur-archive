@@ -47,7 +47,7 @@ const columns: Column<ProjectRow>[] = [
   },
 ];
 
-export function ProjectsManager() {
+export function ProjectsManager({ assigneeId }: { /** "My lots": only projects this user has a lot in. */ assigneeId?: string } = {}) {
   const router = useRouter();
   const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
   const [search, setSearch] = useState('');
@@ -67,10 +67,10 @@ export function ProjectsManager() {
     return () => window.clearTimeout(t);
   }, [search]);
 
-  const key = useMemo(() => JSON.stringify({ page, pageSize, search: debounced }), [page, pageSize, debounced]);
+  const key = useMemo(() => JSON.stringify({ page, pageSize, search: debounced, assignee: assigneeId ?? null }), [page, pageSize, debounced, assigneeId]);
   const query = useQuery({
     queryKey: queryKeys.projects.list(key),
-    queryFn: () => projectsApi.list(page, pageSize, debounced || undefined),
+    queryFn: () => projectsApi.list(page, pageSize, debounced || undefined, assigneeId),
     enabled: !!me.data && canView,
   });
 

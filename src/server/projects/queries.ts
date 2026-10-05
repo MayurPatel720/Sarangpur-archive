@@ -57,6 +57,13 @@ export async function listProjects(query: ProjectListQuery): Promise<ProjectList
     const rx = new RegExp(escapeRegex(query.search), 'i');
     filter.$or = [{ code: rx }, { name: rx }];
   }
+  if (query.assignee) {
+    const projectIds = await ArchiveLot.distinct('syncProjectId', {
+      assignee: new Types.ObjectId(query.assignee),
+      syncProjectId: { $ne: null },
+    });
+    filter._id = { $in: projectIds };
+  }
   const skip = (query.page - 1) * query.pageSize;
   const [docs, total] = await Promise.all([
     Project.find(filter).sort({ createdAt: -1 }).skip(skip).limit(query.pageSize).lean(),
@@ -147,13 +154,8 @@ export async function getProjectDetail(
       actorName: string;
       at: Date | string;
     }>(asPipeline(projectActivityPipeline(project._id, 20))),
-    User.find({
-      _id: {
-        $in: project.coordinator ? [project.coordinator] : [],
-      },
-    })
-      .select('name')
-      .lean(),
+    // Creator name: one indexed _id lookup (not a $lookup).
+    User.find({ _id: project.createdBy }).select('name').lean(),
   ]);
 
   const [itemStats] = await LotItem.aggregate<{
@@ -164,7 +166,7 @@ export async function getProjectDetail(
     tagged: number;
   }>(asPipeline(projectItemStatsPipeline(memberIds.map((d) => d._id))));
 
-  const nameById = new Map(users.map((u) => [String(u._id), u.name as string]));
+  const createdByName = (users[0]?.name as string | undefined) ?? null;
   const receiverIds = [...new Set(lotDocs.map((d) => String(d.receiver)))];
   const receivers = await User.find({ _id: { $in: receiverIds } }).select('name').lean();
   const receiverNames = new Map(receivers.map((u) => [String(u._id), u.name as string]));
@@ -183,6 +185,7 @@ export async function getProjectDetail(
     project: {
       ...shapeProjectRow(project),
       coordinatorId: project.coordinator ? String(project.coordinator) : null,
+      createdByName,
       shared: (project.shared ?? {}) as ProjectDetailResponse['project']['shared'],
       // Team is derived: whoever is assigned a lot in this project.
       team: [...teamCounts.entries()].map(([userId, t]) => ({
@@ -218,6 +221,14 @@ export async function getProjectDetail(
         dateReceived: d.dateReceived ? d.dateReceived.toISOString() : null,
         ownerName: d.owner?.name ?? '',
         assigneeName: d.assigneeName ?? null,
+        assigneeId: d.assignee ? String(d.assignee) : null,
+        mediaLines:
+          d.mediaLines && d.mediaLines.length > 0
+            ? d.mediaLines.map((l) => ({ mediaSubtype: l.mediaSubtype, quantity: l.quantity }))
+            : [{ mediaSubtype: d.mediaSubtype, quantity: d.quantity }],
+        scanned: d.digitization?.foundFileCount ?? 0,
+        scanTarget: d.digitization?.expectedFileCount || d.quantityToDigitize || 0,
+        tagged: d.mls?.taggedCount ?? 0,
         pointOfContactName: d.pointsOfContact?.[0]?.name ?? null,
         format: d.format,
         mediaSubtype: d.mediaSubtype,

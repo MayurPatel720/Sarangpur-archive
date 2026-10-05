@@ -298,7 +298,7 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
           aria-label={`Label for ${row.value}`}
           value={row.label}
           onChange={(e) => patchItem(row.value, { label: e.target.value })}
-          maxLength={120}
+          maxLength={200}
         />
       ),
     },
@@ -371,7 +371,7 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
         )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Label">
-            <TextInput value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={120} />
+            <TextInput value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={200} />
           </Field>
           <Field label="Group">
             <TextInput value={group} onChange={(e) => setGroup(e.target.value)} required maxLength={60} />
@@ -451,7 +451,7 @@ function ListDetail({ list, onChanged }: { list: AdminReferenceList | null; onCh
             <span className="text-[12px] font-semibold text-ink-2">Add item</span>
             <div className="flex flex-col sm:flex-row gap-2">
               <TextInput aria-label="New item value" placeholder="value (immutable once added)" value={newValue} onChange={(e) => setNewValue(e.target.value)} maxLength={80} autoComplete="off" className="flex-1" />
-              <TextInput aria-label="New item label" placeholder="Label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} maxLength={120} autoComplete="off" className="flex-1" />
+              <TextInput aria-label="New item label" placeholder="Label" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} maxLength={200} autoComplete="off" className="flex-1" />
             </div>
             {metaSchema.map((f) => (
               <div key={f.field} className="flex items-center gap-2">
@@ -552,7 +552,7 @@ function CreateListDialog({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <TextInput value={key} onChange={(e) => setKey(e.target.value)} required maxLength={80} autoFocus autoComplete="off" />
         </Field>
         <Field label="Label">
-          <TextInput value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={120} />
+          <TextInput value={label} onChange={(e) => setLabel(e.target.value)} required maxLength={200} />
         </Field>
         <Field label="Group">
           <TextInput value={group} onChange={(e) => setGroup(e.target.value)} maxLength={60} />

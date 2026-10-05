@@ -31,10 +31,14 @@ import { useMe } from '@/hooks/useCan';
 import { useUrlTab } from '@/lib/useUrlTab';
 import {
   EMPTY_CONTACT,
+  ReferencePeopleSection,
   RightsTypeField,
   SubtypeField,
+  cleanReferencePeople,
   makeContactColumns,
+  validateReferencePeople,
   type ContactRow,
+  type ReferencePersonRow,
 } from './lot-form-fields';
 import { WorkflowSteps } from './WorkflowSteps';
 import { MediaLinesPanel } from './MediaLinesPanel';
@@ -517,6 +521,23 @@ function PeopleSection({ lot }: { lot: LotDetail }) {
           {lot.facilitator ? <ContactCard role="Facilitator" contact={lot.facilitator} /> : null}
           <ContactCard role="Received by" contact={{ name: lot.receiver.name, phone: null, email: null, address: null }} />
         </div>
+        {lot.referencePeople.length > 0 ? (
+          <div className="px-4 md:px-5 pb-4">
+            <div className="bg-surface-subtle border border-line-soft rounded-[6px] px-3.5 py-3 flex flex-col gap-1 min-w-0">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-4">
+                People
+              </span>
+              {lot.referencePeople.map((p, i) => (
+                <span key={`${p.name}-${i}`} className="text-[13px] text-ink-2 break-words">
+                  {p.name} ·{' '}
+                  <a href={`tel:${p.phone.replace(/\s+/g, '')}`} className="text-ink-2 no-underline hover:underline">
+                    {p.phone}
+                  </a>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </Panel>
   );
 }
@@ -708,6 +729,8 @@ function LotDetailInner({ lotId }: { lotId: string }) {
   const [originSource, setOriginSource] = useState('');
   const [owner, setOwner] = useState<ContactRow>({ ...EMPTY_CONTACT, id: 'owner' });
   const [pocs, setPocs] = useState<ContactRow[]>([]);
+  const [refPeople, setRefPeople] = useState<ReferencePersonRow[]>([]);
+  const [refErrors, setRefErrors] = useState<Record<string, string>>({});
   /** `null` = no facilitator; `id` is always `'fac'` (single row). */
   const [facilitator, setFacilitator] = useState<ContactRow | null>(null);
   const editRowN = useRef(0);
@@ -779,6 +802,8 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     setOwner({ ...contactToInput(lot.owner), id: 'owner' });
     editRowN.current = 0;
     setPocs(lot.pointsOfContact.map((p) => ({ ...contactToInput(p), id: newEditRowId() })));
+    setRefPeople(lot.referencePeople.map((p) => ({ ...p, id: newEditRowId() })));
+    setRefErrors({});
     setFacilitator(lot.facilitator ? { ...contactToInput(lot.facilitator), id: 'fac' } : null);
     setMediaSubtype(lot.mediaSubtype);
     setQuantityToDigitize(String(lot.quantityToDigitize));
@@ -812,6 +837,11 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     for (const [i, p] of pocs.entries()) {
       if (!p.name.trim()) return setFormError(`Point of contact ${i + 1} needs a name.`);
     }
+    const refErrs = validateReferencePeople(refPeople);
+    if (Object.keys(refErrs).length > 0) {
+      setRefErrors(refErrs);
+      return setFormError(Object.values(refErrs)[0]!);
+    }
     if (facilitator && !facilitator.name.trim()) {
       return setFormError('Facilitator name is required once a facilitator is added.');
     }
@@ -828,6 +858,10 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     const cleanPocs = pocs.map(cleanContact);
     if (JSON.stringify(lot.pointsOfContact.map(contactToInput).map(cleanContact)) !== JSON.stringify(cleanPocs)) {
       body.pointsOfContact = cleanPocs;
+    }
+    const cleanRefs = cleanReferencePeople(refPeople);
+    if (JSON.stringify(lot.referencePeople.map((p) => ({ name: p.name, phone: p.phone }))) !== JSON.stringify(cleanRefs)) {
+      body.referencePeople = cleanRefs;
     }
     const initialFac = lot.facilitator ? contactToInput(lot.facilitator) : null;
     if (JSON.stringify(initialFac ? cleanContact(initialFac) : null) !== JSON.stringify(facilitator ? cleanContact(facilitator) : null)) {
@@ -981,6 +1015,16 @@ function LotDetailInner({ lotId }: { lotId: string }) {
                   emptyMessage="No points of contact yet."
                 />
               </FormSection>
+
+              <ReferencePeopleSection
+                rows={refPeople}
+                onChange={setRefPeople}
+                newRowId={newEditRowId}
+                errors={refErrors}
+                onEdit={(id) =>
+                  setRefErrors((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${id}.`))))
+                }
+              />
 
               <FormSection legend="Facilitator">
                 <EditableTable

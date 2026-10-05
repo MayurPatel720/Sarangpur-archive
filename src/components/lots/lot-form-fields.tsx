@@ -2,7 +2,8 @@
 
 import type { LotContactInput } from '@/types/lot';
 import { TextInput } from '@/components/ui/Form';
-import type { EditableColumn } from '@/components/ui/EditableTable';
+import { EditableTable, type EditableColumn } from '@/components/ui/EditableTable';
+import { FormSection } from '@/components/ui/FormSection';
 import { RefSelect, SubtypeCell } from '@/components/ui/RefSelect';
 
 export const EMPTY_CONTACT: LotContactInput = { name: '' };
@@ -12,6 +13,114 @@ export const EMPTY_CONTACT: LotContactInput = { name: '' };
  * client-only stable id so add/delete never remounts sibling rows.
  */
 export type ContactRow = LotContactInput & { id: string };
+
+/* ------------------------------------------- reference people ("who knows") */
+
+/** Info-only reference contact row: wire shape plus a client-only stable id. */
+export type ReferencePersonRow = { id: string; name: string; phone: string };
+
+export const MAX_REFERENCE_ROWS = 5;
+
+/** Errors keyed `${rowId}.name|phone`. A completely empty row is not an error (it is dropped on submit). */
+export function validateReferencePeople(rows: ReferencePersonRow[]): Record<string, string> {
+  const errs: Record<string, string> = {};
+  for (const [i, r] of rows.entries()) {
+    const name = r.name.trim();
+    const phone = r.phone.trim();
+    if (!name && !phone) continue;
+    if (!name) errs[`${r.id}.name`] = `Person ${i + 1} needs a name.`;
+    if (!phone) errs[`${r.id}.phone`] = `Person ${i + 1} needs a number.`;
+  }
+  return errs;
+}
+
+/** Wire shape: trimmed, empty rows dropped. */
+export function cleanReferencePeople(rows: ReferencePersonRow[]): { name: string; phone: string }[] {
+  return rows
+    .map((r) => ({ name: r.name.trim(), phone: r.phone.trim() }))
+    .filter((r) => r.name || r.phone);
+}
+
+/** "Name · Number" display line. */
+export const referencePersonLine = (p: { name: string; phone: string }) => `${p.name} · ${p.phone}`;
+
+/** The "People" table, shared by intake, project wizard and lot edit. */
+export function ReferencePeopleSection({
+  rows,
+  onChange,
+  newRowId,
+  errors,
+  onEdit,
+}: {
+  rows: ReferencePersonRow[];
+  onChange: (next: ReferencePersonRow[]) => void;
+  newRowId: () => string;
+  errors?: Partial<Record<string, string>>;
+  /** Called with the row id after a cell edit (to clear its error). */
+  onEdit?: (id: string) => void;
+}) {
+  const update = (id: string, p: Partial<ReferencePersonRow>) => {
+    onChange(rows.map((r) => (r.id === id ? { ...r, ...p } : r)));
+    onEdit?.(id);
+  };
+  const columns: EditableColumn<ReferencePersonRow>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      className: 'min-w-[160px]',
+      required: true,
+      render: ({ row, rowId, rowLabel, error, autoFocus }) => (
+        <TextInput
+          aria-label={`${rowLabel}, name`}
+          aria-invalid={Boolean(error)}
+          autoFocus={autoFocus}
+          value={row.name}
+          onChange={(e) => update(rowId, { name: e.target.value })}
+          placeholder="Full name"
+          maxLength={120}
+        />
+      ),
+    },
+    {
+      key: 'phone',
+      header: 'Number',
+      className: 'min-w-[128px]',
+      required: true,
+      render: ({ row, rowId, rowLabel, error, autoFocus }) => (
+        <TextInput
+          aria-label={`${rowLabel}, number`}
+          aria-invalid={Boolean(error)}
+          autoFocus={autoFocus}
+          inputMode="tel"
+          value={row.phone}
+          onChange={(e) => update(rowId, { phone: e.target.value })}
+          placeholder="Phone number"
+          maxLength={30}
+        />
+      ),
+    },
+  ];
+  return (
+    <FormSection
+      legend={`People ${rows.length > 0 ? `(${rows.length})` : ''}`}
+    >
+      <EditableTable
+        columns={columns}
+        rows={rows}
+        getRowId={(r) => r.id}
+        onChange={onChange}
+        errors={errors}
+        createRow={() => ({ id: newRowId(), name: '', phone: '' })}
+        cloneRow={(r) => ({ ...r, id: newRowId() })}
+        minRows={0}
+        maxRows={MAX_REFERENCE_ROWS}
+        addLabel="Add person"
+        rowName={(i) => `Person ${i + 1}`}
+        emptyMessage="No people added yet."
+      />
+    </FormSection>
+  );
+}
 
 /* ------------------------------------------------- contact columns ----- */
 

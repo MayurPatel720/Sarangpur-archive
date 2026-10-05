@@ -1,13 +1,11 @@
-import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { DecisionQueueManager } from '@/components/lots/DecisionQueueManager';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = { title: 'Decision queue · Archive Tracker' };
-
-export default function DecisionQueuePage() {
-  return (
-    <Suspense fallback={null}>
-      <DecisionQueueManager />
-    </Suspense>
-  );
+/** Retired queue — old links land on the Master List filtered to the same stage. */
+export default async function LegacyDecisionQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ format?: string }>;
+}) {
+  const { format } = await searchParams;
+  redirect(`/register?stage=decision${format ? `&format=${encodeURIComponent(format)}` : ''}`);
 }

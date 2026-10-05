@@ -4,11 +4,14 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { useUserPicker } from '@/hooks/useUserPicker';
-import { useReferenceList } from '@/hooks/useReferenceList';
+import { useRowAssign } from '@/hooks/useRowAssign';
+import { buildAssignPayload, formatFromTaskError } from '@/lib/row-assign';
+import { todayIso } from '@/lib/format';
 import { Dialog } from '@/components/ui/Dialog';
-import { Field, FormError, GhostButton, PrimaryButton, Select } from '@/components/ui/Form';
+import { FormError, GhostButton, PrimaryButton } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
+import { RowAssignButton } from '@/components/tasks/RowAssignButton';
+import { RowAssignDialog } from '@/components/tasks/RowAssignDialog';
 import {
   EMPTY_LINE,
   MediaStep,
@@ -22,36 +25,39 @@ import {
 /**
  * Admin adds more media to a project. A format that already has a lot appends to
  * it (while that lot is still in Intake); a new format creates a new child lot,
- * which can be assigned right here.
+ * which can be assigned from its row (Assign button). A format that already has a
+ * lot shows who owns it, read-only — it is never assigned a second time.
  */
 export function AddMediaDialog({
   projectId,
   existingFormats,
+  existingLots = [],
   onClose,
 }: {
   projectId: string;
   existingFormats: string[];
+  /** Owner of each existing format's lot, for the read-only chip. */
+  existingLots?: { format: string; assigneeName: string | null }[];
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const users = useUserPicker();
-  const formats = useReferenceList('format');
+  const rowAssign = useRowAssign();
   const { draft, patch, fieldErrors, setFieldErrors, clearPrefix, newRowId } = useIntakeDraft(() =>
     emptyDraft(EMPTY_LINE, ''),
   );
-  const [assignees, setAssignees] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const ctx: StepCtx = { mode: 'project', draft, patch, errors: fieldErrors, clearPrefix, newRowId };
 
   const newFormats = [...new Set(draft.lines.map((l) => l.format))].filter((f) => !existingFormats.includes(f));
-  const formatLabel = (f: string) => formats.data?.items.find((i) => i.value === f)?.label ?? f;
 
   const add = useMutation({
     mutationFn: () =>
       projectsApi.addMedia(projectId, {
         mediaLines: buildMediaLines(draft),
-        assignments: newFormats.filter((f) => assignees[f]).map((f) => ({ format: f, assigneeId: assignees[f]! })),
+        // Only NEW formats can be assigned; an existing format's lot keeps its owner.
+        ...buildAssignPayload(rowAssign.drafts, newFormats, rowAssign.canAssignTasks),
+        today: todayIso(),
       }),
     onSuccess: (res) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
@@ -60,7 +66,15 @@ export function AddMediaDialog({
       toast.success('Media added', created ? `${created} new ${created === 1 ? 'lot' : 'lots'} created` : 'Added to existing lots');
       onClose();
     },
-    onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not add media.'),
+    onError: (e) => {
+      const message = e instanceof ApiRequestError ? e.message : 'Could not add media.';
+      setError(message);
+      const bad = formatFromTaskError(message, newFormats);
+      if (bad) {
+        rowAssign.setFormatError(bad, message);
+        rowAssign.open(bad);
+      }
+    },
   });
 
   const submit = () => {
@@ -82,28 +96,27 @@ export function AddMediaDialog({
       wide
     >
       <div className="flex flex-col gap-3.5">
-        <MediaStep ctx={ctx} />
-        {newFormats.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            <span className="text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">New lots — assign</span>
-            {newFormats.map((f) => (
-              <Field key={f} label={`${formatLabel(f)} lot`}>
-                <Select
-                  value={assignees[f] ?? ''}
-                  onChange={(e) => setAssignees((prev) => ({ ...prev, [f]: e.target.value }))}
-                  aria-label={`Assignee for the new ${formatLabel(f)} lot`}
-                >
-                  <option value="">Unassigned (admin only)</option>
-                  {(users.data?.users ?? []).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            ))}
-          </div>
-        ) : null}
+        <MediaStep
+          ctx={ctx}
+          rowActions={(line) => {
+            const existing = existingLots.find((l) => l.format === line.format);
+            // A format listed in existingFormats but missing from existingLots still counts as taken.
+            const locked = existing
+              ? { name: existing.assigneeName }
+              : existingFormats.includes(line.format)
+                ? { name: null }
+                : undefined;
+            return (
+              <RowAssignButton
+                format={line.format}
+                draft={rowAssign.drafts[line.format]}
+                locked={locked}
+                error={rowAssign.errors[line.format]}
+                onOpen={() => rowAssign.open(line.format)}
+              />
+            );
+          }}
+        />
         <FormError message={error} />
         <div className="flex justify-end gap-2.5">
           <GhostButton type="button" onClick={onClose}>
@@ -114,6 +127,16 @@ export function AddMediaDialog({
           </PrimaryButton>
         </div>
       </div>
+      {rowAssign.editing ? (
+        <RowAssignDialog
+          initial={rowAssign.drafts[rowAssign.editing] ?? null}
+          canAssignTasks={rowAssign.canAssignTasks}
+          serverError={rowAssign.errors[rowAssign.editing]}
+          onSave={(d) => rowAssign.save(rowAssign.editing!, d)}
+          onClear={rowAssign.drafts[rowAssign.editing] ? () => rowAssign.clear(rowAssign.editing!) : undefined}
+          onClose={rowAssign.close}
+        />
+      ) : null}
     </Dialog>
   );
 }

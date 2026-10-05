@@ -28,10 +28,13 @@ import { IconTrash } from '@/components/ui/icons';
  */
 export function AssignTaskDialog({
   defaultFormat,
+  defaultProject,
   onClose,
   onCreated,
 }: {
   defaultFormat?: Format;
+  /** Pre-links the task to this project (the user can still clear it). */
+  defaultProject?: TaskLink;
   onClose: () => void;
   onCreated?: (taskId: string) => void;
 }) {
@@ -45,7 +48,7 @@ export function AssignTaskDialog({
   const [dueDate, setDueDate] = useState('');
   const [format, setFormat] = useState<Format | ''>(defaultFormat ?? '');
   const [lot, setLot] = useState<TaskLink | null>(null);
-  const [project, setProject] = useState<TaskLink | null>(null);
+  const [project, setProject] = useState<TaskLink | null>(defaultProject ?? null);
   const [items, setItems] = useState<string[]>([]);
   const [draftItem, setDraftItem] = useState('');
   const [error, setError] = useState<string | null>(null);

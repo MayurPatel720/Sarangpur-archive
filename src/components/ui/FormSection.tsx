@@ -16,9 +16,11 @@ export function FormSection({
 }) {
   return (
     <fieldset className="m-0 p-0 border-0 min-w-0">
-      <legend className="px-0 mb-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
-        {legend}
-      </legend>
+      {legend ? (
+        <legend className="px-0 mb-1 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">
+          {legend}
+        </legend>
+      ) : null}
       {description ? (
         <p className="m-0 mb-3 text-[12px] text-ink-3">{description}</p>
       ) : null}
@@ -36,7 +38,7 @@ export function FormSection({
 export function StepBlocks({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-col">
-      {Children.map(children, (child, i) =>
+      {Children.toArray(children).map((child, i) =>
         i === 0 ? (
           child
         ) : (

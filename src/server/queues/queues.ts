@@ -7,7 +7,7 @@ import { HttpError } from '@/lib/api';
 import { activeValuesWithFlag } from '@/server/reference/runtime';
 
 /**
- * Queue definitions (API.md §6). Five screens, one shared shape: each queue is
+ * Queue definitions (API.md §6). Two screens, one shared shape: each queue is
  * a stage filter (or return-status filter) plus FIFO sort over the register.
  */
 interface QueueConfig {
@@ -20,9 +20,6 @@ interface QueueConfig {
 }
 
 const QUEUES: Record<string, QueueConfig> = {
-  decision: { stage: 'decision', viewPermission: 'decision:view', sort: 'stageEnteredAt' },
-  digitize: { stage: 'scanning', viewPermission: 'digitize:view', sort: 'stageEnteredAt' },
-  mls: { stage: 'mls_tag', viewPermission: 'mls:view', sort: 'stageEnteredAt' },
   returns: { returnStatus: 'open', viewPermission: 'returns:view', sort: 'stageEnteredAt' },
   discards: { stage: 'discarded', viewPermission: 'discards:view', sort: 'stageEnteredAt' },
 };

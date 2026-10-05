@@ -54,6 +54,11 @@ const archiveLotSchema = new Schema(
     owner: { type: contactSchema, default: undefined },
     pointsOfContact: { type: [contactSchema], default: [] },
     facilitator: { type: contactSchema, default: null },
+    /** Info-only: people who know about this media (call and ask). Old docs have none. */
+    referencePeople: {
+      type: [new Schema({ name: { type: String, required: true, trim: true }, phone: { type: String, required: true, trim: true } }, { _id: false })],
+      default: [],
+    },
 
     format: { type: String, required: true, index: true },
     dataType: { type: String, required: true },

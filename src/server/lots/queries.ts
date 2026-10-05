@@ -482,6 +482,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       receiver: { id: String(doc.receiver), name: userName(doc.receiver) ?? 'Unknown' },
       owner: contact(doc.owner) ?? { name: '', phone: null, email: null, address: null },
       pointsOfContact: (doc.pointsOfContact ?? []).map((p) => contact(p)!),
+      referencePeople: (doc.referencePeople ?? []).map((p) => ({ name: p.name, phone: p.phone })),
       facilitator: contact(doc.facilitator ?? null),
       format: doc.format,
       dataType: doc.dataType,

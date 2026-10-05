@@ -449,12 +449,6 @@ function queueUrl(queue: string, page: number, pageSize: number, format?: string
 }
 
 export const queuesApi = {
-  decision: (page: number, pageSize: number, format?: string) =>
-    getJson<LotListResponse>(queueUrl('decision', page, pageSize, format), lotListResponseSchema),
-  digitize: (page: number, pageSize: number, format?: string) =>
-    getJson<LotListResponse>(queueUrl('digitize', page, pageSize, format), lotListResponseSchema),
-  mls: (page: number, pageSize: number, format?: string) =>
-    getJson<LotListResponse>(queueUrl('mls', page, pageSize, format), lotListResponseSchema),
   returns: (page: number, pageSize: number, format?: string) =>
     getJson<LotListResponse>(queueUrl('returns', page, pageSize, format), lotListResponseSchema),
   discards: (page: number, pageSize: number, format?: string) =>
@@ -481,11 +475,12 @@ export const itemsGridApi = {
 };
 
 export const projectsApi = {
-  list: (page: number, pageSize: number, search?: string) => {
+  list: (page: number, pageSize: number, search?: string, assignee?: string) => {
     const qs = new URLSearchParams({
       page: String(page),
       pageSize: String(pageSize),
       ...(search ? { search } : {}),
+      ...(assignee ? { assignee } : {}),
     }).toString();
     return getJson<ProjectListResponse>(`/api/projects?${qs}`, projectListResponseSchema);
   },

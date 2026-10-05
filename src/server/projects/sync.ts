@@ -40,6 +40,7 @@ export const LOT_PATCH_SHARED_KEYS = [
   'originSource',
   'owner',
   'pointsOfContact',
+  'referencePeople',
   'facilitator',
   'conditionNotes',
   'conditionPhotoUrl',
@@ -61,7 +62,10 @@ export function applySharedToLot(lot: Lot, patch: ProjectSharedPatch): void {
   if ('pointsOfContact' in p) {
     lot.pointsOfContact = ((p.pointsOfContact as unknown) ?? []) as typeof lot.pointsOfContact;
   }
-  if ('facilitator' in p) lot.facilitator = ((p.facilitator as unknown) ?? null) as typeof lot.facilitator;
+  if ('referencePeople' in p) {
+    lot.referencePeople = ((p.referencePeople as unknown) ?? []) as typeof lot.referencePeople;
+  }
+  if ('facilitator' in p) lot.facilitator =((p.facilitator as unknown) ?? null) as typeof lot.facilitator;
   if ('conditionPhotoUrl' in p) {
     lot.conditionPhotoUrl = (p.conditionPhotoUrl as string | null) ?? undefined;
   }
@@ -159,6 +163,7 @@ export function lotSharedPatch(
     originSource?: string | null;
     owner?: unknown;
     pointsOfContact?: unknown[] | null;
+    referencePeople?: unknown[] | null;
     facilitator?: unknown;
     rights?: unknown;
     return?: { requested?: boolean; format?: string; durationText?: string | null; dueAt?: Date | null } | null;
@@ -179,6 +184,9 @@ export function lotSharedPatch(
         break;
       case 'pointsOfContact':
         patch.pointsOfContact = (lot.pointsOfContact ?? []).map((c) => clean(c as Record<string, unknown>));
+        break;
+      case 'referencePeople':
+        patch.referencePeople = (lot.referencePeople ?? []).map((c) => clean(c as Record<string, unknown>));
         break;
       case 'facilitator':
         patch.facilitator = clean(lot.facilitator as Record<string, unknown> | null);

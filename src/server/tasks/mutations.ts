@@ -5,7 +5,7 @@ import { ArchiveLot } from '@/models/ArchiveLot';
 import { Project } from '@/models/Project';
 import { Task } from '@/models/Task';
 import { User } from '@/models/User';
-import { auditActor, withTaskAudit, type TaskAuditEntry, type TaskNotice } from '@/server/audit';
+import { auditActor, persistTaskAudit, withTaskAudit, type TaskAuditEntry, type TaskNotice } from '@/server/audit';
 import { can } from '@/server/permissions';
 import { assertCanActOnTask, assigneesOf, getTaskDetail } from './queries';
 import type {
@@ -32,11 +32,17 @@ import type {
 const MAX_COMMENTS = 200;
 
 /** A real calendar day, not just the right shape (rejects 2026-02-31). */
-function assertRealDay(day: string): void {
+export function assertRealDay(day: string): void {
   const d = new Date(`${day}T00:00:00.000Z`);
   if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== day) {
     throw new HttpError(400, `"${day}" is not a real calendar date.`);
   }
+}
+
+/** A due date must not be before the caller's today (`today` = their local day; defaults to the UTC day). */
+export function assertNotPast(day: string, today?: string): void {
+  const floor = today ?? new Date().toISOString().slice(0, 10);
+  if (day < floor) throw new HttpError(400, 'The due date cannot be in the past.');
 }
 
 /** Resolve a set of user ids to active users (deduped, order kept). Names are denormalised from here. */
@@ -88,6 +94,55 @@ async function resolveProject(id: string, session: ClientSession) {
 
 /* ------------------------------------------------------------------- create */
 
+/**
+ * Builds a new task (validation, denormalised lot/project links, history entry and
+ * assignee notices) without writing it. Shared by `createTask` (own transaction via
+ * `withTaskAudit`) and `createTaskInSession` (a caller-owned transaction).
+ */
+async function buildTaskCreate(body: TaskCreateInput, ctx: MutationContext, session: ClientSession) {
+  const assignees = await resolveAssignees(body.assigneeIds, session);
+  const lot = body.lotId ? await resolveLot(body.lotId, session) : null;
+  const project = body.projectId ? await resolveProject(body.projectId, session) : null;
+  const format = lot?.format ?? body.format;
+  if (!format) throw new HttpError(400, 'Pick a format, or link a lot (the task takes its format).');
+
+  const items = (body.checklist ?? []).map((text) => ({ text, done: false }));
+  const task = new Task({
+    title: body.title,
+    description: body.description ?? null,
+    format,
+    status: 'todo',
+    priority: body.priority ?? 'normal',
+    dueDate: body.dueDate ?? null,
+    assignees: assignees.map((a) => ({ id: new Types.ObjectId(a.id), name: a.name })),
+    createdBy: new Types.ObjectId(ctx.userId),
+    createdByName: ctx.userName,
+    lot: lot?.id ?? null,
+    lotCode: lot?.code ?? null,
+    project: project?.id ?? null,
+    projectCode: project?.code ?? null,
+    checklist: items,
+    checklistTotal: items.length,
+    checklistDone: 0,
+  });
+
+  const bits = [`Assigned to ${names(assignees)}`];
+  if (body.dueDate) bits.push(`due ${body.dueDate}`);
+  if (lot) bits.push(`lot ${lot.code}`);
+  if (project) bits.push(`project ${project.code}`);
+
+  return {
+    task,
+    result: String(task._id),
+    entries: [{ kind: 'task_created' as const, title: 'Task created', detail: bits.join(' · ') }],
+    notices: assignees.map((a) => ({
+      userId: a.id,
+      kind: 'task_assigned' as const,
+      text: `${ctx.userName} assigned you "${body.title}"`,
+    })),
+  };
+}
+
 export async function createTask(
   body: TaskCreateInput,
   ctx: MutationContext,
@@ -96,51 +151,25 @@ export async function createTask(
 
   const id = await withTaskAudit({
     actor: auditActor(ctx),
-    mutate: async (_none, session) => {
-      const assignees = await resolveAssignees(body.assigneeIds, session);
-      const lot = body.lotId ? await resolveLot(body.lotId, session) : null;
-      const project = body.projectId ? await resolveProject(body.projectId, session) : null;
-      const format = lot?.format ?? body.format;
-      if (!format) throw new HttpError(400, 'Pick a format, or link a lot (the task takes its format).');
-
-      const items = (body.checklist ?? []).map((text) => ({ text, done: false }));
-      const task = new Task({
-        title: body.title,
-        description: body.description ?? null,
-        format,
-        status: 'todo',
-        priority: body.priority ?? 'normal',
-        dueDate: body.dueDate ?? null,
-        assignees: assignees.map((a) => ({ id: new Types.ObjectId(a.id), name: a.name })),
-        createdBy: new Types.ObjectId(ctx.userId),
-        createdByName: ctx.userName,
-        lot: lot?.id ?? null,
-        lotCode: lot?.code ?? null,
-        project: project?.id ?? null,
-        projectCode: project?.code ?? null,
-        checklist: items,
-        checklistTotal: items.length,
-        checklistDone: 0,
-      });
-
-      const bits = [`Assigned to ${names(assignees)}`];
-      if (body.dueDate) bits.push(`due ${body.dueDate}`);
-      if (lot) bits.push(`lot ${lot.code}`);
-      if (project) bits.push(`project ${project.code}`);
-
-      return {
-        task,
-        result: String(task._id),
-        entries: [{ kind: 'task_created', title: 'Task created', detail: bits.join(' · ') }],
-        notices: assignees.map((a) => ({
-          userId: a.id,
-          kind: 'task_assigned' as const,
-          text: `${ctx.userName} assigned you "${body.title}"`,
-        })),
-      };
-    },
+    mutate: (_none, session) => buildTaskCreate(body, ctx, session),
   });
   return getTaskDetail(id, ctx);
+}
+
+/**
+ * Creates a task INSIDE a caller-owned transaction (e.g. `createProject`): the same
+ * validation, task row, `ActivityLog` history and assignee notifications as
+ * `createTask`, but written in the given session so everything commits or rolls
+ * back with the caller. Returns the new task id. The caller validates `dueDate`.
+ */
+export async function createTaskInSession(
+  body: TaskCreateInput,
+  ctx: MutationContext,
+  session: ClientSession,
+): Promise<string> {
+  const out = await buildTaskCreate(body, ctx, session);
+  await persistTaskAudit(session, auditActor(ctx), out);
+  return out.result;
 }
 
 /* ------------------------------------------------------------------- update */

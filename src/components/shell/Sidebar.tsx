@@ -23,10 +23,6 @@ import {
   IconDashboard,
   IconIntake,
   IconSettings,
-  IconDecision,
-  IconScan,
-  IconBox,
-  IconTag,
   IconPlus,
   IconUser,
   IconReturn,
@@ -40,7 +36,6 @@ const WORKFLOW_ITEMS = [
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
   { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
   { icon: IconCheckCircle, label: 'Tasks', href: '/tasks', perm: 'task:view' },
-  { icon: IconBox, label: 'Projects', href: '/projects', perm: 'project:view' },
   { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
   { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconAlertTriangle, label: 'Alerts', href: '/alerts', perm: null },
@@ -48,39 +43,16 @@ const WORKFLOW_ITEMS = [
 
 const QUEUE_ITEMS = [
   {
-    icon: IconDecision,
-    label: 'Decision queue',
-    href: '/queues/decision',
-    perm: 'decision:view' as Permission,
-    kpi: 'awaiting_decision',
-  },
-  {
-    icon: IconScan,
-    label: 'Digitization queue',
-    href: '/queues/digitize',
-    perm: 'digitize:view' as Permission,
-    kpi: 'in_digitization',
-  },
-  {
-    icon: IconTag,
-    label: 'MLS tagging queue',
-    href: '/queues/mls',
-    perm: 'mls:view' as Permission,
-    kpi: 'awaiting_mls_tag',
-  },
-  {
     icon: IconReturn,
     label: 'Returns queue',
     href: '/queues/returns',
     perm: 'returns:view' as Permission,
-    kpi: null,
   },
   {
     icon: IconDiscard,
     label: 'Discards',
     href: '/queues/discards',
     perm: 'discards:view' as Permission,
-    kpi: null,
   },
 ] as const;
 
@@ -179,19 +151,6 @@ export function Sidebar() {
     refetchInterval: 60_000,
   });
 
-  const summary = useQuery({
-    queryKey: queryKeys.dashboard.summary(ctxFormat),
-    queryFn: () => dashboardApi.summary(ctxFormat),
-    enabled: ready && showCore('dashboard:view'),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
-  });
-
-  const kpiValue = (key: string): number | null => {
-    if (!summary.data) return null;
-    return summary.data.kpis.find((k) => k.key === key)?.value ?? null;
-  };
-
   /**
    * First paint must be identical on server and client. React Query's fetchStatus
    * differs across that boundary, so only trust data / an explicit fetching state
@@ -266,13 +225,11 @@ export function Sidebar() {
 
   for (const q of QUEUE_ITEMS) {
     if (!privileged || !showGated(q.perm)) continue;
-    const badge = q.kpi ? kpiValue(q.kpi) : null;
     rows.push({
       item: { icon: q.icon, label: q.label, href: scopedHref(q.href, ctxFormat) },
       // pathname never carries a query, so compare against the bare href.
       active: pathname.startsWith(q.href),
-      badge: badge !== null && badge > 0 ? badge : null,
-      badgeTitle: badge !== null ? `${badge} in queue` : undefined,
+      badge: null,
     });
   }
 

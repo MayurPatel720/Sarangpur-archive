@@ -4,9 +4,8 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { useUserPicker } from '@/hooks/useUserPicker';
 import { Dialog } from '@/components/ui/Dialog';
-import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea, TextInput } from '@/components/ui/Form';
+import { Field, FormError, GhostButton, PrimaryButton, Textarea, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
 import type { ProjectDetailResponse, ProjectUpdateBody } from '@/types/project';
 
@@ -14,17 +13,15 @@ type EditTarget = ProjectDetailResponse['project'];
 
 
 /**
- * Edit a project's own details (name, description, coordinator, dates). New projects
+ * Edit a project's own details (name, description). New projects
  * go through the wizard at /projects/new; the shared intake values are edited from
  * the project page ("Shared details") and sync to every child lot.
  */
 export function ProjectFormDialog({ project, onClose }: { project: EditTarget; onClose: () => void }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const users = useUserPicker();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? '');
-  const [coordinatorId, setCoordinatorId] = useState(project.coordinatorId ?? '');
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -32,7 +29,6 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
       const body: ProjectUpdateBody = {
         name: name.trim(),
         description: description.trim() ? description.trim() : null,
-        coordinatorId: coordinatorId ? coordinatorId : null,
       };
       return projectsApi.update(project.id, body);
     },
@@ -48,7 +44,6 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
     },
   });
 
-  const userOptions = users.data?.users ?? [];
   const canSubmit = name.trim() !== '' && !save.isPending;
 
   return (
@@ -82,16 +77,6 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
             rows={3}
             aria-label="Project description"
           />
-        </Field>
-        <Field label="Coordinator" hint="Informational — who runs this project.">
-          <Select value={coordinatorId} onChange={(e) => setCoordinatorId(e.target.value)} aria-label="Project coordinator">
-            <option value="">No coordinator</option>
-            {userOptions.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </Select>
         </Field>
         <FormError message={error} />
         <div className="flex justify-end gap-2.5">

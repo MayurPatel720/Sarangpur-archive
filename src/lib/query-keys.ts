@@ -49,12 +49,6 @@ export const queryKeys = {
     all: ['queues'] as const,
     itemDispositions: (kind: string, status: string, page: number, pageSize: number) =>
       ['queues', 'item-dispositions', kind, status, page, pageSize] as const,
-    decision: (page: number, pageSize: number, format?: string) =>
-      [...queryKeys.queues.all, 'decision', page, pageSize, format ?? 'all'] as const,
-    digitize: (page: number, pageSize: number, format?: string) =>
-      [...queryKeys.queues.all, 'digitize', page, pageSize, format ?? 'all'] as const,
-    mls: (page: number, pageSize: number, format?: string) =>
-      [...queryKeys.queues.all, 'mls', page, pageSize, format ?? 'all'] as const,
     returns: (page: number, pageSize: number, format?: string) =>
       [...queryKeys.queues.all, 'returns', page, pageSize, format ?? 'all'] as const,
     discards: (page: number, pageSize: number, format?: string) =>

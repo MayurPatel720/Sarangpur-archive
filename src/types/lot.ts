@@ -25,6 +25,14 @@ export const contactSchema = z.object({
 });
 export type LotContactInput = z.input<typeof contactSchema>;
 
+/** Info-only "people who know about this" — name and number are both required. */
+export const referencePersonSchema = z.object({
+  name: z.string().trim().min(1, 'Name is required.').max(120),
+  phone: z.string().trim().min(1, 'Number is required.').max(30),
+});
+export type ReferencePersonInput = z.input<typeof referencePersonSchema>;
+export const MAX_REFERENCE_PEOPLE = 5;
+
 export const rightsSchema = z.object({
   type: z.string().trim().min(1).max(60).optional(),
   deedReference: z.string().trim().max(120).optional(),
@@ -93,6 +101,7 @@ export const lotCreateBodySchema = z
     originSource: z.string().trim().min(1).max(40),
     owner: contactSchema,
     pointsOfContact: z.array(contactSchema).max(5).default([]),
+    referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE).default([]),
     facilitator: contactSchema.nullable().optional(),
     /**
      * Expandable media table — one row per format/sub-type. The server derives
@@ -221,6 +230,7 @@ const lotDetailSchema = z.object({
       address: z.string().nullable(),
     }),
   ),
+  referencePeople: z.array(z.object({ name: z.string(), phone: z.string() })),
   facilitator: z
     .object({
       name: z.string(),
@@ -341,6 +351,7 @@ export const lotPatchBodySchema = z
     notDigitizedReason: z.string().trim().min(1).max(40).nullable().optional(),
     owner: contactSchema.optional(),
     pointsOfContact: z.array(contactSchema).max(5).optional(),
+    referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE).optional(),
     facilitator: contactSchema.nullable().optional(),
     mediaSubtype: z.string().trim().min(1).max(120).optional(),
     quantityToDigitize: z.number().int().min(0).optional(),

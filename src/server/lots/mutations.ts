@@ -156,6 +156,7 @@ export async function insertLotInSession(
         receiver: new Types.ObjectId(ctx.userId),
         owner: body.owner ?? undefined,
         pointsOfContact: body.pointsOfContact ?? [],
+        referencePeople: body.referencePeople ?? [],
         facilitator: body.facilitator ?? null,
         format: primary.format,
         dataType: primary.dataType,
@@ -434,6 +435,7 @@ export async function patchLot(
       }
       if (body.owner !== undefined) lot.owner = body.owner as typeof lot.owner;
       if (body.pointsOfContact !== undefined) lot.pointsOfContact = body.pointsOfContact as typeof lot.pointsOfContact;
+      if (body.referencePeople !== undefined) lot.referencePeople = body.referencePeople as typeof lot.referencePeople;
       if (body.facilitator !== undefined) lot.facilitator = (body.facilitator ?? null) as typeof lot.facilitator;
       if (body.mediaSubtype !== undefined) lot.mediaSubtype = body.mediaSubtype;
       if (body.quantityToDigitize !== undefined) {

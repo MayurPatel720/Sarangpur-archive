@@ -1,13 +1,11 @@
-import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { MlsQueueManager } from '@/components/lots/MlsQueueManager';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = { title: 'MLS tagging queue · Archive Tracker' };
-
-export default function MlsQueuePage() {
-  return (
-    <Suspense fallback={null}>
-      <MlsQueueManager />
-    </Suspense>
-  );
+/** Retired queue — old links land on the Master List filtered to the same stage. */
+export default async function LegacyMlsQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ format?: string }>;
+}) {
+  const { format } = await searchParams;
+  redirect(`/register?stage=mls_tag${format ? `&format=${encodeURIComponent(format)}` : ''}`);
 }

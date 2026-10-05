@@ -170,6 +170,60 @@ export interface TaskNotice {
 }
 
 /**
+ * The write half of `withTaskAudit`, usable inside a caller-owned transaction (e.g. a
+ * project create that also creates tasks): saves the task, then inserts its
+ * `ActivityLog` rows and the recipients' `Notification` rows in the same session.
+ * The actor is never notified of their own action.
+ */
+export async function persistTaskAudit(
+  session: ClientSession,
+  actor: AuditActor,
+  out: { task: HydratedDocument<TaskDoc>; entries: TaskAuditEntry[]; notices?: TaskNotice[] },
+): Promise<void> {
+  try {
+    await out.task.save({ session });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'VersionError') {
+      throw new HttpError(409, 'This task changed since you opened it. Reload and try again.');
+    }
+    throw error;
+  }
+
+  const at = new Date();
+  if (out.entries.length > 0) {
+    await ActivityLog.create(
+      out.entries.map((e) => ({
+        task: out.task._id,
+        taskTitle: out.task.title,
+        kind: e.kind,
+        title: e.title,
+        detail: e.detail,
+        actor: new Types.ObjectId(actor.id),
+        actorName: actor.name,
+        at,
+        changes: e.changes ?? [],
+      })),
+      { session, ordered: true },
+    );
+  }
+
+  const notices = (out.notices ?? []).filter((n) => n.userId !== actor.id);
+  if (notices.length > 0) {
+    await Notification.create(
+      notices.map((n) => ({
+        user: new Types.ObjectId(n.userId),
+        kind: n.kind,
+        task: out.task._id,
+        taskTitle: out.task.title,
+        text: n.text,
+        actorName: actor.name,
+      })),
+      { session, ordered: true },
+    );
+  }
+}
+
+/**
  * `withAudit()` for tasks. `withAudit` itself is lot-scoped, so — like the project
  * mutations — task events get their own wrapper with the same all-or-nothing contract:
  * in one transaction it (1) loads the task (404; skipped for a create), (2) runs
@@ -209,47 +263,7 @@ export async function withTaskAudit<T>(opts: {
       const out = await opts.mutate(existing, session);
       result = out.result;
 
-      try {
-        await out.task.save({ session });
-      } catch (error) {
-        if (error instanceof Error && error.name === 'VersionError') {
-          throw new HttpError(409, 'This task changed since you opened it. Reload and try again.');
-        }
-        throw error;
-      }
-
-      const at = new Date();
-      if (out.entries.length > 0) {
-        await ActivityLog.create(
-          out.entries.map((e) => ({
-            task: out.task._id,
-            taskTitle: out.task.title,
-            kind: e.kind,
-            title: e.title,
-            detail: e.detail,
-            actor: new Types.ObjectId(opts.actor.id),
-            actorName: opts.actor.name,
-            at,
-            changes: e.changes ?? [],
-          })),
-          { session, ordered: true },
-        );
-      }
-
-      const notices = (out.notices ?? []).filter((n) => n.userId !== opts.actor.id);
-      if (notices.length > 0) {
-        await Notification.create(
-          notices.map((n) => ({
-            user: new Types.ObjectId(n.userId),
-            kind: n.kind,
-            task: out.task._id,
-            taskTitle: out.task.title,
-            text: n.text,
-            actorName: opts.actor.name,
-          })),
-          { session, ordered: true },
-        );
-      }
+      await persistTaskAudit(session, opts.actor, out);
     });
     return result;
   } finally {

@@ -1,6 +1,15 @@
 import { z } from 'zod';
 import { activityEntrySchema } from './dashboard';
-import { contactSchema, lotListResponseSchema, mediaLineInputSchema, rightsSchema } from './lot';
+import {
+  MAX_REFERENCE_PEOPLE,
+  contactSchema,
+  lotListResponseSchema,
+  lotRowSchema,
+  mediaLineInputSchema,
+  referencePersonSchema,
+  rightsSchema,
+} from './lot';
+import { MAX_ASSIGNEES, isoDaySchema, taskFormatSchema, taskPrioritySchema } from './task';
 
 /**
  * Project contracts (Module: projects).
@@ -24,6 +33,7 @@ const sharedFields = {
   originSource: z.string().trim().min(1).max(40),
   owner: contactSchema,
   pointsOfContact: z.array(contactSchema).max(5),
+  referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE),
   facilitator: contactSchema,
   conditionNotes: z.string().trim().max(2000),
   conditionPhotoUrl: z.string().trim().min(1).max(500),
@@ -47,6 +57,7 @@ export const projectSharedSchema = z.object({
   originSource: sharedFields.originSource.optional(),
   owner: sharedFields.owner.optional(),
   pointsOfContact: sharedFields.pointsOfContact.optional(),
+  referencePeople: sharedFields.referencePeople.optional(),
   facilitator: sharedFields.facilitator.nullable().optional(),
   conditionNotes: sharedFields.conditionNotes.optional(),
   conditionPhotoUrl: sharedFields.conditionPhotoUrl.optional(),
@@ -70,6 +81,7 @@ export const projectSharedPatchSchema = z.object({
   originSource: sharedFields.originSource.nullable().optional(),
   owner: sharedFields.owner.nullable().optional(),
   pointsOfContact: sharedFields.pointsOfContact.nullable().optional(),
+  referencePeople: sharedFields.referencePeople.nullable().optional(),
   facilitator: sharedFields.facilitator.nullable().optional(),
   conditionNotes: sharedFields.conditionNotes.nullable().optional(),
   conditionPhotoUrl: sharedFields.conditionPhotoUrl.nullable().optional(),
@@ -93,6 +105,24 @@ export const projectAssignmentSchema = z.object({
   assigneeId: objectIdSchema.nullable().optional(),
 });
 export type ProjectAssignment = z.infer<typeof projectAssignmentSchema>;
+
+/**
+ * One task created alongside a project's child lot (one per format, at most). The
+ * server fills in the title (`<Format> lot — <project name>`) and links the task to the
+ * new lot, the project and the format — none of those travel on the wire. Needs the
+ * `task:assign` grant (403 otherwise); users without it send plain `assignments`.
+ */
+export const projectTaskInputSchema = z.object({
+  format: taskFormatSchema,
+  description: z.string().trim().max(2000).optional(),
+  checklist: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+  priority: taskPrioritySchema.default('normal'),
+  dueDate: isoDaySchema.optional(),
+  /** 1–20 active users; duplicates are dropped. */
+  assigneeIds: z.array(objectIdSchema).min(1, 'Pick at least one assignee.').max(MAX_ASSIGNEES),
+});
+export type ProjectTaskInput = z.input<typeof projectTaskInputSchema>;
+export type ProjectTaskBody = z.infer<typeof projectTaskInputSchema>;
 
 export const projectRowSchema = z.object({
   id: z.string(),
@@ -131,6 +161,8 @@ export const projectListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   search: z.string().trim().max(120).optional(),
+  /** Only projects where this user is the assignee of at least one child lot ("My lots"). */
+  assignee: objectIdSchema.optional(),
 });
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
 
@@ -158,6 +190,10 @@ export const projectCreateBodySchema = z
       .max(20, 'No more than 20 media lines.'),
     /** Per-format assignee. A format with no entry (or null) starts unassigned (admin-only). */
     assignments: z.array(projectAssignmentSchema).max(20).default([]),
+    /** Optional per-format tasks, created in the same transaction as the project and its lots. */
+    tasks: z.array(projectTaskInputSchema).max(20).default([]),
+    /** The caller's local calendar day, used to reject past due dates. Defaults to the server's UTC day. */
+    today: isoDaySchema.optional(),
   })
   .refine((b) => b.mediaLines.reduce((sum, l) => sum + l.quantity, 0) <= 20000, {
     message: 'Total quantity across media lines cannot exceed 20000.',
@@ -171,6 +207,7 @@ export const projectCreateResponseSchema = z.object({
   id: z.string(),
   code: z.string(),
   lots: z.array(z.object({ id: z.string(), lotReference: z.string(), format: z.string() })),
+  tasks: z.array(z.object({ id: z.string(), format: z.string() })),
 });
 export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
 
@@ -196,9 +233,27 @@ export const projectDetailQuerySchema = z.object({
 });
 export type ProjectDetailQuery = z.infer<typeof projectDetailQuerySchema>;
 
+/**
+ * One member lot on the project page: the register row plus the per-lot columns the
+ * project table needs. All values are denormalised lot counters (no item scan, no join).
+ */
+export const projectLotRowSchema = lotRowSchema.extend({
+  assigneeId: z.string().nullable(),
+  /** Media breakdown, one entry per sub-type line (falls back to the lot's primary line). */
+  mediaLines: z.array(z.object({ mediaSubtype: z.string(), quantity: z.number() })),
+  /** Files found on disk / files expected (digitization counters). */
+  scanned: z.number(),
+  scanTarget: z.number(),
+  /** Items tagged in MLS, of `quantity`. */
+  tagged: z.number(),
+});
+export type ProjectLotRow = z.infer<typeof projectLotRowSchema>;
+
 export const projectDetailResponseSchema = z.object({
   project: projectRowSchema.extend({
     coordinatorId: z.string().nullable(),
+    /** Who created the project (looked up by id at read time; null if the user is gone). */
+    createdByName: z.string().nullable(),
     shared: projectSharedSchema,
     /** Derived: distinct assignees of the project's lots. */
     team: z.array(z.object({ userId: z.string(), userName: z.string(), lotCount: z.number() })),
@@ -218,7 +273,7 @@ export const projectDetailResponseSchema = z.object({
   }),
   progress: projectProgressSchema,
   /** Member lots, paginated — same rows as the intake register. */
-  lots: lotListResponseSchema,
+  lots: lotListResponseSchema.extend({ rows: z.array(projectLotRowSchema) }),
   recentActivity: z.array(activityEntrySchema),
 });
 export type ProjectDetailResponse = z.infer<typeof projectDetailResponseSchema>;
@@ -235,6 +290,9 @@ export const projectAssignBodySchema = z.object({
 export const projectAddMediaBodySchema = z.object({
   mediaLines: z.array(mediaLineInputSchema).min(1).max(20),
   assignments: z.array(projectAssignmentSchema).max(20).default([]),
+  /** Only for NEW formats (a format that already has a lot cannot be assigned again). */
+  tasks: z.array(projectTaskInputSchema).max(20).default([]),
+  today: isoDaySchema.optional(),
 });
 export type ProjectAddMediaBody = z.infer<typeof projectAddMediaBodySchema>;
 export type ProjectAddMediaInput = z.input<typeof projectAddMediaBodySchema>;

@@ -38,6 +38,8 @@ One delivery of material from one owner. The central collection.
 
 ### Contacts — **embedded** (owned by the lot, never queried alone)
 `owner` (required), `pointsOfContact[]`, `facilitator` — each `{ name, phone, email, address }`.
+`referencePeople[]` — `{ name, phone }`, both required, max 5, default `[]` (old lots have none). Info-only
+"people who know about this"; a shared project field (synced like `pointsOfContact`).
 
 ### Media
 `format` (enum, indexed) · `dataType` (`physical`|`digital`) · `mediaSubtype` (String) ·

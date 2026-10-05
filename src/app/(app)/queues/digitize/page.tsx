@@ -1,13 +1,11 @@
-import type { Metadata } from 'next';
-import { Suspense } from 'react';
-import { DigitizeQueueManager } from '@/components/lots/DigitizeQueueManager';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = { title: 'Digitization queue · Archive Tracker' };
-
-export default function DigitizeQueuePage() {
-  return (
-    <Suspense fallback={null}>
-      <DigitizeQueueManager />
-    </Suspense>
-  );
+/** Retired queue — old links land on the Master List filtered to the same stage. */
+export default async function LegacyDigitizeQueuePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ format?: string }>;
+}) {
+  const { format } = await searchParams;
+  redirect(`/register?stage=scanning${format ? `&format=${encodeURIComponent(format)}` : ''}`);
 }

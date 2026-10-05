@@ -11,9 +11,14 @@ import { RefSelect, SubtypeCell } from '@/components/ui/RefSelect';
 import { FormSection, StepBlocks } from '@/components/ui/FormSection';
 import {
   EMPTY_CONTACT,
+  ReferencePeopleSection,
   RightsTypeField,
+  cleanReferencePeople,
   makeContactColumns,
+  referencePersonLine,
+  validateReferencePeople,
   type ContactRow,
+  type ReferencePersonRow,
 } from './lot-form-fields';
 
 /**
@@ -48,6 +53,8 @@ export interface IntakeDraft {
   originSource: string;
   owner: ContactRow;
   pocs: ContactRow[];
+  /** Info-only "people who know about this" (name + number). */
+  referencePeople: ReferencePersonRow[];
   /** `null` = no facilitator (the row IS the toggle). */
   facilitator: ContactRow | null;
   lines: MediaLineForm[];
@@ -89,6 +96,7 @@ export function emptyDraft(seedLine: Omit<MediaLineForm, 'id'>, today: string): 
     originSource: '',
     owner: { ...EMPTY_CONTACT, id: 'owner' },
     pocs: [],
+    referencePeople: [],
     facilitator: null,
     lines: [{ ...seedLine, id: 'r0' }],
     conditionNotes: '',
@@ -200,6 +208,7 @@ export function validateOrigin(d: IntakeDraft, mode: IntakeMode): FieldErrors {
   for (const [i, p] of d.pocs.entries()) {
     if (!p.name.trim()) add(`${p.id}.name`, `Point of contact ${i + 1} needs a name.`);
   }
+  for (const [k, msg] of Object.entries(validateReferencePeople(d.referencePeople))) add(k, msg);
   if (d.facilitator && !d.facilitator.name.trim()) {
     add('fac.name', 'Facilitator name is required once a facilitator is added.');
   }
@@ -244,6 +253,9 @@ export function buildSharedFields(d: IntakeDraft) {
     ...(d.originSource ? { originSource: d.originSource } : {}),
     ...(d.owner.name.trim() ? { owner: cleanContact(d.owner) } : {}),
     ...(d.pocs.length ? { pointsOfContact: d.pocs.map(cleanContact) } : {}),
+    ...(cleanReferencePeople(d.referencePeople).length
+      ? { referencePeople: cleanReferencePeople(d.referencePeople) }
+      : {}),
     ...(d.facilitator ? { facilitator: cleanContact(d.facilitator) } : {}),
     ...(d.conditionNotes.trim() ? { conditionNotes: d.conditionNotes.trim() } : {}),
     ...(d.conditionPhotoUrl.trim() ? { conditionPhotoUrl: d.conditionPhotoUrl.trim() } : {}),
@@ -288,7 +300,17 @@ export function buildMediaLines(d: IntakeDraft) {
 
 /* -------------------------------------------------------------------- steps */
 
-export function OriginContactsStep({ ctx }: { ctx: StepCtx }) {
+export function OriginContactsStep({
+  ctx,
+  leading,
+  below,
+}: {
+  ctx: StepCtx;
+  /** Project form: the project name, shown as the first cell of the receipt row (row becomes 3 columns, no "Receipt" label). */
+  leading?: ReactNode;
+  /** Rendered under the receipt row (project form: description). */
+  below?: ReactNode;
+}) {
   const { mode, draft, patch, errors, clearPrefix, newRowId } = ctx;
   const req = mode === 'lot';
   const optional = req ? '' : ' (optional now — the assignee can fill it in)';
@@ -311,8 +333,9 @@ export function OriginContactsStep({ ctx }: { ctx: StepCtx }) {
 
   return (
     <StepBlocks>
-      <FormSection legend="Receipt">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <FormSection legend={leading ? '' : 'Receipt'}>
+        <div className={`grid grid-cols-1 gap-3 ${leading ? 'md:grid-cols-3' : 'sm:grid-cols-2'}`}>
+          {leading}
           <Field label="Date received" required={req} error={errors.dateReceived}>
             <DatePicker
               value={dmyToIso(draft.dateReceived) ?? ''}
@@ -340,6 +363,7 @@ export function OriginContactsStep({ ctx }: { ctx: StepCtx }) {
             />
           </Field>
         </div>
+        {below ? <div className="mt-3">{below}</div> : null}
       </FormSection>
 
       <FormSection
@@ -382,6 +406,14 @@ export function OriginContactsStep({ ctx }: { ctx: StepCtx }) {
           emptyMessage="No points of contact yet."
         />
       </FormSection>
+
+      <ReferencePeopleSection
+        rows={draft.referencePeople}
+        onChange={(next) => patch({ referencePeople: next })}
+        newRowId={newRowId}
+        errors={errors}
+        onEdit={(id) => clearPrefix(`${id}.`)}
+      />
 
       <FormSection
         legend="Facilitator"
@@ -451,7 +483,7 @@ export function ConditionStep({ ctx }: { ctx: StepCtx }) {
         </div>
       </FormSection>
 
-      {hasPhotoLines(draft) ? (
+      {mode === 'lot' && hasPhotoLines(draft) ? (
         <FormSection legend="Media content metadata (optional)">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Photo date">
@@ -549,7 +581,16 @@ export function ConditionStep({ ctx }: { ctx: StepCtx }) {
   );
 }
 
-export function MediaStep({ ctx, footerNote }: { ctx: StepCtx; footerNote?: ReactNode }) {
+export function MediaStep({
+  ctx,
+  footerNote,
+  rowActions,
+}: {
+  ctx: StepCtx;
+  footerNote?: ReactNode;
+  /** Extra control per media row (the project wizard's per-format "Assign" button). */
+  rowActions?: (line: MediaLineForm) => ReactNode;
+}) {
   const { draft, patch, errors, clearPrefix, newRowId, initialFormat } = ctx;
   const formats = useReferenceList('format');
   const dataTypes = useReferenceList('dataType');
@@ -658,12 +699,12 @@ export function MediaStep({ ctx, footerNote }: { ctx: StepCtx; footerNote?: Reac
   return (
     <StepBlocks>
       <FormSection
-        legend="Media lines"
+        legend={ctx.mode === 'project' ? '' : 'Media lines'}
         description={
           initialFormat
             ? `This intake was opened from the ${cap(initialFormat)} block — every line in this lot is ${cap(initialFormat)}.`
             : ctx.mode === 'project'
-              ? 'One row per format / sub-type. One lot is created per format — rows of the same format share a lot. Quantities are required; assignees can correct them later.'
+              ? undefined
               : 'One row per format / sub-type combination — a mixed lot of prints and cassettes gets two rows. Selection for digitization happens at a later stage.'
         }
       >
@@ -684,6 +725,7 @@ export function MediaStep({ ctx, footerNote }: { ctx: StepCtx; footerNote?: Reac
           addLabel="Add row"
           rowName={(i) => `Line ${i + 1}`}
           minRowsHint="At least one media line is required"
+          rowActions={rowActions ? ({ row }) => rowActions(row) : undefined}
           emptyMessage="No media lines yet."
           footer={
             <>
@@ -821,6 +863,14 @@ export function ReviewSummary({
           label="Points of contact"
           value={d.pocs.length ? d.pocs.map(contactLine).join(' | ') : 'None'}
         />
+        <SummaryRow
+          label="People"
+          value={
+            cleanReferencePeople(d.referencePeople).length
+              ? cleanReferencePeople(d.referencePeople).map(referencePersonLine).join(' | ')
+              : 'None'
+          }
+        />
         <SummaryRow label="Facilitator" value={d.facilitator ? contactLine(d.facilitator) : 'None'} />
       </SummarySection>
 
@@ -829,7 +879,7 @@ export function ReviewSummary({
         <SummaryRow label="Condition photo" value={d.conditionPhotoUrl} />
         <SummaryRow label="Reason for sending" value={d.reasonForSending} />
         <SummaryRow label="Sender remarks" value={d.senderRemarks} />
-        {hasPhotoLines(d) ? (
+        {mode === 'lot' && hasPhotoLines(d) ? (
           <>
             <SummaryRow label="Photo date" value={d.photoDate} />
             <SummaryRow label="Photo location" value={d.photoLocation} />
@@ -875,6 +925,7 @@ export function draftFromShared(
     originSource?: string;
     owner?: LotContactInput;
     pointsOfContact?: LotContactInput[];
+    referencePeople?: { name: string; phone: string }[];
     facilitator?: LotContactInput | null;
     conditionNotes?: string;
     conditionPhotoUrl?: string;
@@ -900,6 +951,7 @@ export function draftFromShared(
     originSource: shared.originSource ?? '',
     owner: shared.owner ? withId(shared.owner, 'owner') : base.owner,
     pocs: (shared.pointsOfContact ?? []).map((c, i) => withId(c, `p${i}`)),
+    referencePeople: (shared.referencePeople ?? []).map((c, i) => ({ ...c, id: `rp${i}` })),
     facilitator: shared.facilitator ? withId(shared.facilitator, 'fac') : null,
     // Only the formats matter here (they decide whether photo metadata shows).
     lines: formats.map((f, i) => ({ ...EMPTY_LINE, format: f, id: `f${i}` })),

@@ -69,6 +69,8 @@ type Props<T> = {
   emptyMessage?: string;
   /** Off = no delete buttons (retire-in-place lists). */
   allowDelete?: boolean;
+  /** Extra per-row controls, rendered before the duplicate / remove buttons. */
+  rowActions?: (ctx: { row: T; rowId: string; index: number; mobile: boolean }) => ReactNode;
   /** Extra content under the add-row button (totals, total error…). */
   footer?: ReactNode;
 };
@@ -88,10 +90,11 @@ export function EditableTable<T>({
   minRowsHint,
   emptyMessage,
   allowDelete = true,
+  rowActions,
   footer,
 }: Props<T>) {
   const [focusRowId, setFocusRowId] = useState<string | null>(null);
-  const showActions = allowDelete || Boolean(cloneRow);
+  const showActions = allowDelete || Boolean(cloneRow) || Boolean(rowActions);
   const canAdd = Boolean(createRow) && rows.length < maxRows;
 
   const handleAdd = () => {
@@ -125,7 +128,8 @@ export function EditableTable<T>({
     const atMax = rows.length >= maxRows;
 
     const actions = showActions ? (
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1.5">
+        {rowActions ? rowActions({ row, rowId, index, mobile }) : null}
         {cloneRow ? (
           <IconButton
             label={`Duplicate ${label}`}
@@ -184,7 +188,9 @@ export function EditableTable<T>({
 
     return (
       <tr key={rowId}>
-        <td className="px-3 py-2 text-[12px] text-ink-3 tabular-nums align-top">{index + 1}</td>
+        <td className="w-12 pl-4 pr-1 py-2 align-top text-[12px] text-ink-3 tabular-nums">
+          <span className="flex h-10 items-center">{index + 1}</span>
+        </td>
         {columns.map((col) => {
           const key = `${rowId}.${col.key}`;
           const error = cellError(rowId, col.key);
@@ -201,7 +207,7 @@ export function EditableTable<T>({
             <td
               key={col.key}
               data-cell={key}
-              className={`px-2 py-2 align-top text-[13px] text-ink-2 ${col.className ?? ''}`}
+              className={`px-1.5 py-2 align-top text-[13px] text-ink-2 ${col.className ?? ''}`}
             >
               {col.render(ctx)}
               {error ? (
@@ -213,7 +219,9 @@ export function EditableTable<T>({
           );
         })}
         {showActions ? (
-          <td className="px-3 py-2 align-top whitespace-nowrap text-right">{actions}</td>
+          <td className="w-px pl-2 pr-4 py-2 align-top whitespace-nowrap">
+            <span className="flex h-10 items-center justify-end">{actions}</span>
+          </td>
         ) : null}
       </tr>
     );
@@ -228,7 +236,7 @@ export function EditableTable<T>({
               <tr className="border-b border-line-soft">
                 <th
                   scope="col"
-                  className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3"
+                  className="w-12 pl-4 pr-1 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3"
                 >
                   #
                 </th>
@@ -236,7 +244,7 @@ export function EditableTable<T>({
                   <th
                     key={col.key}
                     scope="col"
-                    className={`px-2 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3 whitespace-nowrap ${col.className ?? ''}`}
+                    className={`px-1.5 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3 whitespace-nowrap ${col.className ?? ''}`}
                   >
                     {col.header}
                     {col.required ? (
@@ -253,7 +261,7 @@ export function EditableTable<T>({
                 {showActions ? (
                   <th
                     scope="col"
-                    className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3 text-right"
+                    className="w-px pl-2 pr-4 py-2.5 text-[11px] font-semibold uppercase tracking-[0.04em] text-ink-3 text-right whitespace-nowrap"
                   >
                     Actions
                   </th>
@@ -277,7 +285,7 @@ export function EditableTable<T>({
         </p>
       ) : null}
 
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-x-3 gap-y-2 flex-wrap">
         {canAdd ? (
           <GhostButton onClick={handleAdd}>
             <span className="inline-flex items-center gap-1.5">
@@ -287,13 +295,12 @@ export function EditableTable<T>({
           </GhostButton>
         ) : null}
         {Number.isFinite(maxRows) && maxRows > 1 ? (
-          <span className="text-[12.5px] text-ink-2 tabular-nums">
+          <span className="text-[12px] text-ink-3 tabular-nums">
             {rows.length} of {maxRows} rows
           </span>
         ) : null}
+        {footer ? <div className="ml-auto flex flex-col items-end gap-0.5 text-right">{footer}</div> : null}
       </div>
-
-      {footer}
     </div>
   );
 }

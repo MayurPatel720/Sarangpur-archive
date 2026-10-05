@@ -1,6 +1,9 @@
 import { Types, type ClientSession } from 'mongoose';
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
+import { FORMAT_LABELS, type Format } from '@/lib/domain';
+import { can } from '@/server/permissions';
+import { assertNotPast, assertRealDay, createTaskInSession } from '@/server/tasks/mutations';
 import { connectToDatabase } from '@/lib/mongo';
 import { Project } from '@/models/Project';
 import { ArchiveLot } from '@/models/ArchiveLot';
@@ -18,6 +21,8 @@ import type {
   ProjectCreateResponse,
   ProjectShared,
   ProjectSharedPatch,
+  ProjectTaskBody,
+  ProjectTaskInput,
   ProjectUpdateBody,
   ProjectUpdateResponse,
 } from '@/types/project';
@@ -56,6 +61,86 @@ async function resolveUserNames(
   const missing = ids.filter((id) => !names.has(id));
   if (missing.length > 0) throw new HttpError(400, 'Unknown user selected.');
   return names;
+}
+
+/* -------------------------------------------------------------------- tasks */
+
+type TaskIn = ProjectTaskBody;
+
+/**
+ * Validates the per-format tasks of a create / add-media request BEFORE any write:
+ * the `task:assign` grant (403), one task per format, each format one of the lots
+ * being created, a real due date that is not in the past. Returns them keyed by format.
+ */
+function prepareTasks(
+  tasks: ProjectTaskInput[] | undefined,
+  lotFormats: string[],
+  ctx: MutationContext,
+  today: string | undefined,
+  what: string,
+): Map<string, TaskIn> {
+  const out = new Map<string, TaskIn>();
+  if (!tasks || tasks.length === 0) return out;
+  if (!can(ctx.grants, 'task:assign')) {
+    throw new HttpError(403, 'Your role cannot assign tasks. Choose only the lot owner.');
+  }
+  for (const raw of tasks) {
+    const t = raw as TaskIn;
+    const label = FORMAT_LABELS[t.format];
+    if (out.has(t.format)) throw new HttpError(400, `${label} lot task: given more than once.`);
+    if (!lotFormats.includes(t.format)) {
+      throw new HttpError(400, `${label} lot task: ${what}`);
+    }
+    if (t.dueDate) {
+      try {
+        assertRealDay(t.dueDate);
+        assertNotPast(t.dueDate, today);
+      } catch (e) {
+        if (e instanceof HttpError) throw new HttpError(e.status, `${label} lot task: ${e.message}`);
+        throw e;
+      }
+    }
+    out.set(t.format, t);
+  }
+  return out;
+}
+
+/** Task title is resolved here from the FINAL project name, never trusted from the client. */
+function lotTaskTitle(format: Format, projectName: string): string {
+  return `${FORMAT_LABELS[format]} lot — ${projectName}`.slice(0, 160);
+}
+
+/**
+ * Creates one lot's task inside the caller's transaction (same helper as POST /api/tasks,
+ * so history + notifications are written identically). A failure names the format.
+ */
+async function createLotTask(
+  t: TaskIn,
+  lot: { id: string },
+  project: { id: string; name: string },
+  ctx: MutationContext,
+  session: ClientSession,
+): Promise<string> {
+  try {
+    return await createTaskInSession(
+      {
+        title: lotTaskTitle(t.format, project.name),
+        description: t.description || undefined,
+        assigneeIds: t.assigneeIds,
+        priority: t.priority,
+        dueDate: t.dueDate,
+        format: t.format,
+        lotId: lot.id,
+        projectId: project.id,
+        checklist: t.checklist,
+      },
+      ctx,
+      session,
+    );
+  } catch (e) {
+    if (e instanceof HttpError) throw new HttpError(e.status, `${FORMAT_LABELS[t.format]} lot task: ${e.message}`);
+    throw e;
+  }
 }
 
 /* ------------------------------------------------------------------- create */
@@ -102,6 +187,13 @@ export async function createProject(
       throw new HttpError(400, `Assignment given for "${f}", but no media line uses that format.`);
     }
   }
+  const taskByFormat = prepareTasks(
+    body.tasks,
+    groups.map((g) => g.format),
+    ctx,
+    body.today,
+    'no media line uses that format.',
+  );
   // Vocabulary is checked per child lot BEFORE the transaction opens.
   const vocabs = await Promise.all(
     groups.map((g) =>
@@ -115,8 +207,10 @@ export async function createProject(
     let id = '';
     let code = '';
     const lots: { id: string; lotReference: string; format: string }[] = [];
+    const tasks: { id: string; format: string }[] = [];
     await session.withTransaction(async () => {
       lots.length = 0;
+      tasks.length = 0;
       code = await generateProjectCode(session);
 
       const userIds = [
@@ -155,6 +249,11 @@ export async function createProject(
           },
         );
         lots.push({ id: lot.id, lotReference: lot.lotReference, format: lot.format });
+        const t = taskByFormat.get(g.format);
+        if (t) {
+          const taskId = await createLotTask(t, lot, { id: String(project!._id), name: project!.name }, ctx, session);
+          tasks.push({ id: taskId, format: g.format });
+        }
       }
       project!.lotCount = lots.length;
       await project!.save({ session });
@@ -181,7 +280,7 @@ export async function createProject(
       );
       id = String(project!._id);
     });
-    return { id, code, lots };
+    return { id, code, lots, tasks };
   } finally {
     await session.endSession();
   }
@@ -553,6 +652,33 @@ export async function addProjectMedia(
   const assignments = new Map((body.assignments ?? []).map((a) => [a.format, a.assigneeId ?? null]));
   const out: { id: string; lotReference: string; format: string; created: boolean }[] = [];
 
+  // Tasks are only for formats that get a NEW lot — an existing format already has its
+  // owner (and possibly its task), and is never assigned a second time.
+  const existingFormats = new Set(
+    (await ArchiveLot.find({ syncProjectId: project._id }).select('format').lean()).map((l) => String(l.format)),
+  );
+  const newFormats = groups.map((g) => g.format).filter((f) => !existingFormats.has(f));
+  const taskByFormat = prepareTasks(
+    body.tasks,
+    newFormats,
+    ctx,
+    body.today,
+    'that format already has a lot in this project, so it cannot be assigned again.',
+  );
+  // Fail fast on bad assignees before any lot is written (the in-transaction check stays authoritative).
+  if (taskByFormat.size > 0) {
+    const ids = [...new Set([...taskByFormat.values()].flatMap((t) => t.assigneeIds))];
+    const users = await User.find({ _id: { $in: ids } }).select('name active').lean();
+    const byId = new Map(users.map((u) => [String(u._id), u]));
+    for (const t of taskByFormat.values()) {
+      for (const id of t.assigneeIds) {
+        const u = byId.get(id);
+        if (!u) throw new HttpError(400, `${FORMAT_LABELS[t.format]} lot task: Unknown assignee.`);
+        if (!u.active) throw new HttpError(400, `${FORMAT_LABELS[t.format]} lot task: ${u.name} is not an active user.`);
+      }
+    }
+  }
+
   for (const g of groups) {
     const existing = await ArchiveLot.findOne({ syncProjectId: project._id, format: g.format })
       .select('lotReference mediaLines __v')
@@ -585,6 +711,8 @@ export async function addProjectMedia(
           assignee: assigneeId ? { id: assigneeId, name: names.get(assigneeId) ?? 'Unknown' } : null,
         });
         await Project.updateOne({ _id: project._id }, { $inc: { lotCount: 1 } }, { session });
+        const t = taskByFormat.get(g.format);
+        if (t) await createLotTask(t, lot, { id: String(project._id), name: project.name }, ctx, session);
         out.push({ id: lot.id, lotReference: lot.lotReference, format: lot.format, created: true });
       });
     } finally {

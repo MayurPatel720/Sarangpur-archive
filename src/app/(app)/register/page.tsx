@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
 import { FORMATS } from '@/lib/domain';
-import { RegisterManager } from '@/components/lots/RegisterManager';
+import { RegisterTabs } from '@/components/lots/RegisterTabs';
 
 export const metadata: Metadata = {
   title: 'Lot register — Archive Tracker',
@@ -18,7 +18,7 @@ export default async function RegisterPage({
     format && (FORMATS as readonly string[]).includes(format) ? format : undefined;
   return (
     <Suspense fallback={null}>
-      <RegisterManager
+      <RegisterTabs
         initialStage={stage}
         initialFormat={initialFormat}
         initialDataType={dataType}

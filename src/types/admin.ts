@@ -79,7 +79,7 @@ export type ListMetaField = z.infer<typeof metaFieldSchema>;
 
 export const listItemSchema = z.object({
   value: z.string().trim().min(1).max(80),
-  label: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(200),
   active: z.boolean(),
   sortOrder: z.number(),
   usageCount: z.number(),
@@ -116,7 +116,7 @@ export const listCreateBodySchema = z.object({
       'Key must be lowercase, dot-namespaced (e.g. mediaSubtype.photo).',
     )
     .max(80),
-  label: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(200),
   group: z.string().trim().min(1).max(60).default('Custom'),
   metaSchema: z.array(metaFieldSchema).default([]),
 });
@@ -125,7 +125,7 @@ export type ListCreateBody = z.infer<typeof listCreateBodySchema>;
 /** Full item replacement — usageCount is server-owned and merged by value. */
 const listPatchItemSchema = z.object({
   value: z.string().trim().min(1).max(80),
-  label: z.string().trim().min(1).max(120),
+  label: z.string().trim().min(1).max(200),
   active: z.boolean(),
   sortOrder: z.number(),
   meta: z.record(z.string(), z.unknown()).default({}),
@@ -133,7 +133,7 @@ const listPatchItemSchema = z.object({
 
 export const listPatchBodySchema = z
   .object({
-    label: z.string().trim().min(1).max(120).optional(),
+    label: z.string().trim().min(1).max(200).optional(),
     group: z.string().trim().min(1).max(60).optional(),
     metaSchema: z.array(metaFieldSchema).optional(),
     items: z.array(listPatchItemSchema).optional(),

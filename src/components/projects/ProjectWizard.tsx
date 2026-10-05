@@ -1,19 +1,21 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
-import { useUserPicker } from '@/hooks/useUserPicker';
-import { useReferenceList } from '@/hooks/useReferenceList';
-import { todayDmy } from '@/lib/format';
-import { Field, FormError, GhostButton, PrimaryButton, Select, Textarea, TextInput } from '@/components/ui/Form';
+import { useRowAssign } from '@/hooks/useRowAssign';
+import { buildAssignPayload, formatFromTaskError } from '@/lib/row-assign';
+import { todayIso } from '@/lib/format';
+import { Field, FormError, GhostButton, PrimaryButton, Textarea, TextInput } from '@/components/ui/Form';
 import { ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { focusEditableCell } from '@/components/ui/EditableTable';
 import { FormSection, StepBlocks } from '@/components/ui/FormSection';
 import { useToast } from '@/components/ui/Toast';
+import { RowAssignButton } from '@/components/tasks/RowAssignButton';
+import { RowAssignDialog } from '@/components/tasks/RowAssignDialog';
 import { Stepper } from '@/components/lots/Stepper';
 import {
   ConditionStep,
@@ -21,7 +23,6 @@ import {
   MediaStep,
   OriginContactsStep,
   ReviewSummary,
-  RightsSection,
   buildMediaLines,
   buildSharedFields,
   emptyDraft,
@@ -35,30 +36,23 @@ import {
 } from '@/components/lots/intake-steps';
 
 /**
- * New-project wizard — the intake form plus a project step in front and an
- * assignment step at the end. Only the project name and the media
- * quantities are required; everything else may be filled in later by the people
- * the lots are assigned to, and syncs back here.
+ * New-project wizard in two steps.
+ *   1. Project details — project name/description, origin & contacts, and
+ *      condition & notes, stacked on one page.
+ *   2. Media & review — media quantities, lot assignment
+ *      and the review summary, stacked on one page.
+ * Only the project name and the media quantities are required; everything else
+ * may be filled in later by the people the lots are assigned to, and syncs back
+ * here. Next validates step 1 (name + origin) and scrolls to the first error;
+ * the API payload is unchanged from the old five-step flow.
  */
-const STEPS = [
-  { label: 'Project' },
-  { label: 'Origin & contacts' },
-  { label: 'Condition & notes' },
-  { label: 'Media & quantities' },
-  { label: 'Assign & review' },
-] as const;
-const S_PROJECT = 0;
-const S_ORIGIN = 1;
-const S_CONDITION = 2;
-const S_MEDIA = 3;
-const S_ASSIGN = 4;
+const STEPS = [{ label: 'Project details' }, { label: 'Media & review' }] as const;
+const S_DETAILS = 0;
+const S_REVIEW = 1;
 
 const INTROS: readonly (string | null)[] = [
-  'Name the project. Its code is assigned automatically.',
-  'Optional here — anything left blank is filled in by the assignees and shared across the project.',
-  'Optional here — condition on arrival, why it was sent, and any return request.',
   null,
-  'Pick who takes each lot, then review. Rights are optional.',
+  null,
 ];
 
 export function ProjectWizard() {
@@ -67,8 +61,7 @@ export function ProjectWizard() {
   const toast = useToast();
   const me = useMe();
   const can = me.data ? me.data.grants.includes('project:create') : false;
-  const users = useUserPicker();
-  const formats = useReferenceList('format');
+  const rowAssign = useRowAssign();
 
   const { draft, patch, fieldErrors, setFieldErrors, clearPrefix, newRowId } = useIntakeDraft(() => ({
     ...emptyDraft(EMPTY_LINE, ''),
@@ -77,10 +70,8 @@ export function ProjectWizard() {
   }));
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [coordinatorId, setCoordinatorId] = useState('');
-  const [assignees, setAssignees] = useState<Record<string, string>>({});
-  const [bulkAssignee, setBulkAssignee] = useState('');
   const [step, setStep] = useState(0);
+  const [showReview, setShowReview] = useState(false);
   const [stepsDone, setStepsDone] = useState<boolean[]>(() => STEPS.map(() => false));
   const [formError, setFormError] = useState<string | null>(null);
   const markDone = (i: number, done: boolean) =>
@@ -95,33 +86,19 @@ export function ProjectWizard() {
     newRowId,
   };
 
-  /** One child lot per format — the groups shown in the assign step. */
-  const groups = useMemo(() => {
-    const map = new Map<string, { format: string; lines: number; quantity: number; subtypes: string[] }>();
-    for (const l of draft.lines) {
-      const g = map.get(l.format) ?? { format: l.format, lines: 0, quantity: 0, subtypes: [] };
-      g.lines += 1;
-      const q = Number(l.quantity);
-      g.quantity += Number.isInteger(q) && q > 0 ? q : 0;
-      if (l.mediaSubtype.trim() && !g.subtypes.includes(l.mediaSubtype.trim())) g.subtypes.push(l.mediaSubtype.trim());
-      map.set(l.format, g);
-    }
-    return [...map.values()];
-  }, [draft.lines]);
-  const formatLabel = (f: string) => formats.data?.items.find((i) => i.value === f)?.label ?? f;
-  const userOptions = users.data?.users ?? [];
+  /** One child lot per format — the formats currently present in the media table. */
+  const lotFormats = [...new Set(draft.lines.map((l) => l.format))];
 
   const create = useMutation({
     mutationFn: () =>
       projectsApi.create({
         name: name.trim(),
         ...(description.trim() ? { description: description.trim() } : {}),
-        ...(coordinatorId ? { coordinatorId } : {}),
         shared: buildSharedFields(draft),
         mediaLines: buildMediaLines(draft),
-        assignments: groups
-          .filter((g) => assignees[g.format])
-          .map((g) => ({ format: g.format, assigneeId: assignees[g.format]! })),
+        // Only formats with a row right now are sent; a draft for a removed format stays in memory.
+        ...buildAssignPayload(rowAssign.drafts, lotFormats, rowAssign.canAssignTasks),
+        today: todayIso(),
       }),
     onSuccess: (res) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
@@ -130,7 +107,14 @@ export function ProjectWizard() {
       router.push(`/projects/${res.id}`);
     },
     onError: (e) => {
-      setFormError(e instanceof ApiRequestError ? e.message : 'Could not create the project.');
+      const message = e instanceof ApiRequestError ? e.message : 'Could not create the project.';
+      setFormError(message);
+      // A task failure names its format: flag that row and reopen its dialog.
+      const bad = formatFromTaskError(message, lotFormats);
+      if (bad) {
+        rowAssign.setFormatError(bad, message);
+        rowAssign.open(bad);
+      }
     },
   });
 
@@ -171,17 +155,20 @@ export function ProjectWizard() {
     }
     setFieldErrors(errs);
     setFormError(keys.length > 1 ? `${keys.length} fields need attention.` : null);
-    const focusFirst = () => focusEditableCell(keys[0]!);
-    if (deferFocus) setTimeout(focusFirst, 0);
-    else focusFirst();
+    // Editable cells take focus; plain fields have no data-cell, so fall back to
+    // scrolling the first rendered field error into view.
+    const focusFirst = () => {
+      if (focusEditableCell(keys[0]!)) return;
+      document.querySelector<HTMLElement>('span[role="alert"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    };
+    // Errors render on the next paint, so always look them up after it.
+    setTimeout(focusFirst, deferFocus ? 0 : 50);
     return false;
   };
 
   const validateStep = (i: number): boolean => {
-    if (i === S_PROJECT) return applyErrors(validateProject());
-    if (i === S_ORIGIN) return applyErrors(validateOrigin(draft, 'project'));
-    if (i === S_MEDIA) return applyErrors(validateMedia(draft));
-    return applyErrors({});
+    if (i === S_DETAILS) return applyErrors({ ...validateProject(), ...validateOrigin(draft, 'project') });
+    return applyErrors(validateMedia(draft));
   };
   const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -212,7 +199,7 @@ export function ProjectWizard() {
     const keys = Object.keys(errs);
     if (keys.length > 0) {
       const first = keys[0]!;
-      const target = first.startsWith('project.') ? S_PROJECT : isLineErrorKey(first) ? S_MEDIA : S_ORIGIN;
+      const target = isLineErrorKey(first) ? S_REVIEW : S_DETAILS;
       markDone(target, false);
       const changed = target !== step;
       if (changed) {
@@ -226,11 +213,6 @@ export function ProjectWizard() {
     create.mutate();
   };
 
-  const applyBulk = () => {
-    if (!bulkAssignee) return;
-    setAssignees(Object.fromEntries(groups.map((g) => [g.format, bulkAssignee])));
-  };
-
   return (
     <Panel>
       <PanelHeader title="New project" />
@@ -239,10 +221,11 @@ export function ProjectWizard() {
         {INTROS[step] ? <p className="m-0 -mt-3 text-[12.5px] text-ink-3 max-w-[72ch]">{INTROS[step]}</p> : null}
         <FormError message={formError} />
 
-        {step === S_PROJECT ? (
+        {step === S_DETAILS ? (
           <StepBlocks>
-            <FormSection legend="Project">
-              <div>
+            <OriginContactsStep
+              ctx={ctx}
+              leading={
                 <Field label="Name" required error={fieldErrors['project.name']}>
                   <TextInput
                     value={name}
@@ -255,8 +238,8 @@ export function ProjectWizard() {
                     aria-label="Project name"
                   />
                 </Field>
-              </div>
-              <div className="mt-3">
+              }
+              below={
                 <Field label="Description">
                   <Textarea
                     value={description}
@@ -266,104 +249,42 @@ export function ProjectWizard() {
                     aria-label="Project description"
                   />
                 </Field>
-              </div>
-            </FormSection>
+              }
+            />
+            <ConditionStep ctx={ctx} />
           </StepBlocks>
         ) : null}
 
-        {step === S_ORIGIN ? <OriginContactsStep ctx={ctx} /> : null}
-        {step === S_CONDITION ? <ConditionStep ctx={ctx} /> : null}
-        {step === S_MEDIA ? <MediaStep ctx={ctx} /> : null}
-
-        {step === S_ASSIGN ? (
+        {step === S_REVIEW ? (
           <StepBlocks>
-            <RightsSection ctx={ctx} />
+            <MediaStep
+              ctx={ctx}
+              rowActions={(line) => (
+                <RowAssignButton
+                  format={line.format}
+                  draft={rowAssign.drafts[line.format]}
+                  error={rowAssign.errors[line.format]}
+                  onOpen={() => rowAssign.open(line.format)}
+                />
+              )}
+            />
 
-            <FormSection legend="Coordinator (optional)">
-              <div className="max-w-[420px]">
-                <Field label="Coordinator">
-                  <Select value={coordinatorId} onChange={(e) => setCoordinatorId(e.target.value)} aria-label="Project coordinator">
-                    <option value="">No coordinator</option>
-                    {userOptions.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-            </FormSection>
-
-            <FormSection
-              legend="Assign lots"
-              description="One lot is created per format. The assignee owns that lot end to end — only they and admins can change it. Leave a lot unassigned to assign it later."
-            >
-              <div className="flex flex-col gap-2.5">
-                <div className="flex flex-col sm:flex-row sm:items-end gap-2 rounded-[6px] border border-line-soft bg-surface-sunken p-3">
-                  <div className="flex-1 min-w-0">
-                    <Field label="Assign all to one person">
-                      <Select value={bulkAssignee} onChange={(e) => setBulkAssignee(e.target.value)} aria-label="Assign every lot to">
-                        <option value="">Choose a person…</option>
-                        {userOptions.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </Field>
-                  </div>
-                  <GhostButton type="button" onClick={applyBulk} disabled={!bulkAssignee}>
-                    Apply to all
-                  </GhostButton>
-                </div>
-
-                <ul className="m-0 p-0 list-none flex flex-col gap-2">
-                  {groups.map((g) => (
-                    <li
-                      key={g.format}
-                      className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_240px] gap-2 sm:gap-3 items-center rounded-[6px] border border-line-soft p-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-semibold text-ink">
-                          {formatLabel(g.format)} lot · {g.quantity} items
-                        </div>
-                        <div className="text-[11.5px] text-ink-3 truncate">
-                          {g.subtypes.length ? g.subtypes.join(', ') : 'No sub-type yet'}
-                          {g.lines > 1 ? ` · ${g.lines} rows` : ''}
-                        </div>
-                      </div>
-                      <Select
-                        value={assignees[g.format] ?? ''}
-                        onChange={(e) => setAssignees((prev) => ({ ...prev, [g.format]: e.target.value }))}
-                        aria-label={`Assignee for the ${formatLabel(g.format)} lot`}
-                      >
-                        <option value="">Unassigned (admin only)</option>
-                        {userOptions.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </FormSection>
-
+            {showReview ? (
             <FormSection legend="Review">
               <div className="mb-3 rounded-[6px] border border-line-soft p-3 text-[13px]">
                 <span className="text-ink">{name.trim() || '—'}</span>
                 <div className="text-[12px] text-ink-3 mt-0.5">
-                  {totalQuantity(draft.lines)} items → {groups.length} {groups.length === 1 ? 'lot' : 'lots'}
+                  {totalQuantity(draft.lines)} items → {lotFormats.length} {lotFormats.length === 1 ? 'lot' : 'lots'}
                 </div>
               </div>
               <ReviewSummary
                 mode="project"
                 draft={draft}
-                steps={{ origin: S_ORIGIN, condition: S_CONDITION, media: S_MEDIA }}
+                steps={{ origin: S_DETAILS, condition: S_DETAILS, media: S_REVIEW }}
                 onJump={jumpTo}
               />
             </FormSection>
+            ) : null}
           </StepBlocks>
         ) : null}
 
@@ -374,19 +295,34 @@ export function ProjectWizard() {
             </GhostButton>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
-            <GhostButton disabled={create.isPending} onClick={() => router.push('/projects')}>
+            <GhostButton disabled={create.isPending} onClick={() => router.push('/register?tab=projects')}>
               Cancel
             </GhostButton>
             {step < STEPS.length - 1 ? (
               <PrimaryButton onClick={goNext}>Next</PrimaryButton>
             ) : (
-              <PrimaryButton disabled={create.isPending} onClick={submit}>
-                {create.isPending ? 'Creating…' : 'Create project'}
-              </PrimaryButton>
+              <>
+                <GhostButton disabled={create.isPending} onClick={() => setShowReview((v) => !v)}>
+                  {showReview ? 'Hide review' : 'View review'}
+                </GhostButton>
+                <PrimaryButton disabled={create.isPending} onClick={submit}>
+                  {create.isPending ? 'Creating…' : 'Create project'}
+                </PrimaryButton>
+              </>
             )}
           </div>
         </div>
       </div>
+      {rowAssign.editing ? (
+        <RowAssignDialog
+          initial={rowAssign.drafts[rowAssign.editing] ?? null}
+          canAssignTasks={rowAssign.canAssignTasks}
+          serverError={rowAssign.errors[rowAssign.editing]}
+          onSave={(d) => rowAssign.save(rowAssign.editing!, d)}
+          onClear={rowAssign.drafts[rowAssign.editing] ? () => rowAssign.clear(rowAssign.editing!) : undefined}
+          onClose={rowAssign.close}
+        />
+      ) : null}
     </Panel>
   );
 }

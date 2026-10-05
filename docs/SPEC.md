@@ -54,7 +54,7 @@ archive-tracker/
     │   │   │   ├── new/page.tsx                                    DONE  intake form
     │   │   │   └── [lotId]/page.tsx                                DONE  record detail
     │   │   ├── queues/                                             DONE (actual path; tree said decision/ etc.)
-    │   │   │   ├── decision/page.tsx                               DONE  queue
+    │   │   │   ├── {returns,discards}/page.tsx; decision/digitize/mls/page.tsx are redirects to /register?stage=
     │   │   │   ├── digitize/page.tsx                               DONE
     │   │   │   ├── mls/page.tsx                                    DONE
     │   │   │   ├── returns/page.tsx                                DONE
@@ -82,7 +82,7 @@ archive-tracker/
     │       ├── lots/[lotId]/activity/route.ts                      DONE
     │       ├── lots/[lotId]/attachments/route.ts                   TODO
     │       ├── lots/[lotId]/submit/route.ts                        DONE (intake → decision)
-    │       ├── queues/{decision,digitize,mls,returns,discards}/route.ts  DONE
+    │       ├── queues/{returns,discards}/route.ts  DONE
     │       ├── users/route.ts · users/[userId]/route.ts            DONE (Module 1)
     │       └── admin/{settings,naming-codes,storage,audit}/route.ts DONE settings only (Module 1)
     │
@@ -106,12 +106,11 @@ archive-tracker/
     │   │   ├── ScanSection.tsx · MlsSection.tsx                     DONE
     │   │   ├── ReturnSection.tsx · DiscardSection.tsx               DONE
     │   │   ├── ItemsPanel.tsx · ActivityPanel.tsx                   DONE
-    │   │   ├── DecisionQueueManager.tsx                             DONE
-    │   │   ├── QueueTable.tsx                                       DONE  shared by 5 queues
+    │   │   ├── QueueTable.tsx                                       DONE  shared by 2 queues
     │   │   └── NamingCodePreview.tsx                                TODO
     │   ├── record/
     │   │   └── AttachmentList.tsx                                  TODO
-    │   └── queues/  (thin managers: Digitize/Mls/Returns/Discards)  DONE
+    │   └── queues/  (thin managers: Returns/Discards)  DONE
     │
     ├── lib/
     │   ├── domain.ts  mongo.ts  api.ts  api-client.ts              DONE
