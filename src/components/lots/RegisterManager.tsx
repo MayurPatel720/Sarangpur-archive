@@ -18,6 +18,7 @@ import { useUrlPagination } from '@/lib/useUrlPagination';
 import { useMe } from '@/hooks/useCan';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { LotRowActions } from './LotRowActions';
+import { MyLotsSections } from './MyLotsSections';
 import { EMPTY_FILTERS, RegisterFilters, type LotFilters } from './RegisterFilters';
 
 type LotRow = LotListResponse['rows'][number];
@@ -184,11 +185,17 @@ export function RegisterManager({
     [filters, debouncedQ, page, pageSize, me.data?.id],
   );
   const key = useMemo(() => JSON.stringify(params), [params]);
+  // My lots (assignee=me) swaps the single table for Newly arrived + Lots sections.
+  const isMine = filters.assignee === 'me';
+  const sectionParams = useMemo(() => {
+    const { page: _page, pageSize: _pageSize, ...rest } = params;
+    return rest;
+  }, [params]);
   const query = useQuery({
     queryKey: queryKeys.lots.list(key),
     queryFn: () => lotsApi.list(params),
     // 'Assigned to me' needs the signed-in id before the first request.
-    enabled: !!me.data && can,
+    enabled: !!me.data && can && !isMine,
   });
 
   const applyFilters = (next: LotFilters) => {
@@ -234,7 +241,11 @@ export function RegisterManager({
             Lot register
           </h1>
           <p className="m-0 text-[12.5px] text-ink-3">
-            {query.data ? `${query.data.total} lots on record.` : 'Every lot from intake onward.'}
+            {isMine
+              ? 'Lots assigned to you.'
+              : query.data
+                ? `${query.data.total} lots on record.`
+                : 'Every lot from intake onward.'}
           </p>
         </div>
         <div className="sm:ml-auto">
@@ -249,6 +260,17 @@ export function RegisterManager({
 
       <RegisterFilters filters={filters} onChange={applyFilters} lockedFormat={lockedFormat} />
 
+      {isMine && me.data?.id ? (
+        <MyLotsSections
+          baseParams={sectionParams}
+          columns={columns}
+          onRowClick={(r) => router.push(scopedHref(`/register/${r.id}`, lockedFormat))}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
+      ) : (
       <Panel>
         <PanelHeader title="Lots" />
         <div className="p-3 md:p-4 pb-0">
@@ -282,6 +304,7 @@ columns={columns}
           />
         ) : null}
       </Panel>
+      )}
     </div>
   );
 }

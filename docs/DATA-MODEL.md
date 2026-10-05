@@ -209,6 +209,16 @@ no lot / project / format so they never reach lot trails or format feeds.
 
 ---
 
+## `lot_pickups` — DONE (`src/models/LotPickup.ts`)
+
+Private per-person flag behind My lots' "Newly arrived" / "Lots" split: `{ user, lot, at }`. A lot
+assigned to a person is "newly arrived" for them until a record exists for (user, lot); reassigning
+shows it as newly arrived for the new assignee. Indexes: unique `{user,lot}`, `{user}`. Personal view
+state — not audited, not an `ArchiveLot` mutation, never shown to others (cf. `notifications.readAt`).
+No back-fill: existing assigned lots start as newly arrived. Stale records after a reassign are harmless.
+
+---
+
 ## `fileindexes` — **TODO** (`src/models/FileIndex.ts`)
 
 The reconciliation engine's source of truth. Lets reconciliation be a database diff

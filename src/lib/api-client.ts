@@ -49,6 +49,7 @@ import {
   lotDetailResponseSchema,
   lotListResponseSchema,
   lotMediaLinesResponseSchema,
+  lotPickupResponseSchema,
   lotPatchResponseSchema,
   overrideResponseSchema,
   submitResponseSchema,
@@ -58,6 +59,8 @@ import {
   type LotDetailResponse,
   type LotListResponse,
   type LotMediaLinesBody,
+  type LotPickupBody,
+  type LotPickupResponse,
   type LotPatchBody,
   type OverrideDecideBody,
   type OverrideRequestBody,
@@ -311,6 +314,9 @@ export const lotsApi = {
       `/api/lots/${encodeURIComponent(id)}`,
       lotDetailResponseSchema,
     ),
+  /** Private Newly arrived / Lots flag for one of the caller's own lots. */
+  setPickup: (body: LotPickupBody) =>
+    sendJson<LotPickupResponse>('/api/lots/pickup', 'POST', body, lotPickupResponseSchema),
   replaceMediaLines: (id: string, body: LotMediaLinesBody) =>
     sendJson<{ id: string; lotReference: string; quantity: number; version: number }>(
       `/api/lots/${encodeURIComponent(id)}/media-lines`,

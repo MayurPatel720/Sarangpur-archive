@@ -177,8 +177,19 @@ export const lotListQuerySchema = z.object({
   projectId: z.string().trim().max(40).optional(),
   /** Powers the returns queue (`return.status ∈ {pending, in_progress}`). */
   returnStatus: z.union([z.string().trim().min(1).max(40), z.array(z.string().trim().min(1).max(40))]).optional(),
+  /** My lots split; only applies together with `assignee`. new = not yet picked up by that person. */
+  arrival: z.enum(['new', 'accepted']).optional(),
 });
 export type LotListQuery = z.output<typeof lotListQuerySchema>;
+
+/** POST /api/lots/pickup — private per-person Newly arrived / Lots flag. */
+export const lotPickupBodySchema = z.object({
+  lotId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid lot id.'),
+  accepted: z.boolean(),
+});
+export type LotPickupBody = z.output<typeof lotPickupBodySchema>;
+export const lotPickupResponseSchema = z.object({ lotId: z.string(), accepted: z.boolean() });
+export type LotPickupResponse = z.output<typeof lotPickupResponseSchema>;
 
 export const lotRowSchema = z.object({
   id: z.string(),

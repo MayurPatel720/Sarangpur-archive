@@ -1,5 +1,12 @@
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { DragEventHandler, HTMLAttributes, KeyboardEvent, ReactNode } from 'react';
 import { Skeleton } from './primitives';
+
+/**
+ * Drag attributes a row can take. Passed explicitly (not spread): spreading an
+ * object into the row JSX switches the compiler to a path that makes React warn
+ * about missing keys on every mapped cell.
+ */
+export type RowDragProps = Pick<HTMLAttributes<HTMLElement>, 'draggable' | 'style' | 'onDragStart' | 'onDragEnd'>;
 
 export interface Column<T> {
   key: string;
@@ -20,6 +27,7 @@ export function DataTable<T>({
   getRowKey,
   onRowClick,
   rowActions,
+  rowProps,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -29,6 +37,8 @@ export function DataTable<T>({
   onRowClick?: (row: T) => void;
   /** Trailing actions cell (desktop) / actions row (mobile). */
   rowActions?: (row: T) => ReactNode;
+  /** Extra attributes per row (e.g. drag-and-drop handlers), merged onto the row / card element. */
+  rowProps?: (row: T) => RowDragProps;
 }) {
   if (loading) {
     return (
@@ -79,9 +89,15 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const drag = rowProps?.(row);
+              return (
               <tr
                 key={getRowKey(row)}
+                draggable={drag?.draggable}
+                style={drag?.style}
+                onDragStart={drag?.onDragStart as DragEventHandler<HTMLTableRowElement> | undefined}
+                onDragEnd={drag?.onDragEnd as DragEventHandler<HTMLTableRowElement> | undefined}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
                 onKeyDown={onRowClick ? handleKey(row) : undefined}
                 tabIndex={onRowClick ? 0 : undefined}
@@ -107,16 +123,23 @@ export function DataTable<T>({
                   </td>
                 ) : null}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* Mobile: stacked cards */}
       <div className="md:hidden flex flex-col gap-2">
-        {rows.map((row) => (
+        {rows.map((row) => {
+          const drag = rowProps?.(row);
+          return (
           <div
             key={getRowKey(row)}
+            draggable={drag?.draggable}
+            style={drag?.style}
+            onDragStart={drag?.onDragStart as DragEventHandler<HTMLDivElement> | undefined}
+            onDragEnd={drag?.onDragEnd as DragEventHandler<HTMLDivElement> | undefined}
             role={onRowClick ? 'button' : undefined}
             tabIndex={onRowClick ? 0 : undefined}
             onClick={onRowClick ? () => onRowClick(row) : undefined}
@@ -141,7 +164,8 @@ export function DataTable<T>({
               </div>
             ) : null}
           </div>
-        ))}
+          );
+        })}
       </div>
     </>
   );

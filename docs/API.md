@@ -94,6 +94,12 @@ Implementation: item codes resolve first (bounded scan, unique-index prefix when
 `q` looks like a code), then one paginated `ArchiveLot.find` merges lot-id hits into
 the text `$or`. No `$lookup`.
 
+### `POST /api/lots/pickup` — DONE — My lots: Newly arrived / Lots
+
+`lot:view`. Body `{ lotId, accepted: boolean }` -> `{ lotId, accepted }`. Upserts (true) or deletes (false) the
+caller's private `lot_pickups` record. 404 unknown lot, 403 when the lot is not assigned to the caller.
+Idempotent. Personal view state: not audited, not visible to others.
+
 ### `POST /api/lots` — DONE — create an intake
 
 Role: `volunteer`+. Runs in **one transaction** (`SPEC.md` §4.4): allocate `lotReference`,

@@ -7,6 +7,7 @@ import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { Attachment } from '@/models/Attachment';
 import { User } from '@/models/User';
+import { LotPickup } from '@/models/LotPickup';
 import { Project } from '@/models/Project';
 import { intakeMissing } from '@/lib/intake-gate';
 import { resolveReferenceLabel, getReferenceList } from '@/server/reference';
@@ -284,7 +285,7 @@ export async function listLots(query: LotListQuery): Promise<LotListResponse> {
 
   // Chips first; text (with receiver-name alternative) merges on top so the
   // receiver's name is searchable even though only the ObjectId is stored.
-  const { q, ...chipQuery } = query;
+  const { q, arrival: _arrival, ...chipQuery } = query;
   const filter = buildLotFilter(chipQuery);
   if (q) {
     const tokenClauses = buildTokenClauses(q);
@@ -294,6 +295,15 @@ export async function listLots(query: LotListQuery): Promise<LotListResponse> {
       receiverIds.length > 0 ? [{ receiver: { $in: receiverIds } }] : [],
     );
     if (textFilter) Object.assign(filter, textFilter);
+  }
+
+  // My lots split: one indexed read of the assignee's pickup flags, then $in / $nin on _id (no $lookup).
+  if (query.arrival && query.assignee && Types.ObjectId.isValid(query.assignee)) {
+    const picked = await LotPickup.find({ user: new Types.ObjectId(query.assignee) })
+      .select('lot')
+      .lean();
+    const ids = picked.map((p) => p.lot);
+    filter._id = query.arrival === 'accepted' ? { $in: ids } : { $nin: ids };
   }
 
   const skip = (query.page - 1) * query.pageSize;
