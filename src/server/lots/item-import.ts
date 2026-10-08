@@ -115,7 +115,7 @@ export async function importItems(
             continue;
           }
           value = v;
-          shown = v ? 'Yes' : '';
+          shown = v ? 'Yes' : 'No';
           break;
         }
         case 'dateRange':

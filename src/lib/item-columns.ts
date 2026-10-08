@@ -66,7 +66,7 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'place', label: 'Place', dept: 'details', kind: 'text', field: 'place', width: 160, hint: 'More than one place: separate with commas.' },
   { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170 },
   { id: 'nameOnCase', label: 'Name on case', dept: 'details', kind: 'text', field: 'nameOnCase', width: 170 },
-  { id: 'physicalSource', label: 'Phy source', dept: 'details', kind: 'ref', field: 'physicalSource', refList: 'physicalSource', width: 160 },
+  { id: 'physicalSource', label: 'Phy source', dept: 'details', kind: 'text', field: 'physicalSource', width: 160 },
   { id: 'remarks', label: 'Remark', dept: 'details', kind: 'text', field: 'remarks', width: 180 },
   { id: 'duplicateCode', label: 'Duplicate code', dept: 'details', kind: 'duplicate', width: 210, hint: 'Type the code of the item this one duplicates (any lot).' },
   // Decision

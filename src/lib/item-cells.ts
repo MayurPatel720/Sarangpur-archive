@@ -74,7 +74,7 @@ export function cellText(
     case 'decisionRemark':
       return row.decisionRemark ?? '';
     case 'captured':
-      return row.captured ? 'Yes' : '';
+      return row.captured ? 'Yes' : 'No';
     case 'digitalSource':
       return row.digitalSource ?? '';
     case 'fileName':
@@ -84,11 +84,11 @@ export function cellText(
     case 'disposition':
       return row.disposition === 'return' ? 'Return' : row.disposition === 'discard' ? 'Discard' : '';
     case 'taggedInMls':
-      return row.taggedInMls ? 'Yes' : '';
+      return row.taggedInMls ? 'Yes' : 'No';
     case 'storageRemark':
       return row.storageRemark ?? '';
     case 'logged':
-      return row.logged ? 'Yes' : '';
+      return row.logged ? 'Yes' : 'No';
     case 'loggedAt':
       return row.loggedAt;
     case 'loggerName':

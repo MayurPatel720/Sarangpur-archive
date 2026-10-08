@@ -44,7 +44,7 @@ import { MediaLinesPanel } from './MediaLinesPanel';
 import { ItemsGrid } from './ItemsGrid';
 import { ActivityPanel } from './ActivityPanel';
 import { LotProjectsSection } from './LotProjectsSection';
-import { LotProjectBar } from './LotProjectBar';
+import { LotAssigneeSelect, LotProjectBar } from './LotProjectBar';
 
 type LotDetail = LotDetailResponse['lot'];
 
@@ -1097,6 +1097,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
             <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
               <span className="capitalize">{lot.decision}</span>
             </Badge>
+            <LotAssigneeSelect lot={lot} />
             {canEdit ? <GhostButton onClick={startEdit}>Edit</GhostButton> : null}
           </div>
         </div>

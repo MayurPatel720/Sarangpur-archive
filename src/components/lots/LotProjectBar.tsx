@@ -24,12 +24,12 @@ export function useLotAccess(lot: DetailLot) {
   return { isAdmin, restricted, isAssignee, canWork: !restricted || isAdmin || isAssignee };
 }
 
-/** Assignee strip on the lot header: admins can reassign; others see a note when the lot is read-only for them. */
-export function LotProjectBar({ lot }: { lot: DetailLot }) {
+/** Assignee dropdown for the lot header, next to Edit. Admins only, and only on lots that belong to a project or have an assignee. */
+export function LotAssigneeSelect({ lot }: { lot: DetailLot }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const users = useUserPicker();
-  const { isAdmin, restricted, canWork } = useLotAccess(lot);
+  const { isAdmin, restricted } = useLotAccess(lot);
 
   const reassign = useMutation({
     mutationFn: (assigneeId: string | null) => projectsApi.setAssignee(lot.id, assigneeId),
@@ -41,33 +41,34 @@ export function LotProjectBar({ lot }: { lot: DetailLot }) {
     onError: (e) => toast.error('Could not change assignee', e instanceof ApiRequestError ? e.message : undefined),
   });
 
-  if (!restricted) return null;
+  if (!restricted || !isAdmin) return null;
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-[8px] border border-line bg-surface-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
-        {isAdmin ? (
-          <div className="sm:ml-auto sm:w-[220px] flex-shrink-0">
-            <Select
-              value={lot.assignee?.id ?? ''}
-              disabled={reassign.isPending}
-              onChange={(e) => reassign.mutate(e.target.value || null)}
-              aria-label="Reassign this lot"
-            >
-              <option value="">Unassigned (admin only)</option>
-              {(users.data?.users ?? []).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        ) : null}
-      </div>
-      {!canWork ? (
-        <p role="note" className="m-0 text-[12px] text-ink-3">
-          You can view this lot, but only {lot.assignee ? lot.assignee.name : 'an admin'} can change it.
-        </p>
-      ) : null}
+    <div className="w-[200px] flex-shrink-0">
+      <Select
+        value={lot.assignee?.id ?? ''}
+        disabled={reassign.isPending}
+        onChange={(e) => reassign.mutate(e.target.value || null)}
+        aria-label="Reassign this lot"
+        className="h-10"
+      >
+        <option value="">Unassigned (admin only)</option>
+        {(users.data?.users ?? []).map((u) => (
+          <option key={u.id} value={u.id}>
+            {u.name}
+          </option>
+        ))}
+      </Select>
     </div>
+  );
+}
+
+/** A short note when the lot is read-only for you. Nothing else is shown on the page for the assignee any more. */
+export function LotProjectBar({ lot }: { lot: DetailLot }) {
+  const { restricted, canWork } = useLotAccess(lot);
+  if (!restricted || canWork) return null;
+  return (
+    <p role="note" className="m-0 text-[12px] text-ink-3">
+      You can view this lot, but only {lot.assignee ? lot.assignee.name : 'an admin'} can change it.
+    </p>
   );
 }

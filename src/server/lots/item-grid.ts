@@ -9,7 +9,6 @@ import type { ActivityKind } from '@/lib/domain';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem, type LotItemDoc } from '@/models/LotItem';
 import { withAudit, auditActor } from '@/server/audit';
-import { assertActiveReferenceValue } from '@/server/reference';
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { getReferenceList } from '@/server/reference';
 import { canWorkLot } from '@/server/lots/access';
@@ -274,10 +273,6 @@ export async function applyItemEdits(
   audit: EditAudit = {},
 ): Promise<ItemsBulkResponse> {
   for (const e of edits) for (const k of Object.keys(e.set)) if (k !== 'custom') e.set[k] = clean(e.set[k]);
-
-  // Admin-managed vocabularies — reject retired/unknown values before writing.
-  const sources = new Set(edits.map((e) => e.set.physicalSource).filter((v): v is string => typeof v === 'string' && v !== ''));
-  await Promise.all([...sources].map((v) => assertActiveReferenceValue('physicalSource', v)));
 
   const keys = new Set(edits.flatMap((e) => Object.keys(e.set)));
   const touchesDecision = DECISION_KEYS.some((k) => keys.has(k));

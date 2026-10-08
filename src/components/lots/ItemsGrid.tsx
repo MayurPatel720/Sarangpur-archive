@@ -595,16 +595,7 @@ function BulkBar({
             {triSel('discard', 'Discard')}
           </>
         ) : null}
-        <Field label="Phy source">
-          <Select value={v.physicalSource ?? ''} onChange={set('physicalSource')} aria-label="Phy source for selected items">
-            <option value="">No change</option>
-            {physical.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {txt('physicalSource', 'Phy source')}
         <Field label="Return / discard">
           <Select value={v.disposition ?? ''} onChange={set('disposition')} aria-label="Return or discard for selected items">
             <option value="">No change</option>

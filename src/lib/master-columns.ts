@@ -36,7 +36,7 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
   place: { param: 'place', type: 'text' },
   nameOnTape: { param: 'nameOnTape', type: 'text' },
   nameOnCase: { param: 'nameOnCase', type: 'text' },
-  physicalSource: { param: 'physicalSource', type: 'select', options: 'physicalSource' },
+  physicalSource: { param: 'physicalSource', type: 'text' },
   remarks: { param: 'remarks', type: 'text' },
   duplicateCode: { param: 'duplicateCode', type: 'text' },
   digital: { param: 'digital', type: 'yesno' },

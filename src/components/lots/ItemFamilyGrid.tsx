@@ -214,14 +214,14 @@ export function ItemFamilyGrid({
           return {
             ...base,
             editable: canDetails,
-            valueGetter: (p) => (p.data?.[f] ? 'Yes' : ''),
+            valueGetter: (p) => (p.data ? (p.data[f] ? 'Yes' : 'No') : ''),
             valueSetter: (p: ValueSetterParams<GridItem>) => {
               if (!p.data) return false;
               p.data[f] = p.newValue === 'Yes';
               return true;
             },
             cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['Yes', ''] },
+            cellEditorParams: { values: ['Yes', 'No'] },
           };
         }
         case 'disposition':
