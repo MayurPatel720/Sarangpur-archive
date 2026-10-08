@@ -11,7 +11,7 @@ import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/componen
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, deptLabel, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -63,8 +63,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [duplicateFor, setDuplicateFor] = useState<{ item: GridItem; code: string } | null>(null);
   const [deleteColumn, setDeleteColumn] = useState<CustomColumn | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
-  /** View only: show just one department's columns (not saved). */
-  const [onlyDept, setOnlyDept] = useState<DeptId | null>(null);
+  /** View only: which departments' columns are showing (not saved). */
+  const [shownDepts, setShownDepts] = useState<DeptId[]>(() => DEPARTMENTS.map((d) => d.id));
+  const onlyDept: DeptId | null = shownDepts.length === 1 ? shownDepts[0]! : null;
+  const setOnlyDept = useCallback((d: DeptId | null) => setShownDepts(d ? [d] : DEPARTMENTS.map((x) => x.id)), []);
   const me = useMe();
   const canAdd = Boolean(me.data?.grants.includes('item:create'));
 
@@ -143,8 +145,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const specs = useMemo(() => allColumns(data?.customColumns ?? []), [data?.customColumns]);
   const hiddenIds = useMemo(() => new Set(data?.hiddenColumns ?? []), [data?.hiddenColumns]);
   const visibleSpecs = useMemo(
-    () => specs.filter((s) => !hiddenIds.has(s.id) && (onlyDept === null || s.dept === onlyDept || s.kind === 'code')),
-    [specs, hiddenIds, onlyDept],
+    () => specs.filter((s) => !hiddenIds.has(s.id) && (shownDepts.includes(s.dept) || s.kind === 'code')),
+    [specs, hiddenIds, shownDepts],
   );
   const hiddenSpecs = useMemo(() => specs.filter((s) => hiddenIds.has(s.id)), [specs, hiddenIds]);
 
@@ -339,15 +341,23 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 </button>
               ))}
             </div>
-            {onlyDept ? (
-              <button
-                type="button"
-                onClick={() => setOnlyDept(null)}
-                className="min-h-[32px] px-2.5 rounded-[6px] border border-accent bg-accent-soft text-[12px] font-semibold text-accent cursor-pointer"
-              >
-                Showing {deptLabel(onlyDept)} only ✕
-              </button>
-            ) : null}
+            <div role="group" aria-label="Departments" className="flex flex-wrap gap-x-3 text-[12px] text-ink-2">
+              {DEPARTMENTS.map((d) => (
+                <label key={d.id} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-accent"
+                    checked={shownDepts.includes(d.id)}
+                    onChange={(e) =>
+                      setShownDepts((prev) =>
+                        e.target.checked ? DEPARTMENTS.map((x) => x.id).filter((x) => x === d.id || prev.includes(x)) : prev.filter((x) => x !== d.id),
+                      )
+                    }
+                  />
+                  {d.label}
+                </label>
+              ))}
+            </div>
             {!single ? (
               <div role="group" aria-label="Sheets" className="flex gap-1.5">
                 <GhostButton onClick={() => setAll(true)}>Expand all</GhostButton>
