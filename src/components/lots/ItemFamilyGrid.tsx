@@ -13,11 +13,11 @@ import type {
   ValueSetterParams,
 } from 'ag-grid-community';
 import { AgGridReact, agGridTheme } from '@/components/ui/AgGridShell';
-import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
+import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { mediaTypeText } from '@/lib/item-cells';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
-import { GridHeader, type GridHeaderParams } from './GridHeader';
+import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
 
 /**
  * One AG Grid = one sheet of the lot's Excel (one media type). Columns come from
@@ -45,6 +45,9 @@ export function ItemFamilyGrid({
   onDuplicate,
   onHide,
   onDeleteColumn,
+  onShowOnly,
+  onHideDept,
+  onlyDept,
   onInvalid,
   onSave,
   onReorder,
@@ -64,6 +67,10 @@ export function ItemFamilyGrid({
   onOpenCode: (item: GridItem) => void;
   onDuplicate: (item: GridItem, otherCode: string) => void;
   onHide: (columnId: string) => void;
+  /** Show only one department (null = all). A view for this user, not saved. */
+  onShowOnly: (dept: DeptId | null) => void;
+  onHideDept: (dept: DeptId) => void;
+  onlyDept: DeptId | null;
   onDeleteColumn: (column: CustomColumn) => void;
   onInvalid: (message: string) => void;
   onSave: (itemIds: string[], set: ItemsBulkSet) => void;
@@ -259,6 +266,13 @@ export function ItemFamilyGrid({
     const codeCol = columns.find((c) => c.kind === 'code');
     const groups: ColGroupDef<GridItem>[] = DEPARTMENTS.map((d) => ({
       headerName: deptLabel(d.id),
+      headerGroupComponent: DeptHeader,
+      headerGroupComponentParams: {
+        active: onlyDept === d.id,
+        onShowOnly: () => onShowOnly(d.id),
+        onShowAll: () => onShowOnly(null),
+        onHideAll: () => onHideDept(d.id),
+      } satisfies Partial<DeptHeaderParams>,
       children: columns.filter((c) => c.dept === d.id && c.kind !== 'code').map(build),
     })).filter((g) => g.children.length > 0);
 
@@ -279,7 +293,7 @@ export function ItemFamilyGrid({
       ...(codeCol ? [build(codeCol)] : []),
       ...groups,
     ];
-  }, [columns, canDetails, canDecide, canReorder, physical, onOpenCode, onDuplicate, onHide, onDeleteColumn, onInvalid]);
+  }, [columns, canDetails, canDecide, canReorder, physical, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;

@@ -11,7 +11,7 @@ import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/componen
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, type CustomColumn } from '@/lib/item-columns';
+import { allColumns, deptLabel, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -63,6 +63,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [duplicateFor, setDuplicateFor] = useState<{ item: GridItem; code: string } | null>(null);
   const [deleteColumn, setDeleteColumn] = useState<CustomColumn | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  /** View only: show just one department's columns (not saved). */
+  const [onlyDept, setOnlyDept] = useState<DeptId | null>(null);
   const me = useMe();
   const canAdd = Boolean(me.data?.grants.includes('item:create'));
 
@@ -140,7 +142,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
 
   const specs = useMemo(() => allColumns(data?.customColumns ?? []), [data?.customColumns]);
   const hiddenIds = useMemo(() => new Set(data?.hiddenColumns ?? []), [data?.hiddenColumns]);
-  const visibleSpecs = useMemo(() => specs.filter((s) => !hiddenIds.has(s.id)), [specs, hiddenIds]);
+  const visibleSpecs = useMemo(
+    () => specs.filter((s) => !hiddenIds.has(s.id) && (onlyDept === null || s.dept === onlyDept || s.kind === 'code')),
+    [specs, hiddenIds, onlyDept],
+  );
   const hiddenSpecs = useMemo(() => specs.filter((s) => hiddenIds.has(s.id)), [specs, hiddenIds]);
 
   /** One sheet per media line, in intake order, with every item (for progress) and the filtered rows. */
@@ -182,6 +187,14 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const hideColumn = useCallback(
     (id: string) => columns.mutate({ hidden: [...(data?.hiddenColumns ?? []), id] }),
     [columns, data?.hiddenColumns],
+  );
+  const hideDept = useCallback(
+    (dept: DeptId) => {
+      const ids = specs.filter((c) => c.dept === dept && c.kind !== 'code').map((c) => c.id);
+      columns.mutate({ hidden: [...new Set([...(data?.hiddenColumns ?? []), ...ids])] });
+      setOnlyDept(null);
+    },
+    [columns, specs, data?.hiddenColumns],
   );
   const showColumn = (id: string) => columns.mutate({ hidden: (data?.hiddenColumns ?? []).filter((h) => h !== id) });
   const onInvalid = useCallback((message: string) => toast.error('Not saved', message), [toast]);
@@ -326,6 +339,15 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 </button>
               ))}
             </div>
+            {onlyDept ? (
+              <button
+                type="button"
+                onClick={() => setOnlyDept(null)}
+                className="min-h-[32px] px-2.5 rounded-[6px] border border-accent bg-accent-soft text-[12px] font-semibold text-accent cursor-pointer"
+              >
+                Showing {deptLabel(onlyDept)} only ✕
+              </button>
+            ) : null}
             {!single ? (
               <div role="group" aria-label="Sheets" className="flex gap-1.5">
                 <GhostButton onClick={() => setAll(true)}>Expand all</GhostButton>
@@ -396,6 +418,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   onDuplicate={onDuplicate}
                   onHide={hideColumn}
                   onDeleteColumn={setDeleteColumn}
+                  onShowOnly={setOnlyDept}
+                  onHideDept={hideDept}
+                  onlyDept={onlyDept}
                   onInvalid={onInvalid}
                   onSave={onSave}
                   onReorder={onReorder}

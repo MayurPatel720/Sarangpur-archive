@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { IHeaderParams } from 'ag-grid-community';
+import type { IHeaderGroupParams, IHeaderParams } from 'ag-grid-community';
 
 /**
  * Column header of the lot's Excel. A left click opens a small menu — "Hide column", and
@@ -89,6 +89,81 @@ export function GridHeader(p: GridHeaderParams) {
                   Delete column…
                 </button>
               ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+/**
+ * Department band above the columns. A left click opens a menu: show only this department's
+ * columns (a view for you — nothing is saved) or all of them again, or hide the whole department
+ * (saved on the lot like any hidden column).
+ */
+export interface DeptHeaderParams extends IHeaderGroupParams {
+  /** This department is the only one showing. */
+  active: boolean;
+  onShowOnly: () => void;
+  onShowAll: () => void;
+  onHideAll: () => void;
+}
+
+export function DeptHeader(p: DeptHeaderParams) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
+      if (e instanceof MouseEvent && menuRef.current?.contains(e.target as Node)) return;
+      setMenu(null);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [menu]);
+
+  const item =
+    'block w-full text-left bg-transparent border-0 px-3 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-accent-soft';
+  const pick = (fn: () => void) => () => {
+    setMenu(null);
+    fn();
+  };
+
+  return (
+    <div
+      className="flex h-full w-full cursor-pointer items-center"
+      onClick={(e) => setMenu({ x: Math.min(e.clientX, window.innerWidth - 230), y: e.clientY + 6 })}
+    >
+      <span className={`truncate font-semibold ${p.active ? 'text-accent' : 'text-ink-2'}`}>{p.displayName}</span>
+      {menu
+        ? createPortal(
+            <div
+              ref={menuRef}
+              role="menu"
+              style={{ left: menu.x, top: menu.y }}
+              className="fixed z-[200] min-w-[210px] rounded-[8px] border border-line bg-surface py-1 shadow-panel"
+            >
+              {p.active ? (
+                <button type="button" role="menuitem" className={item} onClick={pick(p.onShowAll)}>
+                  Show all departments
+                </button>
+              ) : (
+                <button type="button" role="menuitem" className={item} onClick={pick(p.onShowOnly)}>
+                  Show only {p.displayName}
+                </button>
+              )}
+              <button type="button" role="menuitem" className={item} onClick={pick(p.onHideAll)}>
+                Hide {p.displayName} columns
+              </button>
             </div>,
             document.body,
           )
