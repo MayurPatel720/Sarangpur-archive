@@ -42,7 +42,7 @@ One delivery of material from one owner. The central collection.
 "people who know about this"; a shared project field (synced like `pointsOfContact`).
 
 ### Media
-`format` (enum, indexed) · `dataType` (`physical`|`digital`) · `mediaSubtype` (String) ·
+`format` (enum, indexed) · `dataType` (`physical`|`digital`|`both` = Physical + Digital; a "physical" / "digital" filter also matches `both`) · `mediaSubtype` (String) ·
 `quantity` · `quantityToDigitize` · `quantityAlreadyDigitized` · `quantityRemarks`
 
 ### Condition & intent
@@ -99,7 +99,7 @@ User · `scanDate` · `folderPath` · **`expectedFileCount`** · **`foundFileCou
 
 ## `lotitems` — DONE (`src/models/LotItem.ts`)
 
-One physical item: a frame, a print, a tape. Carries a code like `NEG-MUM-014-01-03`.
+One physical item: a frame, a print, a tape — one row of the lot's Excel (Items tab). Carries a code like `ALB-surat-0001-R-000`.
 
 **Not embedded in the lot.** A lot can hold thousands, the reconciler updates them
 individually, and the 16MB document ceiling would eventually be hit.
@@ -107,34 +107,47 @@ individually, and the 16MB document ceiling would eventually be hit.
 | Field | Type | Notes |
 |---|---|---|
 | `lot` | ObjectId → ArchiveLot, indexed | |
-| `code` | String, **unique** | `{PREFIX}-{ORIGIN}-{NNNN}-R-000`, issued per item at creation — e.g. `MDV-AHM-0002-R-000`. PREFIX = the item's own media sub-type (`MDV`, `DVC`, `BTC`, …), ORIGIN = lot origin (`OTH` until known), NNNN = running number per prefix+origin, `R` = raw (`D` = duplicate, reserved), `000` = copy number. Counters: `counters` `itemCode:{PREFIX}-{ORIGIN}` |
+| `code` | String, **unique** | `{ABBR1}-{ABBR2}-{NNNN}-{R\|D}-{CCC}` — e.g. `ALB-surat-0001-R-000`. The two abbreviations are chosen by the user (Excel → click a code; defaults: sub-type prefix + origin). The number is the next free one for the pair across ALL lots (highest in use + 1, read from the items — no counter), and the user may start higher: the numbers skipped stay free. `R` = original, `D` = duplicate: a duplicate is re-coded to its original's abbreviations + number with `D` and the next copy (`…-D-000`, `…-D-001`); the original is never changed and the duplicate's old number is freed. Rules: `src/lib/item-code.ts`, `src/server/lots/item-codes.ts` |
 | `groupNo` / `itemNo` | Number ≥1 | Roll / tape / album, then position |
-| `selectedForDigitization` | Boolean, indexed | False for items excluded at intake |
-| `notDigitizedReason` | Enum, indexed | `duplicate_in_mls` `condition_too_poor` `not_significant` `other` |
-| `digitized` | Boolean, indexed | Set by the reconciler |
-| `fileName` / `fileBytes` / `sha256` | | `sha256` is the fixity anchor |
-| `taggedInMls` | Boolean, indexed | |
-| `mlsDuplicate` / `mlsDuplicateOf` | | |
-| `name` | String | Item title. **Required before the item may get a decision** |
-| `nameOnCase` / `description` / `month` / `place` / `event` / `people` / `remarks` | String | Filled in the Items grid |
-| `year` | Number 1800–2200 | |
-| `physicalSource` / `itemCondition` | String | Admin lists `physicalSource`, `itemCondition` |
-| `digitalSource` | String | System-filled at capture |
-| `decision.existsInMls` / `newCopyIsBetter` / `conditionUsable` / `significant` | Boolean \| null | Three-state answers |
-| `decision.verdict` | `archive` \| `return_or_discard` \| null | Server-computed with `computeVerdict` per item |
-| `decision.disposition` | `return` \| `discard` \| null | Chosen when verdict is return_or_discard; reason in `notDigitizedReason` |
-| `decision.decidedBy` / `decidedAt` | | Set when the item's result becomes final |
-| `dispositionStatus` | `pending` \| `done` \| null | Item-level return/discard inside an otherwise archived lot |
+| `sortOrder` | Number | Row position in the lot's Excel (drag to reorder). Display only — codes never change with it |
+| `selectedForDigitization` | Boolean, indexed | True for items to digitize (digital or redigital = Yes) |
+| `notDigitizedReason` | String, indexed | Legacy (admin list `notDigitizedReason`); no longer written by the Excel |
+| `digitized` | Boolean, indexed | Excel **Captured** |
+| `fileName` / `fileBytes` / `sha256` | | `fileName` = Excel **File path**; `sha256` is the fixity anchor |
+| `taggedInMls` | Boolean, indexed | Excel **MLS tagged** |
+| `mlsDuplicate` / `mlsDuplicateOf` | | Legacy MLS duplicate flags |
+| `senderCode` / `nameOnTape` / `nameOnCase` / `place` / `remarks` | String | Details. `place` may hold several, comma-separated |
+| `dateFrom` / `dateTo` | Date (UTC midnight) | Details **Date** — one day has from = to. Typed as `dd/mm/yyyy - dd/mm/yyyy` (also `mm/yyyy`, `yyyy`); `src/lib/date-range.ts` |
+| `physicalSource` | String | Admin list `physicalSource` |
+| `duplicateCode` | String, indexed | Code of the ORIGINAL this item duplicates (any lot). The original's row shows "Duplicated by …" on read; it is never written to |
+| `decision.digital` / `redigital` / `discard` / `remark` | Boolean \| null / String | Decision. Decided once all three are answered: digital or redigital Yes → digitize (discard may also be Yes = digitize, then throw the physical copy away); discard only → discard; all No → keep physical only (`src/lib/item-decision.ts`) |
+| `decision.disposition` | `return` \| `discard` \| null | Excel **Return / discard** — the physical item's final fate; kept in step with Decision discard |
+| `dispositionStatus` | `pending` \| `done` \| null | Pending while a return / discard is chosen; `done` once marked in the Returns / Discards queue (for items being digitized, only after capture) |
+| `digitalSource` / `phyStorageLoc` / `storageRemark` | String | Dig source (a place, e.g. Mumbai) · where the physical item is kept · remark |
+| `logged` / `loggedAt` / `loggerName` | Boolean / Date / String | Logging. Ticking Status stamps today and the signed-in user; stays editable |
+| `custom` | Mixed | Values of the lot's added columns, by column key (`ArchiveLot.customColumns`) |
+| `decision.verdict` | `archive` \| `return_or_discard` \| null | Legacy mirror of the result, written so old guards ("items already decided") keep working |
+| `name`, `description`, `event`, `people`, `year`, `month`, `itemCondition`, `decision.existsInMls` … | | Retired from the Excel; old values stay in the database |
 | `dispositionDoneAt` / `dispositionDoneByName` / `lotReference` | | Denormalised for the item queues |
 
 Indexes: `{ lot, groupNo, itemNo }` · `{ lot, digitized }` ·
 `{ selectedForDigitization, notDigitizedReason }` · `{ decision.disposition, dispositionStatus }`
 
-**Per-item decisions ("split by item").** When every item of a lot has a final result,
-the lot is decided automatically (`finalizeItemDecisions`): any archived item → lot
-archived (stage metadata, naming code, only archived items selected), other items queued
-item by item in Returns / Discards; no archived item → lot-level return (any return) or
-discard.
+**The lot's Excel decides the lot.** When every item has a result (`finalizeItemDecisions`),
+the lot is decided automatically: any item to digitize → lot archived, stage `metadata`,
+naming code issued, only those items selected for digitization; nothing to digitize → lot
+archived straight to `storage`. Lots never take a lot-level return or discard — each item's
+Return / discard is handled item by item in the Returns / Discards queues.
+
+After that the stage follows the Excel (`syncLotStage`, in `src/server/lots/item-grid.ts`):
+first **Captured** → `scanning` · every item to digitize captured → `mls_tag` · all of them
+**MLS tagged** and every row **logged** → `storage`. A lot with nothing to digitize becomes
+`returned` / `discarded` once every item has been marked done in the queues.
+
+**Per-lot Excel setup** lives on the lot: `hiddenColumns[]` (column ids, shared by everyone on
+that lot) and `customColumns[]` (`{ key, label, type: text|number|yesno|date, dept }`, `dept` is one of
+`details` `decision` `storage` `logging`). Neither carries over to other lots. Columns:
+`src/lib/item-columns.ts`.
 
 ---
 

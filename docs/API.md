@@ -176,12 +176,19 @@ piece of logic where a bug has consequences that cannot be undone.
 |---|---|---|
 | GET | `/api/lots/[lotId]/items` | DONE — Paginated. Filters: `groupNo`, `digitized`, `taggedInMls`, `mlsDuplicate` |
 | GET | `/api/lots/[lotId]/activity` | DONE — Paginated audit trail, newest first |
-| GET | `/api/lots/[lotId]/items/grid` | DONE — Every item with details + decision, summary, what the viewer may edit. `lot:view` |
-| PATCH | `/api/lots/[lotId]/items/grid` | DONE — `{ itemIds, set }` bulk set; assignee rule applies; deciding the last item decides the lot. `lot:edit` |
-| PUT | `/api/lots/[lotId]/media-lines` | DONE — Replace quantities while in Intake (refused once items have names/decisions/files). `lot:edit` |
+| GET | `/api/lots/[lotId]/items/grid` | DONE — The lot's Excel: every item (Details · Decision · Digitalization & Storage · Logging columns), summary, what the viewer may edit, the lot's hidden + added columns. `lot:view` |
+| PATCH | `/api/lots/[lotId]/items/grid` | DONE — `{ itemIds, set }` bulk set (see `ItemsBulkSet` in `src/types/items.ts`); assignee rule applies; deciding the last item decides the lot, and the stage then follows capture / MLS / logging. `lot:edit` |
+| GET | `/api/lots/[lotId]/items/codes?abbr1&abbr2` | DONE — Highest number in use and next free number for an abbreviation pair (all lots). `lot:view` |
+| PATCH | `/api/lots/[lotId]/items/codes` | DONE — `{ lineIndex, abbr1, abbr2, startNo? }` re-codes one sheet; numbers continue from `startNo` (default: after the highest in use); 409 on a used number, a tagged item, or an original that has duplicates. `lot:edit` |
+| PATCH | `/api/lots/[lotId]/items/code` | DONE — `{ itemId, no }` change ONE item's number to a free one. `lot:edit` |
+| POST | `/api/lots/[lotId]/items/duplicate` | DONE — `{ itemId, otherCode, swap?, confirm? }` mark an item as a duplicate of an original in any lot. `confirm: false` returns the plan; `true` re-codes the duplicate to `{original abbreviations + number}-D-{copy}` and links `duplicateCode`. The original is never written to. `lot:edit` |
+| PATCH | `/api/lots/[lotId]/items/order` | DONE — `{ lineIndex, orderedIds }` save a row drag (display order only). `lot:edit` |
+| PATCH | `/api/lots/[lotId]/items/columns` | DONE — `{ hidden?, add?: { label, type, dept }, removeKey? }` the lot's Excel setup, shared by everyone on that lot. `lot:edit` |
+| POST | `/api/lots/[lotId]/items/import` | DONE — `{ apply, rows: [{ code, cells }] }` rows read from an .xlsx in the browser; `apply: false` previews changes and errors, `true` writes them in one audited save (nothing is written if any cell is invalid). `lot:edit` |
+| PUT | `/api/lots/[lotId]/media-lines` | DONE — Replace quantities while in Intake (refused once items have details/decisions/files). `lot:edit` |
 | PUT | `/api/lots/[lotId]/assignee` | DONE — `{ assigneeId \| null }`. `project:assign` |
-| GET | `/api/queues/item-dispositions` | DONE — `kind=return\|discard&status=pending\|done`, paginated |
-| POST | `/api/items/dispositions` | DONE — `{ kind, itemIds }` mark done. Needs `return:manage` / `discard:confirm` |
+| GET | `/api/queues/item-dispositions` | DONE — `kind=return\|discard&status=pending\|done`, paginated; rows carry `waitingForCapture` |
+| POST | `/api/items/dispositions` | DONE — `{ kind, itemIds }` mark done (400 for an item still to be digitized and not yet captured). Needs `return:manage` / `discard:confirm` |
 | GET | `/api/lots/[lotId]/attachments` | TODO |
 | POST | `/api/lots/[lotId]/attachments` | TODO — Multipart. Validate type and size; store the key, never the bytes |
 

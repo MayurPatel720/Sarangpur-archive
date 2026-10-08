@@ -103,16 +103,19 @@ async function buildItemDocs(
   session: ClientSession,
 ): Promise<Record<string, unknown>[]> {
   const docs: Record<string, unknown>[] = [];
+  const pending = new Map<string, number>();
   let n = 0;
   for (const [lineIndex, line] of lines.entries()) {
+    // Default pair (sub-type prefix + origin); the user can change both from the Excel.
     const prefix = await namingPrefix(line.format, line.mediaSubtype);
-    const codes = await allocateItemCodes(prefix, origin, line.quantity, session);
+    const codes = await allocateItemCodes(prefix, origin, line.quantity, session, pending);
     codes.forEach((code, idx) => {
       const selected = idx < line.quantityToDigitize;
       docs.push({
         lot: lotId,
         code,
         ...itemSlot(n),
+        sortOrder: n,
         lineIndex,
         selectedForDigitization: selected,
         notDigitizedReason: selected ? null : line.notDigitizedReason,
@@ -328,14 +331,18 @@ export async function replaceMediaLines(
           { digitized: true },
           { taggedInMls: true },
           { fileName: { $ne: null } },
-          { name: { $nin: [null, ''] } },
+          { senderCode: { $nin: [null, ''] } },
+          { nameOnTape: { $nin: [null, ''] } },
+          { nameOnCase: { $nin: [null, ''] } },
+          { place: { $nin: [null, ''] } },
+          { duplicateCode: { $nin: [null, ''] } },
           { 'decision.verdict': { $ne: null } },
         ],
       }).session(session);
       if (touched > 0) {
         throw new HttpError(
           409,
-          'Items on this lot already have names, decisions or files, so the quantities are locked. Use "Add item" in the Items tab instead.',
+          'Items on this lot already have details, decisions or files, so the quantities are locked. Use "Add item" in the Items tab instead.',
         );
       }
 
@@ -579,6 +586,8 @@ type DecisionFacts = {
   disposition?: 'return' | 'discard' | undefined;
   discardReason?: string | undefined;
   discardNotes?: string | undefined;
+  /** Archived lot with nothing to digitize (Excel item decisions): skips digitization, goes to storage. */
+  keepPhysical?: boolean | undefined;
 };
 
 async function writeDecision(
@@ -648,7 +657,7 @@ async function writeDecision(
           stage = body.disposition === 'return' ? 'returned' : 'discarded';
         } else {
           status = 'archive';
-          stage = 'metadata';
+          stage = body.keepPhysical ? 'storage' : 'metadata';
           namingCode = await generateNamingCode(
             await namingPrefix(format, mediaSubtype),
             originSource,
@@ -871,20 +880,37 @@ export async function recordTriageDecision(
  */
 export async function finalizeItemDecisions(lotId: string, ctx: MutationContext): Promise<DecisionResponse> {
   const lotObjectId = new Types.ObjectId(lotId);
-  const [archive, ret, discard, total] = await Promise.all([
-    LotItem.countDocuments({ lot: lotObjectId, 'decision.verdict': 'archive' }),
-    LotItem.countDocuments({ lot: lotObjectId, 'decision.verdict': 'return_or_discard', 'decision.disposition': 'return' }),
-    LotItem.countDocuments({ lot: lotObjectId, 'decision.verdict': 'return_or_discard', 'decision.disposition': 'discard' }),
+  const [digitize, discard, physical, total] = await Promise.all([
+    LotItem.countDocuments({
+      lot: lotObjectId,
+      $or: [{ 'decision.digital': true }, { 'decision.redigital': true }],
+      'decision.discard': { $in: [true, false] },
+      'decision.digital': { $in: [true, false] },
+      'decision.redigital': { $in: [true, false] },
+    }),
+    LotItem.countDocuments({
+      lot: lotObjectId,
+      'decision.digital': false,
+      'decision.redigital': false,
+      'decision.discard': true,
+    }),
+    LotItem.countDocuments({
+      lot: lotObjectId,
+      'decision.digital': false,
+      'decision.redigital': false,
+      'decision.discard': false,
+    }),
     LotItem.countDocuments({ lot: lotObjectId }),
   ]);
-  if (archive + ret + discard !== total) {
+  if (digitize + discard + physical !== total) {
     throw new HttpError(400, 'Every item needs a decision before the lot can move on.');
   }
   const questionCount = await significanceQuestionCount();
-  const anyArchive = archive > 0;
-  const significanceFlags = Array.from({ length: questionCount }, (_, i) => anyArchive && i === 0);
-  const disposition: 'return' | 'discard' | undefined = anyArchive ? undefined : ret > 0 ? 'return' : 'discard';
-  const summary = `Decided item by item: ${archive} archive, ${ret} return, ${discard} discard.`;
+  const significanceFlags = Array.from({ length: questionCount }, (_, i) => i === 0);
+  const summary = `Decided item by item: ${digitize} to digitize, ${discard} to discard, ${physical} kept physical only.`;
+  // The lot is "archived" whenever it is kept at all. With nothing to digitize it goes
+  // straight to storage; otherwise on to digitization. Items carry their own fate
+  // (discard / return) in the item queues, so the lot never takes a lot-level return or discard.
   return writeDecision(
     lotId,
     {
@@ -892,20 +918,14 @@ export async function finalizeItemDecisions(lotId: string, ctx: MutationContext)
       conditionUsable: true,
       significanceFlags,
       notes: summary,
-      disposition,
-      discardNotes: disposition === 'discard' ? summary : undefined,
+      keepPhysical: digitize === 0,
     },
     ctx,
-    `Decision recorded (items) — ${anyArchive ? 'archive' : disposition}`,
+    `Decision recorded (items) — ${digitize > 0 ? 'archive' : 'physical only'}`,
     async (lot, session) => {
-      lot.set('digitization.expectedFileCount', archive);
-      if (anyArchive && ret + discard > 0) {
-        await LotItem.updateMany(
-          { lot: lot._id, 'decision.verdict': 'return_or_discard' },
-          { $set: { dispositionStatus: 'pending', lotReference: lot.lotReference } },
-          { session },
-        );
-      }
+      lot.set('digitization.expectedFileCount', digitize);
+      // Denormalised for the item return / discard queues (no $lookup on read).
+      await LotItem.updateMany({ lot: lot._id }, { $set: { lotReference: lot.lotReference } }, { session });
     },
   );
 }

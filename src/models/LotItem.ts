@@ -56,8 +56,33 @@ const lotItemSchema = new Schema(
     physicalSource: { type: String, trim: true, default: null },
     itemCondition: { type: String, trim: true, default: null },
     remarks: { type: String, trim: true, default: null },
-    /** Filled by capture / reconcile, read-only in the grid. */
+    /** Where the digital copy came from, e.g. "Mumbai". Free text. */
     digitalSource: { type: String, trim: true, default: null },
+
+    /*
+     * Excel columns (the lot's Items tab). Departments: Details · Decision ·
+     * Digitalization & Storage · Logging. `name`, `description`, `event`, `people`, `year`,
+     * `month` and `itemCondition` are no longer shown or written (old data is kept).
+     */
+    /** Position in the lot's Excel; the user can drag rows. Display only — codes never change with it. */
+    sortOrder: { type: Number, default: 0 },
+    senderCode: { type: String, trim: true, default: null },
+    /** The Date column is a range; a single day has dateFrom === dateTo. Calendar days at UTC midnight. */
+    dateFrom: { type: Date, default: null },
+    dateTo: { type: Date, default: null },
+    nameOnTape: { type: String, trim: true, default: null },
+    /** Code of the ORIGINAL this item duplicates (any lot). Set together with the D-kind recode. */
+    duplicateCode: { type: String, trim: true, default: null, index: true },
+    /** Where the physical item is kept. */
+    phyStorageLoc: { type: String, trim: true, default: null },
+    /** Digitalization & Storage remark. */
+    storageRemark: { type: String, trim: true, default: null },
+    /** Logging department: the row has been logged (signed off), when, and by whom. */
+    logged: { type: Boolean, default: false },
+    loggedAt: { type: Date, default: null },
+    loggerName: { type: String, trim: true, default: null },
+    /** User-added columns of the lot's Excel, keyed by the column's key (lot.customColumns). */
+    custom: { type: Schema.Types.Mixed, default: undefined },
 
     /**
      * Per-item decision. Answers are Yes / No / unanswered (null). `verdict` is
@@ -66,11 +91,18 @@ const lotItemSchema = new Schema(
      * return_or_discard. The drop reason reuses `notDigitizedReason`.
      */
     decision: {
+      /** Excel Decision columns. An item is decided once all three are answered. */
+      digital: { type: Boolean, default: null },
+      redigital: { type: Boolean, default: null },
+      discard: { type: Boolean, default: null },
+      remark: { type: String, trim: true, default: null },
+      /* Legacy checklist answers (pre-Excel); kept for old records, no longer written. */
       existsInMls: { type: Boolean, default: null },
       newCopyIsBetter: { type: Boolean, default: null },
       conditionUsable: { type: Boolean, default: null },
       significant: { type: Boolean, default: null },
       verdict: { type: String, enum: ['archive', 'return_or_discard', null], default: null },
+      /** The physical item's final fate (Excel "return/discard"); drives the Returns / Discards queues. */
       disposition: { type: String, enum: ['return', 'discard', null], default: null },
       decidedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       decidedAt: { type: Date, default: null },
@@ -91,6 +123,7 @@ const lotItemSchema = new Schema(
 );
 
 lotItemSchema.index({ lot: 1, groupNo: 1, itemNo: 1 });
+lotItemSchema.index({ lot: 1, lineIndex: 1, sortOrder: 1 }); // Excel row order per sheet
 lotItemSchema.index({ lot: 1, lineIndex: 1 }); // per-media-type progress
 lotItemSchema.index({ lot: 1, digitized: 1 }); // per-lot scan progress
 lotItemSchema.index({ selectedForDigitization: 1, notDigitizedReason: 1 }); // exclusion report

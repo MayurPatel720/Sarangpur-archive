@@ -7,6 +7,7 @@ import { GhostButton } from '@/components/ui/Form';
 import { EditMediaLinesDialog } from './EditMediaLinesDialog';
 import { useLotAccess } from './LotProjectBar';
 import { prettyEnum, num } from '@/lib/format';
+import { dataTypeLabel } from '@/lib/domain';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Panel, PanelHeader } from '@/components/ui/primitives';
 
@@ -36,7 +37,7 @@ const COLUMNS: Column<LineRow>[] = [
     header: 'Media',
     render: (r) => (
       <span className="break-words">
-        {prettyEnum(r.format)} · {prettyEnum(r.dataType)} · {r.mediaSubtypeLabel}
+        {prettyEnum(r.format)} · {dataTypeLabel(r.dataType)} · {r.mediaSubtypeLabel}
         {r.notDigitizedReason ? (
           <span className="block text-[11px] text-ink-3">
             Excluded: {prettyEnum(r.notDigitizedReason)}

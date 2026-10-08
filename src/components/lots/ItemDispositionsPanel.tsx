@@ -6,7 +6,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
-import { useReferenceList } from '@/hooks/useReferenceList';
 import { date } from '@/lib/format';
 import { ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { PrimaryButton } from '@/components/ui/Form';
@@ -21,7 +20,6 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
   const queryClient = useQueryClient();
   const toast = useToast();
   const me = useMe();
-  const reasons = useReferenceList('notDigitizedReason');
   const [status, setStatus] = useState<'pending' | 'done'>('pending');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -46,12 +44,12 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
   });
 
   const rows = list.data?.rows ?? [];
-  const allPicked = rows.length > 0 && rows.every((r) => picked.includes(r.id));
-  const reasonLabel = (v: string | null) => (v ? (reasons.data?.items.find((i) => i.value === v)?.label ?? v) : '—');
+  const ready = rows.filter((r) => !r.waitingForCapture);
+  const allPicked = ready.length > 0 && ready.every((r) => picked.includes(r.id));
 
   return (
     <Panel>
-      <PanelHeader title={kind === 'return' ? 'Single items to return' : 'Single items to discard'}>
+      <PanelHeader title={kind === 'return' ? 'Items to return' : 'Items to discard'}>
         <span className="ml-auto flex gap-1.5" role="group" aria-label="Show">
           {(['pending', 'done'] as const).map((s) => (
             <button
@@ -74,7 +72,7 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
       </PanelHeader>
       <div className="p-3 md:p-4 flex flex-col gap-3">
         <p className="m-0 text-[12px] text-ink-3">
-          Items decided “{kind}” inside lots that were otherwise archived. Whole lots to {kind} are listed above.
+          Items whose Return / discard says “{kind}”. An item that is also being digitized can be marked once its file is captured.
         </p>
         {list.isLoading ? (
           <Skeleton className="h-24 w-full" />
@@ -91,7 +89,7 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
                     type="checkbox"
                     className="h-4 w-4 accent-accent"
                     checked={allPicked}
-                    onChange={(e) => setPicked(e.target.checked ? rows.map((r) => r.id) : [])}
+                    onChange={(e) => setPicked(e.target.checked ? ready.map((r) => r.id) : [])}
                   />
                   Select all on this page
                 </label>
@@ -116,6 +114,7 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
                       aria-label={`Select ${r.code}`}
                       className="h-4 w-4 accent-accent"
                       checked={picked.includes(r.id)}
+                      disabled={r.waitingForCapture}
                       onChange={(e) =>
                         setPicked((p) => (e.target.checked ? [...p, r.id] : p.filter((x) => x !== r.id)))
                       }
@@ -125,13 +124,13 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
                   )}
                   <span className="min-w-0">
                     <span className="block font-mono text-[12.5px] font-semibold text-ink truncate">{r.code}</span>
-                    <span className="block text-[12px] text-ink-2 truncate">{r.name ?? 'Unnamed item'}</span>
+                    <span className="block text-[12px] text-ink-2 truncate">{r.place ?? 'No place recorded'}</span>
                   </span>
                   <span className="col-start-2 sm:col-start-auto text-[12px] text-ink-3 truncate">
                     <Link href={`/register/${r.lotId}?tab=items`} className="text-accent no-underline hover:underline">
                       {r.lotReference || 'Lot'}
                     </Link>{' '}
-                    · {reasonLabel(r.reason)}
+                    {r.waitingForCapture ? '· waiting for capture' : ''}
                   </span>
                   <span className="col-start-2 sm:col-start-auto text-[12px] text-ink-3">
                     {status === 'pending' ? `Decided ${date(r.decidedAt)}` : `${date(r.doneAt)} · ${r.doneByName ?? ''}`}

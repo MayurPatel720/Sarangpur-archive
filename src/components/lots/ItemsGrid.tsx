@@ -8,98 +8,129 @@ import { queryKeys } from '@/lib/query-keys';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import type { GridItem, ItemsBulkSet } from '@/types/items';
-import { ItemEditDialog } from './ItemEditDialog';
+import { allColumns, type CustomColumn } from '@/lib/item-columns';
+import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
-import { ItemFamilyGrid, type ColumnGroup } from './ItemFamilyGrid';
+import { AddColumnDialog } from './AddColumnDialog';
+import { DuplicateDialog } from './DuplicateDialog';
+import { exportItemsToExcel } from './excel-io';
+import { HiddenColumnsMenu } from './HiddenColumnsMenu';
+import { ImportDialog } from './ImportDialog';
+import { ItemCodeDialog } from './ItemCodeDialog';
+import { ItemFamilyGrid } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
 
 /**
- * The lot's Items tab: items grouped into one collapsible AG Grid per media-subtype
- * family (see src/lib/item-columns.ts). The assignee fills in the item details and
- * answers the decision questions (Yes / No / blank); the server computes each item's
- * result. Tick rows to set the same values on many items at once. Deciding the last
- * item decides the lot ("split by item").
+ * The lot's Items tab — the lot's Excel: one collapsible sheet per media type, columns in
+ * four departments (Details · Decision · Digitalization & Storage · Logging; see
+ * src/lib/item-columns.ts). Column headers hide a column on click, "⋯" brings hidden ones
+ * back and "+" adds a column of the team's own — both shared by everyone on THIS lot.
+ * Rows can be dragged to reorder. Excel export / import sit top right. Deciding the last item
+ * decides the lot, and the lot's stage then follows capture / MLS / logging by itself.
  */
 
-type Filter = 'all' | 'unnamed' | 'undecided' | 'archive' | 'return' | 'discard';
+type Filter = 'all' | 'undecided' | 'archive' | 'discard' | 'physical';
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
-  { id: 'unnamed', label: 'No name' },
   { id: 'undecided', label: 'Undecided' },
-  { id: 'archive', label: 'Archive' },
-  { id: 'return', label: 'Return' },
+  { id: 'archive', label: 'Digitize' },
   { id: 'discard', label: 'Discard' },
+  { id: 'physical', label: 'Keep physical' },
 ];
-
-function useNarrow(): boolean {
-  const [narrow, setNarrow] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 639px)');
-    const on = () => setNarrow(mq.matches);
-    on();
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
-  }, []);
-  return narrow;
-}
 
 const ROW_PX = 42;
 const matchesFilter = (r: GridItem, f: Filter) =>
-  f === 'unnamed' ? !r.name : f === 'undecided' ? !r.result : f === 'all' ? true : r.result === f;
+  f === 'all' ? true : f === 'undecided' ? !r.result : r.result === f;
 
-export function ItemsGrid({ lotId }: { lotId: string }) {
+const SELECTION_CLEAR: Record<number, string[]> = {};
+
+export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const narrow = useNarrow();
-  const gridApis = useRef<Map<string, GridApi<GridItem>>>(new Map());
+  const gridApis = useRef<Map<number, GridApi<GridItem>>>(new Map());
   const [filter, setFilter] = useState<Filter>('all');
-  const [hidden, setHidden] = useState<Record<ColumnGroup, boolean>>({
-    details: false,
-    decision: false,
-    digitization: true,
-  });
-  /** Explicit open/closed per family; null until the user touches it (then: first family open). */
-  const [expanded, setExpanded] = useState<Record<string, boolean> | null>(null);
-  const [selectedBy, setSelectedBy] = useState<Record<string, string[]>>({});
-  const [editing, setEditing] = useState<GridItem | null>(null);
+  /** Explicit open/closed per sheet; null until the user touches it (then: first sheet open). */
+  const [expanded, setExpanded] = useState<Record<number, boolean> | null>(null);
+  const [selectedBy, setSelectedBy] = useState<Record<number, string[]>>(SELECTION_CLEAR);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showAddColumn, setShowAddColumn] = useState(false);
+  const [columnError, setColumnError] = useState<string | null>(null);
+  const [codeFor, setCodeFor] = useState<GridItem | null>(null);
+  const [duplicateFor, setDuplicateFor] = useState<{ item: GridItem; code: string } | null>(null);
+  const [deleteColumn, setDeleteColumn] = useState<CustomColumn | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const me = useMe();
   const canAdd = Boolean(me.data?.grants.includes('item:create'));
 
-  const grid = useQuery({
-    queryKey: queryKeys.lots.itemsGrid(lotId),
-    queryFn: () => itemsGridApi.get(lotId),
-  });
+  const gridKey = queryKeys.lots.itemsGrid(lotId);
+  const grid = useQuery({ queryKey: gridKey, queryFn: () => itemsGridApi.get(lotId) });
   const physical = useReferenceList('physicalSource');
-  const conditions = useReferenceList('itemCondition');
-  const reasons = useReferenceList('notDigitizedReason');
   const physicalItems = useMemo(() => physical.data?.items ?? [], [physical.data]);
-  const conditionItems = useMemo(() => conditions.data?.items ?? [], [conditions.data]);
-  const reasonItems = useMemo(() => reasons.data?.items ?? [], [reasons.data]);
+  const refLabel = useCallback(
+    (_list: string, v: string | null) => (v ? (physicalItems.find((i) => i.value === v)?.label ?? v) : ''),
+    [physicalItems],
+  );
+
+  const refresh = () => void queryClient.invalidateQueries({ queryKey: gridKey });
 
   const save = useMutation({
     mutationFn: (v: { itemIds: string[]; set: ItemsBulkSet }) => itemsGridApi.update(lotId, v),
     onSuccess: (res) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.itemsGrid(lotId) });
+      refresh();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.detail(lotId) });
       if (res.finalized) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
         void queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-        toast.success(
-          'Lot decided from its items',
-          res.finalized.decision === 'archive'
-            ? `Archive — moved to ${res.finalized.stage}. Returns/discards are queued item by item.`
-            : `All items ${res.finalized.decision} — the lot moved to ${res.finalized.stage}.`,
-        );
+        toast.success('Lot decided from its items', `Moved to ${res.finalized.stage}.`);
       } else if (res.blockedBy.length) {
         toast.info('Every item is decided', res.blockedBy.join(' '));
       }
     },
     onError: (e) => {
       toast.error('Could not save', e instanceof ApiRequestError ? e.message : undefined);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.itemsGrid(lotId) });
+      refresh();
+    },
+  });
+
+  const reorder = useMutation({
+    mutationFn: (v: { lineIndex: number; orderedIds: string[] }) => itemsGridApi.reorder(lotId, v),
+    onSuccess: refresh,
+    onError: (e) => {
+      toast.error('Could not move the row', e instanceof ApiRequestError ? e.message : undefined);
+      refresh();
+    },
+  });
+
+  /** Hide / unhide / add / remove a column. Hiding is applied at once and rolled back on failure. */
+  const columns = useMutation({
+    mutationFn: (b: ColumnsBody) => itemsGridApi.columns(lotId, b),
+    onMutate: async (b) => {
+      if (!b.hidden) return undefined;
+      await queryClient.cancelQueries({ queryKey: gridKey });
+      const prev = queryClient.getQueryData<ItemsGridResponse>(gridKey);
+      if (prev) queryClient.setQueryData<ItemsGridResponse>(gridKey, { ...prev, hiddenColumns: b.hidden });
+      return { prev };
+    },
+    onSuccess: (_r, b) => {
+      refresh();
+      if (b.add) {
+        setShowAddColumn(false);
+        toast.success('Column added', b.add.label);
+      }
+      if (b.removeKey) {
+        setDeleteColumn(null);
+        toast.success('Column deleted');
+      }
+    },
+    onError: (e, b, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(gridKey, ctx.prev);
+      const message = e instanceof ApiRequestError ? e.message : 'Could not change the columns.';
+      if (b.add) setColumnError(message);
+      else toast.error('Could not change the columns', message);
     },
   });
 
@@ -107,49 +138,78 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
   const canDetails = data?.editable.details ?? false;
   const canDecide = data?.editable.decision ?? false;
 
-  /** One group per exact media subtype, in order of first appearance, with all items (for progress) and filtered rows. */
-  const families = useMemo(() => {
-    const map = new Map<string, { all: GridItem[]; rows: GridItem[] }>();
+  const specs = useMemo(() => allColumns(data?.customColumns ?? []), [data?.customColumns]);
+  const hiddenIds = useMemo(() => new Set(data?.hiddenColumns ?? []), [data?.hiddenColumns]);
+  const visibleSpecs = useMemo(() => specs.filter((s) => !hiddenIds.has(s.id)), [specs, hiddenIds]);
+  const hiddenSpecs = useMemo(() => specs.filter((s) => hiddenIds.has(s.id)), [specs, hiddenIds]);
+
+  /** One sheet per media line, in intake order, with every item (for progress) and the filtered rows. */
+  const sheets = useMemo(() => {
+    const map = new Map<number, { name: string; all: GridItem[]; rows: GridItem[] }>();
     for (const it of data?.items ?? []) {
-      const fam = it.subtypeLabel.trim() || 'Other';
-      let g = map.get(fam);
-      if (!g) map.set(fam, (g = { all: [], rows: [] }));
+      let g = map.get(it.lineIndex);
+      if (!g) map.set(it.lineIndex, (g = { name: it.subtypeLabel.trim() || 'Other', all: [], rows: [] }));
       g.all.push(it);
       if (matchesFilter(it, filter)) g.rows.push(it);
     }
-    return [...map.entries()].map(([name, g]) => ({ name, ...g }));
+    return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([lineIndex, g]) => ({ lineIndex, ...g }));
   }, [data, filter]);
 
-  const isOpen = (name: string, index: number) => (expanded ? (expanded[name] ?? false) : index === 0);
-  const setAll = (open: boolean) => setExpanded(Object.fromEntries(families.map((f) => [f.name, open])));
-  const toggle = (name: string) =>
-    setExpanded(Object.fromEntries(families.map((f, i) => [f.name, f.name === name ? !isOpen(f.name, i) : isOpen(f.name, i)])));
+  const isOpen = (line: number, index: number) => (expanded ? (expanded[line] ?? false) : index === 0);
+  const setAll = (open: boolean) => setExpanded(Object.fromEntries(sheets.map((s) => [s.lineIndex, open])));
+  const toggle = (line: number) =>
+    setExpanded(Object.fromEntries(sheets.map((s, i) => [s.lineIndex, s.lineIndex === line ? !isOpen(s.lineIndex, i) : isOpen(s.lineIndex, i)])));
 
   const selected = useMemo(() => Object.values(selectedBy).flat(), [selectedBy]);
   const onSelectionChange = useCallback(
-    (family: string, ids: string[]) =>
+    (sheet: number, ids: string[]) =>
       setSelectedBy((prev) => {
-        const cur = prev[family] ?? [];
+        const cur = prev[sheet] ?? [];
         if (cur.length === ids.length && cur.every((v, i) => v === ids[i])) return prev;
-        if (ids.length === 0 && !(family in prev)) return prev;
-        return { ...prev, [family]: ids };
+        if (ids.length === 0 && !(sheet in prev)) return prev;
+        return { ...prev, [sheet]: ids };
       }),
     [],
   );
-  const onApi = useCallback((family: string, api: GridApi<GridItem> | null) => {
-    if (api) gridApis.current.set(family, api);
-    else gridApis.current.delete(family);
+  const onApi = useCallback((sheet: number, api: GridApi<GridItem> | null) => {
+    if (api) gridApis.current.set(sheet, api);
+    else gridApis.current.delete(sheet);
   }, []);
   const deselectAll = () => gridApis.current.forEach((api) => api.deselectAll());
   const onSave = useCallback((itemIds: string[], set: ItemsBulkSet) => save.mutate({ itemIds, set }), [save]);
+  const onReorder = useCallback((lineIndex: number, orderedIds: string[]) => reorder.mutate({ lineIndex, orderedIds }), [reorder]);
+
+  const hideColumn = useCallback(
+    (id: string) => columns.mutate({ hidden: [...(data?.hiddenColumns ?? []), id] }),
+    [columns, data?.hiddenColumns],
+  );
+  const showColumn = (id: string) => columns.mutate({ hidden: (data?.hiddenColumns ?? []).filter((h) => h !== id) });
+  const onInvalid = useCallback((message: string) => toast.error('Not saved', message), [toast]);
+  const onOpenCode = useCallback((item: GridItem) => setCodeFor(item), []);
+  const onDuplicate = useCallback((item: GridItem, code: string) => setDuplicateFor({ item, code }), []);
+
+  const exportExcel = async () => {
+    if (!data) return;
+    try {
+      await exportItemsToExcel({
+        fileName: `${lotReference}-items`,
+        sheets: sheets.map((s) => ({ name: s.name, rows: s.all })),
+        columns: visibleSpecs,
+        refLabel,
+      });
+    } catch {
+      toast.error('Could not export', 'Try again, or reload the page.');
+    }
+  };
 
   // Full screen: lock page scroll; Escape exits (unless a dialog or a cell editor/popup is using it).
+  const dialogOpen = showAdd || showImport || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
   useEffect(() => {
     if (!fullscreen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || editing || showAdd) return;
+      if (e.key !== 'Escape' || e.defaultPrevented || dialogOpen) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest('.ag-cell-inline-editing, .ag-popup, .ag-cell-editing-error')) return;
       setFullscreen(false);
@@ -159,7 +219,7 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
       document.body.style.overflow = prev;
       window.removeEventListener('keydown', onKey);
     };
-  }, [fullscreen, editing, showAdd]);
+  }, [fullscreen, dialogOpen]);
 
   if (grid.isLoading) {
     return (
@@ -181,13 +241,17 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
   }
 
   const s = data.summary;
-  const single = families.length <= 1;
+  const single = sheets.length <= 1;
+  const canReorder = canDetails && filter === 'all';
 
   const gridHeight = (rowCount: number) => {
     if (single) return fullscreen ? '100%' : 'max(420px, calc(100dvh - 320px))';
     const natural = 100 + rowCount * ROW_PX;
     return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, 560)}px`;
   };
+
+  const iconBtn =
+    'inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-line bg-surface text-ink-2 cursor-pointer hover:bg-accent-soft disabled:opacity-50';
 
   return (
     <Panel>
@@ -202,13 +266,10 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
           <span>
             <span className="font-semibold text-ink tabular-nums">{s.decided}</span> of {s.total} decided
           </span>
-          <span>
-            <span className="font-semibold text-ink tabular-nums">{s.named}</span> named
-          </span>
           <span className="flex flex-wrap gap-1.5">
-            <Badge severity="good">Archive {s.archive}</Badge>
-            <Badge severity="info">Return {s.return}</Badge>
+            <Badge severity="good">Digitize {s.archive}</Badge>
             <Badge severity="critical">Discard {s.discard}</Badge>
+            <Badge severity="neutral">Keep physical {s.physical}</Badge>
           </span>
         </div>
 
@@ -218,12 +279,12 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
           </p>
         ) : !canDecide ? (
           <p role="note" className="m-0 text-[12px] text-ink-3">
-            Decisions are locked — this lot has been decided. Item details stay editable.
+            Decisions are locked — this lot has been decided. The other columns stay editable.
           </p>
         ) : (
           <p className="m-0 text-[12px] text-ink-3 max-w-[90ch]">
-            Give each item a name, then answer the questions. The result is worked out for you; for “Return or discard?”
-            pick which and a reason. When every item is decided, the lot moves on by itself.
+            Fill in each row, then answer digital, redigital and discard (Yes / No). When every item is decided, the lot
+            moves on by itself.
           </p>
         )}
         {data.blockedBy.length ? (
@@ -266,23 +327,33 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
               ))}
             </div>
             {!single ? (
-              <div role="group" aria-label="Sections" className="flex gap-1.5">
+              <div role="group" aria-label="Sheets" className="flex gap-1.5">
                 <GhostButton onClick={() => setAll(true)}>Expand all</GhostButton>
                 <GhostButton onClick={() => setAll(false)}>Collapse all</GhostButton>
               </div>
             ) : null}
-            <div role="group" aria-label="Column groups" className="flex flex-wrap gap-3 sm:ml-auto text-[12px] text-ink-2">
-              {(['details', 'decision', 'digitization'] as ColumnGroup[]).map((g) => (
-                <label key={g} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer capitalize">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-accent"
-                    checked={!hidden[g]}
-                    onChange={(e) => setHidden((prev) => ({ ...prev, [g]: !e.target.checked }))}
-                  />
-                  {g}
-                </label>
-              ))}
+            <div role="toolbar" aria-label="Excel tools" className="flex items-center gap-1.5 sm:ml-auto">
+              {canDetails ? (
+                <GhostButton onClick={() => setShowImport(true)}>Import</GhostButton>
+              ) : null}
+              <GhostButton onClick={() => void exportExcel()} disabled={s.total === 0}>
+                Export
+              </GhostButton>
+              {canDetails ? (
+                <button
+                  type="button"
+                  className={iconBtn}
+                  aria-label="Add a column"
+                  title="Add a column"
+                  onClick={() => {
+                    setColumnError(null);
+                    setShowAddColumn(true);
+                  }}
+                >
+                  <IconPlus size={15} />
+                </button>
+              ) : null}
+              <HiddenColumnsMenu hidden={hiddenSpecs} onShow={showColumn} onShowAll={() => columns.mutate({ hidden: [] })} />
             </div>
           </div>
 
@@ -291,8 +362,6 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
               count={selected.length}
               canDecide={canDecide}
               physical={physicalItems}
-              conditions={conditionItems}
-              reasons={reasonItems}
               pending={save.isPending}
               onApply={(set) =>
                 save.mutate(
@@ -310,45 +379,48 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
           ) : null}
 
           <div className={fullscreen ? 'flex-1 min-h-0 overflow-y-auto flex flex-col gap-3' : 'flex flex-col gap-3'}>
-            {families.length === 0 ? <p className="m-0 text-[12.5px] text-ink-3">No items yet.</p> : null}
-            {families.map((f, i) => {
-              const open = isOpen(f.name, i);
+            {sheets.length === 0 ? <p className="m-0 text-[12.5px] text-ink-3">No items yet.</p> : null}
+            {sheets.map((sh, i) => {
+              const open = isOpen(sh.lineIndex, i);
               const gridBox = (
                 <ItemFamilyGrid
-                  family={f.name}
-                  rows={f.rows}
-                  hidden={hidden}
+                  lineIndex={sh.lineIndex}
+                  rows={sh.rows}
+                  columns={visibleSpecs}
                   canDetails={canDetails}
                   canDecide={canDecide}
-                  narrow={narrow}
+                  canReorder={canReorder}
                   physical={physicalItems}
-                  conditions={conditionItems}
-                  reasons={reasonItems}
-                  height={gridHeight(f.rows.length)}
-                  onEdit={setEditing}
+                  height={gridHeight(sh.rows.length)}
+                  onOpenCode={onOpenCode}
+                  onDuplicate={onDuplicate}
+                  onHide={hideColumn}
+                  onDeleteColumn={setDeleteColumn}
+                  onInvalid={onInvalid}
                   onSave={onSave}
+                  onReorder={onReorder}
                   onSelectionChange={onSelectionChange}
                   onApi={onApi}
                 />
               );
               if (single) {
                 return (
-                  <div key={f.name} className={fullscreen ? 'flex-1 min-h-0' : undefined}>
+                  <div key={sh.lineIndex} className={fullscreen ? 'flex-1 min-h-0' : undefined}>
                     {gridBox}
                   </div>
                 );
               }
-              const decided = f.all.filter((r) => r.result).length;
-              const scanned = f.all.filter((r) => r.captureStatus === 'captured').length;
-              const tagged = f.all.filter((r) => r.taggedInMls).length;
-              const empty = f.rows.length === 0;
+              const decided = sh.all.filter((r) => r.result).length;
+              const captured = sh.all.filter((r) => r.captured).length;
+              const tagged = sh.all.filter((r) => r.taggedInMls).length;
+              const empty = sh.rows.length === 0;
               return (
-                <section key={f.name} aria-label={`${f.name} items`} className="rounded-[8px] border border-line overflow-hidden">
+                <section key={sh.lineIndex} aria-label={`${sh.name} items`} className="rounded-[8px] border border-line overflow-hidden">
                   <button
                     type="button"
                     aria-expanded={open && !empty}
                     disabled={empty}
-                    onClick={() => toggle(f.name)}
+                    onClick={() => toggle(sh.lineIndex)}
                     className={`w-full flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 bg-surface-sunken border-0 text-left ${
                       empty ? 'cursor-default' : 'cursor-pointer'
                     }`}
@@ -356,12 +428,12 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
                     <span aria-hidden className="text-ink-3 text-[12px] w-3">
                       {open && !empty ? '▾' : '▸'}
                     </span>
-                    <span className="text-[13px] font-semibold text-ink">{f.name}</span>
+                    <span className="text-[13px] font-semibold text-ink">{sh.name}</span>
                     <span className="text-[12px] text-ink-2 tabular-nums">
-                      {empty ? `0 match (of ${f.all.length})` : `${f.rows.length}${f.rows.length === f.all.length ? '' : ` of ${f.all.length}`} ${f.all.length === 1 ? 'item' : 'items'}`}
+                      {empty ? `0 match (of ${sh.all.length})` : `${sh.rows.length}${sh.rows.length === sh.all.length ? '' : ` of ${sh.all.length}`} ${sh.all.length === 1 ? 'item' : 'items'}`}
                     </span>
                     <span className="text-[12px] text-ink-3 tabular-nums sm:ml-auto">
-                      {decided}/{f.all.length} decided · {scanned} scanned · {tagged} tagged
+                      {decided}/{sh.all.length} decided · {captured} captured · {tagged} tagged
                     </span>
                   </button>
                   {open && !empty ? <div className="border-t border-line">{gridBox}</div> : null}
@@ -377,21 +449,49 @@ export function ItemsGrid({ lotId }: { lotId: string }) {
           lotId={lotId}
           onClose={() => {
             setShowAdd(false);
-            void queryClient.invalidateQueries({ queryKey: queryKeys.lots.itemsGrid(lotId) });
+            refresh();
           }}
         />
       ) : null}
-      {editing ? (
-        <ItemEditDialog
-          item={editing}
-          canDetails={canDetails}
-          canDecide={canDecide}
-          physical={physicalItems}
-          conditions={conditionItems}
-          reasons={reasonItems}
-          pending={save.isPending}
-          onSave={(set) => save.mutate({ itemIds: [editing.id], set }, { onSuccess: () => setEditing(null) })}
-          onClose={() => setEditing(null)}
+      {showImport ? <ImportDialog lotId={lotId} onClose={() => setShowImport(false)} onDone={refresh} /> : null}
+      {showAddColumn ? (
+        <AddColumnDialog
+          pending={columns.isPending}
+          error={columnError}
+          onAdd={(add) => columns.mutate({ add })}
+          onClose={() => setShowAddColumn(false)}
+        />
+      ) : null}
+      {codeFor ? (
+        <ItemCodeDialog
+          lotId={lotId}
+          item={codeFor}
+          sheetName={sheets.find((x) => x.lineIndex === codeFor.lineIndex)?.name ?? 'Sheet'}
+          sheetItems={sheets.find((x) => x.lineIndex === codeFor.lineIndex)?.all ?? []}
+          onClose={() => setCodeFor(null)}
+          onDone={refresh}
+        />
+      ) : null}
+      {duplicateFor ? (
+        <DuplicateDialog
+          lotId={lotId}
+          item={duplicateFor.item}
+          otherCode={duplicateFor.code}
+          onClose={() => setDuplicateFor(null)}
+          onDone={() => {
+            refresh();
+            void queryClient.invalidateQueries({ queryKey: queryKeys.lots.detail(lotId) });
+          }}
+        />
+      ) : null}
+      {deleteColumn ? (
+        <ConfirmDialog
+          title="Delete this column?"
+          body={`“${deleteColumn.label}” and everything typed in it will be removed from this lot's Excel.`}
+          confirmLabel="Delete column"
+          pending={columns.isPending}
+          onConfirm={() => columns.mutate({ removeKey: deleteColumn.key })}
+          onClose={() => setDeleteColumn(null)}
         />
       ) : null}
     </Panel>
@@ -405,8 +505,6 @@ function BulkBar({
   count,
   canDecide,
   physical,
-  conditions,
-  reasons,
   pending,
   onApply,
   onClear,
@@ -414,8 +512,6 @@ function BulkBar({
   count: number;
   canDecide: boolean;
   physical: Opt[];
-  conditions: Opt[];
-  reasons: Opt[];
   pending: boolean;
   onApply: (set: ItemsBulkSet) => void;
   onClear: () => void;
@@ -432,16 +528,9 @@ function BulkBar({
       </Select>
     </Field>
   );
-  const refSel = (k: string, label: string, opts: Opt[]) => (
+  const txt = (k: string, label: string) => (
     <Field label={label}>
-      <Select value={v[k] ?? ''} onChange={set(k)} aria-label={`${label} for selected items`}>
-        <option value="">No change</option>
-        {opts.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </Select>
+      <TextInput value={v[k] ?? ''} onChange={set(k)} placeholder="No change" />
     </Field>
   );
 
@@ -449,23 +538,16 @@ function BulkBar({
     const out: Record<string, unknown> = {};
     for (const [k, raw] of Object.entries(v)) {
       if (raw === '') continue;
-      if (['existsInMls', 'newCopyIsBetter', 'conditionUsable', 'significant'].includes(k)) {
-        out[k] = raw === '__clear' ? null : raw === 'Yes';
-      } else if (k === 'year') {
-        out[k] = Number(raw);
-      } else {
-        out[k] = raw;
-      }
+      if (['digital', 'redigital', 'discard'].includes(k)) out[k] = raw === '__clear' ? null : raw === 'Yes';
+      else if (k === 'logged') out[k] = raw === 'Yes';
+      else out[k] = raw;
     }
     if (Object.keys(out).length === 0) return;
     onApply(out as ItemsBulkSet);
   };
 
   return (
-    <section
-      aria-label="Bulk edit selected items"
-      className="rounded-[8px] border border-accent bg-accent-soft p-3 flex flex-col gap-3"
-    >
+    <section aria-label="Bulk edit selected items" className="rounded-[8px] border border-accent bg-accent-soft p-3 flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[13px] font-semibold text-ink">
           Set for {count} selected {count === 1 ? 'item' : 'items'}
@@ -478,33 +560,38 @@ function BulkBar({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {canDecide ? (
           <>
-            {triSel('existsInMls', 'In MLS?')}
-            {triSel('newCopyIsBetter', 'New copy better?')}
-            {triSel('conditionUsable', 'Usable?')}
-            {triSel('significant', 'Significant?')}
-            <Field label="Return / discard">
-              <Select value={v.disposition ?? ''} onChange={set('disposition')} aria-label="Return or discard for selected items">
-                <option value="">No change</option>
-                <option value="return">Return</option>
-                <option value="discard">Discard</option>
-              </Select>
-            </Field>
-            {refSel('reason', 'Reason', reasons)}
+            {triSel('digital', 'Digital')}
+            {triSel('redigital', 'Redigital')}
+            {triSel('discard', 'Discard')}
           </>
         ) : null}
-        {refSel('physicalSource', 'Physical source', physical)}
-        {refSel('itemCondition', 'Condition', conditions)}
-        <Field label="Place">
-          <TextInput value={v.place ?? ''} onChange={set('place')} placeholder="No change" />
+        <Field label="Phy source">
+          <Select value={v.physicalSource ?? ''} onChange={set('physicalSource')} aria-label="Phy source for selected items">
+            <option value="">No change</option>
+            {physical.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
         </Field>
-        <Field label="Event">
-          <TextInput value={v.event ?? ''} onChange={set('event')} placeholder="No change" />
+        <Field label="Return / discard">
+          <Select value={v.disposition ?? ''} onChange={set('disposition')} aria-label="Return or discard for selected items">
+            <option value="">No change</option>
+            <option value="return">Return</option>
+            <option value="discard">Discard</option>
+          </Select>
         </Field>
-        <Field label="Year">
-          <TextInput value={v.year ?? ''} onChange={set('year')} placeholder="No change" inputMode="numeric" />
-        </Field>
-        <Field label="Month">
-          <TextInput value={v.month ?? ''} onChange={set('month')} placeholder="No change" />
+        {txt('place', 'Place')}
+        {txt('senderCode', "Sender's code")}
+        {txt('digitalSource', 'Dig source')}
+        {txt('phyStorageLoc', 'Phy storage loc.')}
+        <Field label="Logging status">
+          <Select value={v.logged ?? ''} onChange={set('logged')} aria-label="Logging status for selected items">
+            <option value="">No change</option>
+            <option value="Yes">Logged</option>
+            <option value="No">Not logged</option>
+          </Select>
         </Field>
       </div>
       <div>

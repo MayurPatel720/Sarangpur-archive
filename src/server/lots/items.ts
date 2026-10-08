@@ -2,6 +2,7 @@ import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { LotItem } from '@/models/LotItem';
 import { allocateItemCodes } from '@/server/codes';
+import { parseItemCodeParts } from '@/lib/item-code';
 import { namingPrefix } from '@/server/lots/mutations';
 import { withAudit, auditActor } from '@/server/audit';
 import { assertActiveReferenceValue } from '@/server/reference';
@@ -66,14 +67,22 @@ export async function createItem(
         }
       }
 
-      // Same scheme as intake: the lot's primary sub-type prefix + origin (e.g. MDV-AHM-0021-R-000).
+      // Continue the pair already used by this sheet (the user may have changed it from
+      // the default); an empty sheet falls back to sub-type prefix + origin.
+      const sibling = (await LotItem.findOne({ lot: lot._id, lineIndex: 0 })
+        .sort({ sortOrder: -1 })
+        .select('code sortOrder')
+        .session(session)
+        .lean()) as { code: string; sortOrder?: number } | null;
+      const parts = sibling ? parseItemCodeParts(sibling.code) : null;
       const [code] = await allocateItemCodes(
-        await namingPrefix(lot.format, lot.mediaSubtype),
-        lot.originSource ?? 'OTH',
+        parts?.abbr1 ?? (await namingPrefix(lot.format, lot.mediaSubtype)),
+        parts?.abbr2 ?? lot.originSource ?? 'OTH',
         1,
         session,
       );
       if (!code) throw new HttpError(500, 'Could not allocate an item code.');
+      const sortOrder = (sibling?.sortOrder ?? -1) + 1;
       let itemId = '';
       try {
         const [item] = await LotItem.create(
@@ -83,6 +92,7 @@ export async function createItem(
               code,
               groupNo,
               itemNo,
+              sortOrder,
               // Manual entries attach to the primary media line (index 0):
               // per-line breakdowns stay intake-defined, totals stay truthful.
               lineIndex: 0,

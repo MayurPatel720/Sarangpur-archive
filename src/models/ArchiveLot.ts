@@ -96,6 +96,27 @@ const archiveLotSchema = new Schema(
       default: [],
     },
 
+    /**
+     * The lot's Excel (Items tab) is shared by everyone who opens the lot: columns a
+     * user hid, and columns a user added. Never carried over to other lots.
+     * `customColumns[].dept` is one of the four Excel departments.
+     */
+    hiddenColumns: { type: [String], default: [] },
+    customColumns: {
+      type: [
+        new Schema(
+          {
+            key: { type: String, required: true },
+            label: { type: String, required: true, trim: true },
+            type: { type: String, enum: ['text', 'number', 'yesno', 'date'], required: true },
+            dept: { type: String, enum: ['details', 'decision', 'storage', 'logging'], required: true },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
+
     conditionNotes: { type: String, trim: true },
     conditionPhotoUrl: { type: String, trim: true },
     reasonForSending: { type: String, trim: true },

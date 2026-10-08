@@ -100,6 +100,7 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
     items: items([
       { value: 'physical', label: 'Physical' },
       { value: 'digital', label: 'Digital' },
+      { value: 'both', label: 'Physical + Digital' },
     ]),
   },
   {

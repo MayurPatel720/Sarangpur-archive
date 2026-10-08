@@ -8,210 +8,301 @@ import type {
   GridApi,
   GridReadyEvent,
   ICellRendererParams,
+  RowDragEndEvent,
   SelectionChangedEvent,
   ValueSetterParams,
 } from 'ag-grid-community';
 import { AgGridReact, agGridTheme } from '@/components/ui/AgGridShell';
-import { Badge } from '@/components/ui/primitives';
-import { detailColumnsFor, type DetailColumnKey } from '@/lib/item-columns';
+import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
+import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
+import { mediaTypeText } from '@/lib/item-cells';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
+import { GridHeader, type GridHeaderParams } from './GridHeader';
 
 /**
- * One AG Grid for the items of one media-subtype family. Owns its own select-all,
- * sort and column widths; ItemsGrid owns filters, column-group toggles, saving and
- * the bulk bar, and passes them in.
+ * One AG Grid = one sheet of the lot's Excel (one media type). Columns come from
+ * src/lib/item-columns.ts, grouped under their department. ItemsGrid owns filters, the
+ * hidden-column list, saving and the dialogs, and passes them in.
  */
 
-export type ColumnGroup = 'details' | 'decision' | 'digitization';
+type Spec = ColumnSpec & { custom?: CustomColumn };
 type Tri = boolean | null;
 type Opt = { value: string; label: string };
 const TRI_VALUES = ['Yes', 'No', ''] as const;
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
 const triParse = (s: unknown): Tri => (s === 'Yes' ? true : s === 'No' ? false : null);
 
-function ResultCell({ data }: ICellRendererParams<GridItem>) {
-  if (!data) return null;
-  if (data.result === 'archive') return <Badge severity="good">Archive</Badge>;
-  if (data.result === 'return') return <Badge severity="info">Return</Badge>;
-  if (data.result === 'discard') return <Badge severity="critical">Discard</Badge>;
-  if (data.verdict === 'return_or_discard') return <Badge severity="warning">Return or discard?</Badge>;
-  return <span className="text-ink-4 text-[12px]">Undecided</span>;
-}
-
 export function ItemFamilyGrid({
-  family,
+  lineIndex,
   rows,
-  hidden,
+  columns,
   canDetails,
   canDecide,
-  narrow,
+  canReorder,
   physical,
-  conditions,
-  reasons,
   height,
-  onEdit,
+  onOpenCode,
+  onDuplicate,
+  onHide,
+  onDeleteColumn,
+  onInvalid,
   onSave,
+  onReorder,
   onSelectionChange,
   onApi,
 }: {
-  family: string;
+  lineIndex: number;
   rows: GridItem[];
-  hidden: Record<ColumnGroup, boolean>;
+  /** Visible columns only, in department order. */
+  columns: Spec[];
   canDetails: boolean;
   canDecide: boolean;
-  narrow: boolean;
+  canReorder: boolean;
   physical: Opt[];
-  conditions: Opt[];
-  reasons: Opt[];
   /** CSS height of the grid box. */
   height: string;
-  onEdit: (item: GridItem) => void;
+  onOpenCode: (item: GridItem) => void;
+  onDuplicate: (item: GridItem, otherCode: string) => void;
+  onHide: (columnId: string) => void;
+  onDeleteColumn: (column: CustomColumn) => void;
+  onInvalid: (message: string) => void;
   onSave: (itemIds: string[], set: ItemsBulkSet) => void;
-  onSelectionChange: (family: string, ids: string[]) => void;
-  onApi: (family: string, api: GridApi<GridItem> | null) => void;
+  onReorder: (lineIndex: number, orderedIds: string[]) => void;
+  onSelectionChange: (sheet: number, ids: string[]) => void;
+  onApi: (sheet: number, api: GridApi<GridItem> | null) => void;
 }) {
+  const specById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
+
   const columnDefs = useMemo<(ColDef<GridItem> | ColGroupDef<GridItem>)[]>(() => {
     const refLabel = (list: Opt[], v: string | null) => (v ? (list.find((i) => i.value === v)?.label ?? v) : '');
-    const text = (field: keyof GridItem, headerName: string, width = 160, extra: Partial<ColDef<GridItem>> = {}): ColDef<GridItem> => ({
-      field,
-      headerName,
-      width,
-      editable: canDetails,
-      cellEditor: 'agTextCellEditor',
-      ...extra,
-    });
-    const refSelect = (field: 'physicalSource' | 'itemCondition', headerName: string, list: Opt[]): ColDef<GridItem> => ({
-      field,
-      headerName,
-      width: 170,
-      editable: canDetails,
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: ['', ...list.map((i) => i.value)] },
-      valueFormatter: (p) => refLabel(list, p.value as string | null),
-      refData: Object.fromEntries(list.map((i) => [i.value, i.label])),
-    });
-    const tri = (field: 'existsInMls' | 'newCopyIsBetter' | 'conditionUsable' | 'significant', headerName: string, extra: Partial<ColDef<GridItem>> = {}): ColDef<GridItem> => ({
-      colId: field,
-      headerName,
-      width: 128,
-      valueGetter: (p) => triText((p.data?.[field] ?? null) as Tri),
-      valueSetter: (p: ValueSetterParams<GridItem>) => {
-        if (!p.data) return false;
-        (p.data as Record<string, unknown>)[field] = triParse(p.newValue);
-        return true;
-      },
-      editable: canDecide,
-      cellEditor: 'agSelectCellEditor',
-      cellEditorParams: { values: [...TRI_VALUES] },
-      ...extra,
+
+    const header = (spec: Spec): Partial<ColDef<GridItem>> => ({
+      headerName: spec.label,
+      headerComponent: GridHeader,
+      headerComponentParams: {
+        hideable: !ALWAYS_VISIBLE.has(spec.id),
+        onHide: () => onHide(spec.id),
+        ...(spec.custom ? { onDelete: () => onDeleteColumn(spec.custom!) } : {}),
+        hint: spec.hint,
+      } satisfies Partial<GridHeaderParams>,
     });
 
-    const detailDefs: Record<DetailColumnKey, ColDef<GridItem>> = {
-      nameOnCase: text('nameOnCase', 'Name on case', 180),
-      description: text('description', 'Description', 240, { cellEditor: 'agLargeTextCellEditor', cellEditorPopup: true, cellEditorParams: { maxLength: 4000, rows: 6, cols: 50 } }),
-      year: {
-        field: 'year',
-        headerName: 'Year',
-        width: 96,
-        editable: canDetails,
-        cellEditor: 'agNumberCellEditor',
-        cellEditorParams: { min: 1800, max: 2200, precision: 0 },
+    const triGetterSetter = (get: (d: GridItem) => Tri, set: (d: GridItem, v: Tri) => void): Partial<ColDef<GridItem>> => ({
+      valueGetter: (p) => (p.data ? triText(get(p.data)) : ''),
+      valueSetter: (p: ValueSetterParams<GridItem>) => {
+        if (!p.data) return false;
+        set(p.data, triParse(p.newValue));
+        return true;
       },
-      month: text('month', 'Month', 96),
-      place: text('place', 'Place', 150),
-      event: text('event', 'Event', 180),
-      people: text('people', 'People', 180),
-      physicalSource: refSelect('physicalSource', 'Physical source', physical),
-      itemCondition: refSelect('itemCondition', 'Condition', conditions),
-      remarks: text('remarks', 'Remarks', 200),
+      cellEditor: 'agSelectCellEditor',
+      cellEditorParams: { values: [...TRI_VALUES] },
+    });
+
+    const build = (spec: Spec): ColDef<GridItem> => {
+      const base: ColDef<GridItem> = { colId: spec.id, width: spec.width, ...header(spec) };
+      const textEdit = (): ColDef<GridItem> => ({
+        ...base,
+        field: (spec.field ?? spec.id) as keyof GridItem & string,
+        editable: canDetails,
+        cellEditor: 'agTextCellEditor',
+      });
+
+      if (spec.custom) {
+        const key = spec.custom.key;
+        const type = spec.custom.type;
+        const read = (d: GridItem) => d.custom[key] ?? null;
+        if (type === 'yesno') {
+          return {
+            ...base,
+            editable: canDetails,
+            ...triGetterSetter(
+              (d) => (typeof read(d) === 'boolean' ? (read(d) as boolean) : null),
+              (d, v) => {
+                d.custom = { ...d.custom, [key]: v };
+              },
+            ),
+          };
+        }
+        return {
+          ...base,
+          editable: canDetails,
+          cellEditor: 'agTextCellEditor',
+          valueGetter: (p) => {
+            const v = p.data ? read(p.data) : null;
+            if (v === null || v === undefined) return '';
+            return type === 'date' ? isoDayToDmy(String(v)) : String(v);
+          },
+          valueSetter: (p: ValueSetterParams<GridItem>) => {
+            if (!p.data) return false;
+            const text = String(p.newValue ?? '').trim();
+            if (type === 'date' && text && !parseDateRange(text).ok) {
+              onInvalid('Use dd/mm/yyyy.');
+              return false;
+            }
+            if (type === 'number' && text && !Number.isFinite(Number(text))) {
+              onInvalid('Must be a number.');
+              return false;
+            }
+            p.data.custom = { ...p.data.custom, [key]: text === '' ? null : type === 'number' ? Number(text) : text };
+            return true;
+          },
+        };
+      }
+
+      switch (spec.kind) {
+        case 'readonly':
+          return { ...base, valueGetter: (p) => (p.data ? mediaTypeText(p.data) : '') };
+        case 'code':
+          return {
+            ...base,
+            field: 'code',
+            pinned: 'left',
+            cellClass: 'font-mono',
+            tooltipValueGetter: () => 'Click to change the code',
+            onCellClicked: (p) => p.data && onOpenCode(p.data),
+            cellRenderer: (p: ICellRendererParams<GridItem>) => (
+              <button type="button" className="bg-transparent border-0 p-0 text-accent cursor-pointer font-mono text-[12.5px]">
+                {p.value as string}
+              </button>
+            ),
+          };
+        case 'dateRange':
+        case 'date':
+          return {
+            ...textEdit(),
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              const text = String(p.newValue ?? '').trim();
+              if (text && !parseDateRange(text).ok) {
+                onInvalid('Use dd/mm/yyyy or dd/mm/yyyy - dd/mm/yyyy.');
+                return false;
+              }
+              (p.data as Record<string, unknown>)[spec.field!] = text;
+              return true;
+            },
+          };
+        case 'ref':
+          return {
+            ...textEdit(),
+            cellEditor: 'agSelectCellEditor',
+            cellEditorParams: { values: ['', ...physical.map((i) => i.value)] },
+            valueFormatter: (p) => refLabel(physical, p.value as string | null),
+            refData: Object.fromEntries(physical.map((i) => [i.value, i.label])),
+          };
+        case 'yesno': {
+          const f = spec.field as 'digital' | 'redigital' | 'discard';
+          return {
+            ...base,
+            editable: canDecide,
+            ...triGetterSetter(
+              (d) => d[f],
+              (d, v) => {
+                d[f] = v;
+              },
+            ),
+          };
+        }
+        case 'flag': {
+          const f = spec.field as 'captured' | 'taggedInMls' | 'logged';
+          return {
+            ...base,
+            editable: canDetails,
+            valueGetter: (p) => (p.data?.[f] ? 'Yes' : ''),
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              p.data[f] = p.newValue === 'Yes';
+              return true;
+            },
+            cellEditor: 'agSelectCellEditor',
+            cellEditorParams: { values: ['Yes', ''] },
+          };
+        }
+        case 'disposition':
+          return {
+            ...base,
+            editable: (p) => canDetails && p.data?.dispositionStatus !== 'done',
+            valueGetter: (p) => (p.data?.disposition === 'return' ? 'Return' : p.data?.disposition === 'discard' ? 'Discard' : ''),
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              p.data.disposition = p.newValue === 'Return' ? 'return' : p.newValue === 'Discard' ? 'discard' : null;
+              return true;
+            },
+            cellEditor: 'agSelectCellEditor',
+            cellEditorParams: { values: ['', 'Return', 'Discard'] },
+          };
+        case 'duplicate':
+          return {
+            ...base,
+            cellClass: 'font-mono',
+            editable: (p) => canDetails && !p.data?.duplicateCode,
+            cellEditor: 'agTextCellEditor',
+            valueGetter: (p) =>
+              p.data?.duplicateCode
+                ? p.data.duplicateCode
+                : p.data?.duplicatedBy.length
+                  ? `Duplicated by ${p.data.duplicatedBy.join(', ')}`
+                  : '',
+            // Typing a code never edits the cell — it opens the "which is the main one?" dialog.
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              const text = String(p.newValue ?? '').trim();
+              if (p.data && text) onDuplicate(p.data, text);
+              return false;
+            },
+          };
+        default:
+          return textEdit();
+      }
     };
-    const details = detailColumnsFor(family).map((k) => ({ ...detailDefs[k], hide: hidden.details }));
+
+    // The Archive code is pinned, so it sits outside the department bands (AG Grid would
+    // otherwise split "Details" into two bands at the pin boundary).
+    const codeCol = columns.find((c) => c.kind === 'code');
+    const groups: ColGroupDef<GridItem>[] = DEPARTMENTS.map((d) => ({
+      headerName: deptLabel(d.id),
+      children: columns.filter((c) => c.dept === d.id && c.kind !== 'code').map(build),
+    })).filter((g) => g.children.length > 0);
 
     return [
       {
-        field: 'code',
-        headerName: 'Item code',
-        width: narrow ? 150 : 190,
+        colId: 'rowNo',
+        headerName: '#',
+        width: 78,
         pinned: 'left',
-        cellClass: 'font-mono',
-        tooltipValueGetter: () => 'Open the full item form',
-        onCellClicked: (p) => p.data && onEdit(p.data),
-        cellRenderer: (p: ICellRendererParams<GridItem>) => (
-          <button type="button" className="bg-transparent border-0 p-0 text-accent cursor-pointer font-mono text-[12.5px]">
-            {p.value as string}
-          </button>
-        ),
+        suppressMovable: true,
+        sortable: false,
+        resizable: false,
+        rowDrag: canReorder,
+        valueGetter: (p) => (p.node?.rowIndex ?? 0) + 1,
+        cellClass: 'text-ink-4 text-[12px]',
+        headerClass: 'text-ink-4',
       },
-      {
-        ...text('name', 'Name / title *', narrow ? 170 : 240),
-        pinned: narrow ? undefined : 'left',
-        cellClassRules: { 'ag-cell-missing': (p) => !p.value },
-      },
-      {
-        field: 'subtypeLabel',
-        headerName: 'Media type',
-        width: 170,
-        valueGetter: (p) => (p.data ? `${p.data.format} · ${p.data.subtypeLabel}` : ''),
-      },
-      { headerName: 'Details', children: details },
-      {
-        headerName: 'Decision',
-        children: ([
-          tri('existsInMls', 'In MLS?'),
-          tri('newCopyIsBetter', 'New copy better?', {
-            width: 150,
-            editable: (p) => canDecide && p.data?.existsInMls === true,
-          }),
-          tri('conditionUsable', 'Usable?'),
-          tri('significant', 'Significant?'),
-          { colId: 'result', headerName: 'Result', width: 170, cellRenderer: ResultCell },
-          {
-            field: 'disposition',
-            headerName: 'Return / discard',
-            width: 150,
-            editable: (p) => canDecide && p.data?.verdict === 'return_or_discard',
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['', 'return', 'discard'] },
-            valueFormatter: (p) => (p.value === 'return' ? 'Return' : p.value === 'discard' ? 'Discard' : ''),
-          },
-          {
-            field: 'reason',
-            headerName: 'Reason',
-            width: 220,
-            editable: (p) => canDecide && p.data?.verdict === 'return_or_discard',
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['', ...reasons.map((i) => i.value)] },
-            valueFormatter: (p) => refLabel(reasons, p.value as string | null),
-          },
-        ] as ColDef<GridItem>[]).map((c) => ({ ...c, hide: hidden.decision })),
-      },
-      {
-        headerName: 'Digitization',
-        children: ([
-          {
-            field: 'captureStatus',
-            headerName: 'Capture',
-            width: 120,
-            valueFormatter: (p) => (p.value === 'captured' ? 'Captured' : p.value === 'missing' ? 'Missing' : 'Not started'),
-          },
-          { field: 'digitalSource', headerName: 'Digital source', width: 150 },
-          { field: 'fileName', headerName: 'File', width: 220 },
-          { field: 'taggedInMls', headerName: 'MLS tagged', width: 110, valueFormatter: (p) => (p.value ? 'Yes' : '–') },
-          { field: 'mlsDuplicateOf', headerName: 'Duplicate of', width: 160 },
-        ] as ColDef<GridItem>[]).map((c) => ({ ...c, hide: hidden.digitization })),
-      },
+      ...(codeCol ? [build(codeCol)] : []),
+      ...groups,
     ];
-  }, [family, canDetails, canDecide, narrow, hidden, physical, conditions, reasons, onEdit]);
+  }, [columns, canDetails, canDecide, canReorder, physical, onOpenCode, onDuplicate, onHide, onDeleteColumn, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;
-    const colId = e.column.getColId();
-    const field = (colId === 'subtypeLabel' ? null : colId) as keyof ItemsBulkSet | null;
+    const spec = specById.get(e.column.getColId());
+    if (!spec) return;
+    const id = e.data.id;
+    if (spec.custom) {
+      onSave([id], { custom: { [spec.custom.key]: e.data.custom[spec.custom.key] ?? null } });
+      return;
+    }
+    const field = spec.field as keyof ItemsBulkSet | undefined;
     if (!field) return;
     let value: unknown = (e.data as Record<string, unknown>)[field];
     if (typeof value === 'string' && value.trim() === '') value = null;
-    if (field === 'year' && value !== null) value = Number(value);
-    onSave([e.data.id], { [field]: value } as ItemsBulkSet);
+    onSave([id], { [field]: value } as ItemsBulkSet);
+  };
+
+  const onRowDragEnd = (e: RowDragEndEvent<GridItem>) => {
+    const ids: string[] = [];
+    e.api.forEachNode((n) => {
+      if (n.data) ids.push(n.data.id);
+    });
+    onReorder(lineIndex, ids);
   };
 
   return (
@@ -220,16 +311,20 @@ export function ItemFamilyGrid({
         theme={agGridTheme}
         rowData={rows}
         columnDefs={columnDefs}
+        defaultColDef={{ sortable: false, suppressMovable: true, resizable: true }}
         getRowId={(p) => p.data.id}
         rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
-        selectionColumnDef={{ pinned: 'left', width: 48 }}
-        onGridReady={(e: GridReadyEvent<GridItem>) => onApi(family, e.api)}
+        selectionColumnDef={{ pinned: 'left', width: 44 }}
+        rowDragManaged={canReorder}
+        animateRows={canReorder}
+        onRowDragEnd={onRowDragEnd}
+        onGridReady={(e: GridReadyEvent<GridItem>) => onApi(lineIndex, e.api)}
         onGridPreDestroyed={() => {
-          onApi(family, null);
-          onSelectionChange(family, []);
+          onApi(lineIndex, null);
+          onSelectionChange(lineIndex, []);
         }}
         onSelectionChanged={(e: SelectionChangedEvent<GridItem>) =>
-          onSelectionChange(family, e.api.getSelectedRows().map((r) => r.id))
+          onSelectionChange(lineIndex, e.api.getSelectedRows().map((r) => r.id))
         }
         onCellValueChanged={onCellValueChanged}
         singleClickEdit

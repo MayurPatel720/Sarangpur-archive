@@ -73,40 +73,63 @@ export function formatItemCode(prefix: string, origin: string, seq: number, kind
 }
 
 /**
- * Reserves `count` consecutive item numbers for `prefix`+`origin` and returns the codes.
- * First use per key seeds the counter past any codes written outside it (the dataset
- * seed writes codes directly); the reserve itself is one atomic $inc by `count`.
+ * Item-code numbers are NOT counted in a counter document: the running number for an
+ * abbreviation pair (`ALB-surat`) is simply "the highest number in use + 1", read from
+ * the items themselves. That makes numbers the user frees (a re-coded sheet, a duplicate
+ * that moved to another number) available again, and numbers the user jumps over
+ * (26 → 30) stay free until someone types them. The unique index on `code` is the
+ * safety net if two writers race for the same number (surfaces as a 409).
+ */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Highest number used by any code (R or D) of the pair, 0 when the pair is unused. */
+export async function maxItemNumber(abbr1: string, abbr2: string, session?: ClientSession): Promise<number> {
+  await connectToDatabase();
+  const [peak] = await LotItem.aggregate<{ max: number }>([
+    { $match: { code: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
+    { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$code', '-'] }, 2] } } } },
+    { $group: { _id: null, max: { $max: '$n' } } },
+  ]).session(session ?? null);
+  return peak?.max ?? 0;
+}
+
+/** The numbers (any kind) of the pair that fall in `[from, to]` and are already taken. */
+export async function usedItemNumbers(
+  abbr1: string,
+  abbr2: string,
+  from: number,
+  to: number,
+  session?: ClientSession,
+): Promise<Set<number>> {
+  await connectToDatabase();
+  const rows = await LotItem.aggregate<{ n: number }>([
+    { $match: { code: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
+    { $project: { _id: 0, n: { $toInt: { $arrayElemAt: [{ $split: ['$code', '-'] }, 2] } } } },
+    { $match: { n: { $gte: from, $lte: to } } },
+  ]).session(session ?? null);
+  return new Set(rows.map((r) => r.n));
+}
+
+/**
+ * Hands out `count` consecutive numbers for the pair, starting at `startAt` when given
+ * (caller has checked they are free) or after the highest number in use. `pending`
+ * carries numbers already handed out earlier in the same unsaved batch (several media
+ * lines of one intake may share a pair).
  */
 export async function allocateItemCodes(
-  prefix: string,
-  origin: string,
+  abbr1: string,
+  abbr2: string,
   count: number,
   session?: ClientSession,
+  pending?: Map<string, number>,
+  startAt?: number,
 ): Promise<string[]> {
   if (count <= 0) return [];
-  await connectToDatabase();
-  const key = `itemCode:${prefix}-${origin}`;
-  const collection = ArchiveLot.db.collection<CounterDoc>('counters');
-  const sess = session ? { session } : {};
-
-  const existing = await collection.findOne({ _id: key }, sess);
-  if (!existing) {
-    const [peak] = await LotItem.aggregate<{ max: number }>([
-      { $match: { code: { $regex: `^${prefix}-${origin}-\\d+-[RD]-\\d{3}$` } } },
-      { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$code', '-'] }, 2] } } } },
-      { $group: { _id: null, max: { $max: '$n' } } },
-    ]).session(session ?? null);
-    await collection.updateOne({ _id: key }, { $set: { seq: peak?.max ?? 0 } }, { upsert: true, ...sess });
-  }
-
-  const doc = await collection.findOneAndUpdate(
-    { _id: key },
-    { $inc: { seq: count } },
-    { upsert: true, returnDocument: 'after', ...sess },
-  );
-  if (!doc || typeof doc.seq !== 'number') throw new Error(`Counter '${key}' did not return a sequence.`);
-  const first = doc.seq - count + 1;
-  return Array.from({ length: count }, (_, i) => formatItemCode(prefix, origin, first + i));
+  const key = `${abbr1}-${abbr2}`;
+  const base = Math.max(await maxItemNumber(abbr1, abbr2, session), pending?.get(key) ?? 0);
+  const first = startAt ?? base + 1;
+  pending?.set(key, Math.max(base, first + count - 1));
+  return Array.from({ length: count }, (_, i) => formatItemCode(abbr1, abbr2, first + i));
 }
 
 /** Group / position of the n-th item of a lot (0-based), 36 items per group. */

@@ -75,13 +75,25 @@ export const FORMAT_LABELS: Record<Format, string> = {
   prasadi: 'Prasadi',
 };
 
-export const DATA_TYPES = ['physical', 'digital'] as const;
+/** `both` = the media exists as a physical item AND as a digital copy ("Physical + Digital"). */
+export const DATA_TYPES = ['physical', 'digital', 'both'] as const;
 export type DataType = (typeof DATA_TYPES)[number];
 
 export const DATA_TYPE_LABELS: Record<DataType, string> = {
   physical: 'Physical',
   digital: 'Digital',
+  both: 'Physical + Digital',
 };
+
+export const dataTypeLabel = (value: string): string => DATA_TYPE_LABELS[value as DataType] ?? value;
+
+/**
+ * Data types a filter on `value` should match. "Physical" also matches "Physical + Digital"
+ * (it IS physical), and likewise "Digital"; "both" matches only itself.
+ */
+export function dataTypesMatching(value: string): string[] {
+  return value === 'physical' || value === 'digital' ? [value, 'both'] : [value];
+}
 
 export const SCAN_STATUSES = ['pending', 'in_progress', 'scanned', 'cannot_scan'] as const;
 export type ScanStatus = (typeof SCAN_STATUSES)[number];
@@ -158,6 +170,11 @@ export const ACTIVITY_KINDS = [
   'item_created',
   'lot_assigned',
   'items_updated',
+  'item_code_changed',
+  'item_duplicate_marked',
+  'items_reordered',
+  'items_imported',
+  'columns_changed',
   'task_created',
   'task_updated',
   'task_reassigned',
@@ -200,6 +217,11 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   item_created: 'neutral',
   lot_assigned: 'info',
   items_updated: 'neutral',
+  item_code_changed: 'info',
+  item_duplicate_marked: 'warning',
+  items_reordered: 'neutral',
+  items_imported: 'info',
+  columns_changed: 'neutral',
   task_created: 'info',
   task_updated: 'neutral',
   task_reassigned: 'info',

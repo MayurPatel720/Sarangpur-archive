@@ -94,11 +94,29 @@ import {
   itemDispositionDoneResponseSchema,
   itemDispositionListSchema,
   itemsBulkResponseSchema,
+  codeInfoResponseSchema,
+  columnsResponseSchema,
+  itemDuplicateResponseSchema,
+  importResponseSchema,
+  itemNumberResponseSchema,
+  itemOrderResponseSchema,
+  sheetCodeResponseSchema,
   itemsGridResponseSchema,
   type ItemDispositionDoneBody,
   type ItemDispositionList,
   type ItemsBulkBody,
   type ItemsBulkResponse,
+  type CodeInfoResponse,
+  type ColumnsBody,
+  type ColumnsResponse,
+  type ItemDuplicateBody,
+  type ItemDuplicateResponse,
+  type ImportBody,
+  type ImportResponse,
+  type ItemNumberBody,
+  type ItemOrderBody,
+  type SheetCodeBody,
+  type SheetCodeResponse,
   type ItemsGridResponse,
 } from '@/types/items';
 import {
@@ -479,6 +497,23 @@ export const itemsGridApi = {
       body,
       itemsBulkResponseSchema,
     ),
+  codeInfo: (lotId: string, abbr1: string, abbr2: string) =>
+    getJson<CodeInfoResponse>(
+      `/api/lots/${encodeURIComponent(lotId)}/items/codes?${new URLSearchParams({ abbr1, abbr2 })}`,
+      codeInfoResponseSchema,
+    ),
+  recodeSheet: (lotId: string, body: SheetCodeBody) =>
+    sendJson<SheetCodeResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/codes`, 'PATCH', body, sheetCodeResponseSchema),
+  setNumber: (lotId: string, body: ItemNumberBody) =>
+    sendJson<{ code: string }>(`/api/lots/${encodeURIComponent(lotId)}/items/code`, 'PATCH', body, itemNumberResponseSchema),
+  markDuplicate: (lotId: string, body: ItemDuplicateBody) =>
+    sendJson<ItemDuplicateResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/duplicate`, 'POST', body, itemDuplicateResponseSchema),
+  reorder: (lotId: string, body: ItemOrderBody) =>
+    sendJson<{ updated: number }>(`/api/lots/${encodeURIComponent(lotId)}/items/order`, 'PATCH', body, itemOrderResponseSchema),
+  columns: (lotId: string, body: ColumnsBody) =>
+    sendJson<ColumnsResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/columns`, 'PATCH', body, columnsResponseSchema),
+  importRows: (lotId: string, body: ImportBody) =>
+    sendJson<ImportResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/import`, 'POST', body, importResponseSchema),
   dispositions: (kind: 'return' | 'discard', status: 'pending' | 'done', page: number, pageSize: number) =>
     getJson<ItemDispositionList>(
       `/api/queues/item-dispositions?${new URLSearchParams({ kind, status, page: String(page), pageSize: String(pageSize) })}`,

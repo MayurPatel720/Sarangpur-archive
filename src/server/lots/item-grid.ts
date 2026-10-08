@@ -3,13 +3,16 @@ import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { connectToDatabase } from '@/lib/mongo';
 import { intakeMissing } from '@/lib/intake-gate';
+import { formatDateRange, isoDayToDmy, parseDateRange } from '@/lib/date-range';
+import { itemResultOf, type ItemAnswers, type Tri } from '@/lib/item-decision';
+import type { ActivityKind } from '@/lib/domain';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem, type LotItemDoc } from '@/models/LotItem';
 import { withAudit, auditActor } from '@/server/audit';
-import { assertActiveReferenceValue, getReferenceList } from '@/server/reference';
-import { mediaSubtypeListKeyAsync, isTerminalStage } from '@/server/lots/queries';
+import { assertActiveReferenceValue } from '@/server/reference';
+import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
+import { getReferenceList } from '@/server/reference';
 import { canWorkLot } from '@/server/lots/access';
-import { computeVerdict } from '@/server/lots/decision-rule';
 import { can } from '@/server/permissions';
 import { finalizeItemDecisions } from '@/server/lots/mutations';
 import type {
@@ -24,130 +27,76 @@ import type {
 } from '@/types/items';
 
 /**
- * The Items grid: per-item details and per-item decisions.
+ * The lot's Excel (Items tab): per-item details, decisions, digitization / storage and
+ * logging. Columns: src/lib/item-columns.ts.
  *
- * Decision answers are three-state (true / false / null). The verdict is computed
- * here with the SAME rule as the lot checklist (`computeVerdict`), one item at a
- * time, with "Significant?" as that item's single significance answer. An item's
- * final result is `archive`, or `return` / `discard` once a disposition is chosen.
+ * Decision (digital / redigital / discard, each Yes / No / unanswered) turns into one
+ * result per item with `itemResultOf`. When the last item of a lot is decided (and the
+ * lot's intake details are complete) the lot is decided automatically via
+ * `finalizeItemDecisions`; after that, capture / MLS / logging ticks move the lot through
+ * its stages (`syncLotStage`).
  *
- * When the last item of a lot gets its final result (and the lot's intake details
- * are complete), the lot is decided automatically via `finalizeItemDecisions`:
- * any archived item → the lot is archived and moves on to digitization with only
- * those items; the rest are queued item by item in Returns / Discards.
+ * `disposition` (Excel "return / discard") is the physical item's final fate and feeds the
+ * Returns / Discards queues. It stays in step with the Decision "discard" answer:
+ * discard = Yes ⇒ Discard, and choosing Discard here answers discard = Yes.
  */
 
-const DECISION_KEYS = [
-  'existsInMls',
-  'newCopyIsBetter',
-  'conditionUsable',
-  'significant',
-  'disposition',
-  'reason',
-] as const;
-const DETAIL_KEYS = [
-  'name',
-  'nameOnCase',
-  'description',
-  'year',
-  'month',
-  'place',
-  'event',
-  'people',
-  'physicalSource',
-  'itemCondition',
-  'remarks',
-] as const;
+const DECISION_KEYS = ['digital', 'redigital', 'discard'] as const;
 
-type Tri = boolean | null;
-interface ItemDecisionState {
-  existsInMls: Tri;
-  newCopyIsBetter: Tri;
-  conditionUsable: Tri;
-  significant: Tri;
-  disposition: 'return' | 'discard' | null;
-}
+/** Plain text columns: grid key → LotItem field. */
+const TEXT_FIELDS: Record<string, string> = {
+  senderCode: 'senderCode',
+  place: 'place',
+  nameOnTape: 'nameOnTape',
+  nameOnCase: 'nameOnCase',
+  physicalSource: 'physicalSource',
+  remarks: 'remarks',
+  digitalSource: 'digitalSource',
+  fileName: 'fileName',
+  phyStorageLoc: 'phyStorageLoc',
+  storageRemark: 'storageRemark',
+  loggerName: 'loggerName',
+};
 
-/** Per-item verdict, or null while any required question is unanswered. */
-export function itemVerdict(d: ItemDecisionState): 'archive' | 'return_or_discard' | null {
-  if (d.existsInMls === null || d.conditionUsable === null || d.significant === null) return null;
-  if (d.existsInMls && d.newCopyIsBetter === null) return null;
-  return computeVerdict({
-    existsInMls: d.existsInMls,
-    newCopyIsBetter: d.newCopyIsBetter ?? undefined,
-    conditionUsable: d.conditionUsable,
-    significanceFlags: [d.significant],
-  });
-}
-
-export function itemResult(
-  verdict: 'archive' | 'return_or_discard' | null,
-  disposition: 'return' | 'discard' | null,
-): 'archive' | 'return' | 'discard' | null {
-  if (verdict === 'archive') return 'archive';
-  if (verdict === 'return_or_discard' && disposition) return disposition;
-  return null;
-}
+/** The grid is read-only once the lot has been returned or discarded. */
+export const gridLocked = (stage: string): boolean => stage === 'returned' || stage === 'discarded';
 
 type ItemLean = LotItemDoc & { _id: Types.ObjectId };
 
-function decisionOf(it: ItemLean): ItemDecisionState & { verdict: 'archive' | 'return_or_discard' | null } {
+function answersOf(it: ItemLean): ItemAnswers {
   const d = (it.decision ?? {}) as Record<string, unknown>;
   return {
-    existsInMls: (d.existsInMls as Tri) ?? null,
-    newCopyIsBetter: (d.newCopyIsBetter as Tri) ?? null,
-    conditionUsable: (d.conditionUsable as Tri) ?? null,
-    significant: (d.significant as Tri) ?? null,
-    disposition: (d.disposition as 'return' | 'discard' | null) ?? null,
-    verdict: (d.verdict as 'archive' | 'return_or_discard' | null) ?? null,
+    digital: (d.digital as Tri) ?? null,
+    redigital: (d.redigital as Tri) ?? null,
+    discard: (d.discard as Tri) ?? null,
   };
 }
 
 async function summarise(lotId: Types.ObjectId): Promise<ItemsSummary> {
-  const [row] = await LotItem.aggregate<{
-    total: number;
-    named: number;
-    archive: number;
-    ret: number;
-    discard: number;
-  }>([
+  const isBool = (path: string) => ({ $in: [{ $ifNull: [path, null] }, [true, false]] });
+  const [row] = await LotItem.aggregate<{ total: number; decided: number; archive: number; discard: number; physical: number }>([
     { $match: { lot: lotId } },
+    {
+      $project: {
+        decided: { $and: [isBool('$decision.digital'), isBool('$decision.redigital'), isBool('$decision.discard')] },
+        digitize: { $or: [{ $eq: ['$decision.digital', true] }, { $eq: ['$decision.redigital', true] }] },
+        discard: { $eq: ['$decision.discard', true] },
+      },
+    },
     {
       $group: {
         _id: null,
         total: { $sum: 1 },
-        named: { $sum: { $cond: [{ $gt: [{ $strLenCP: { $ifNull: ['$name', ''] } }, 0] }, 1, 0] } },
-        archive: { $sum: { $cond: [{ $eq: ['$decision.verdict', 'archive'] }, 1, 0] } },
-        ret: {
-          $sum: {
-            $cond: [
-              { $and: [{ $eq: ['$decision.verdict', 'return_or_discard'] }, { $eq: ['$decision.disposition', 'return'] }] },
-              1,
-              0,
-            ],
-          },
-        },
-        discard: {
-          $sum: {
-            $cond: [
-              { $and: [{ $eq: ['$decision.verdict', 'return_or_discard'] }, { $eq: ['$decision.disposition', 'discard'] }] },
-              1,
-              0,
-            ],
-          },
-        },
+        decided: { $sum: { $cond: ['$decided', 1, 0] } },
+        archive: { $sum: { $cond: [{ $and: ['$decided', '$digitize'] }, 1, 0] } },
+        discard: { $sum: { $cond: [{ $and: ['$decided', { $not: ['$digitize'] }, '$discard'] }, 1, 0] } },
+        physical: { $sum: { $cond: [{ $and: ['$decided', { $not: ['$digitize'] }, { $not: ['$discard'] }] }, 1, 0] } },
       },
     },
   ]);
-  const r = row ?? { total: 0, named: 0, archive: 0, ret: 0, discard: 0 };
-  return {
-    total: r.total,
-    named: r.named,
-    decided: r.archive + r.ret + r.discard,
-    archive: r.archive,
-    return: r.ret,
-    discard: r.discard,
-  };
+  return row
+    ? { total: row.total, decided: row.decided, archive: row.archive, discard: row.discard, physical: row.physical }
+    : { total: 0, decided: 0, archive: 0, discard: 0, physical: 0 };
 }
 
 interface LotGate {
@@ -163,13 +112,15 @@ interface LotGate {
 /** Item decisions are open before the lot is decided, or again after an approved override. */
 const decisionOpen = (lot: LotGate) =>
   ((lot.stage === 'intake' || lot.stage === 'decision') && (lot.decision?.status ?? 'pending') === 'pending') ||
-  (lot.decision?.overrideStatus === 'approved' && !isTerminalStage(lot.stage));
+  (lot.decision?.overrideStatus === 'approved' && !gridLocked(lot.stage));
 
 function blockedBy(lot: LotGate, summary: ItemsSummary): string[] {
   if (!decisionOpen(lot) || summary.total === 0 || summary.decided < summary.total) return [];
   const missing = intakeMissing(lot);
   return missing.length ? [`Fill in ${missing.join(', ')} on the lot before it can move on.`] : [];
 }
+
+const isoDay = (d: Date | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
 /* --------------------------------------------------------------------- read */
 
@@ -181,10 +132,13 @@ export async function getItemsGrid(
   if (!Types.ObjectId.isValid(lotId)) throw new HttpError(404, 'Lot not found.');
   const lot = await ArchiveLot.findById(lotId).lean();
   if (!lot) throw new HttpError(404, 'Lot not found.');
-  const items = (await LotItem.find({ lot: lot._id }).sort({ groupNo: 1, itemNo: 1 }).limit(20000).lean()) as ItemLean[];
+  const items = (await LotItem.find({ lot: lot._id })
+    .sort({ sortOrder: 1, groupNo: 1, itemNo: 1 })
+    .limit(20000)
+    .lean()) as ItemLean[];
 
   // Sub-type label per media line (each list read once).
-  const lines = (lot.mediaLines ?? []) as { format: string; mediaSubtype: string }[];
+  const lines = (lot.mediaLines ?? []) as { format: string; dataType: string; mediaSubtype: string }[];
   const labelByLine = await Promise.all(
     lines.map(async (l) => {
       const key = await mediaSubtypeListKeyAsync(l.format);
@@ -194,47 +148,57 @@ export async function getItemsGrid(
     }),
   );
 
-  const lateStage = lot.stage === 'mls_tag' || lot.stage === 'storage';
+  // Back-links: items (any lot) that are duplicates of an item shown here. Read-time only —
+  // the original's row is never written to, so a finished lot stays untouched.
+  const duplicates = await LotItem.find({ duplicateCode: { $in: items.map((i) => i.code) } })
+    .select('code duplicateCode')
+    .lean();
+  const dupOf = new Map<string, string[]>();
+  for (const d of duplicates) {
+    const k = String(d.duplicateCode);
+    dupOf.set(k, [...(dupOf.get(k) ?? []), d.code]);
+  }
+
   const rows: GridItem[] = items.map((it) => {
-    const d = decisionOf(it);
+    const a = answersOf(it);
     const line = lines[it.lineIndex ?? 0];
+    const dec = (it.decision ?? {}) as { remark?: string | null; disposition?: 'return' | 'discard' | null };
     return {
       id: String(it._id),
       code: it.code,
       groupNo: it.groupNo,
       itemNo: it.itemNo,
       lineIndex: it.lineIndex ?? 0,
+      sortOrder: it.sortOrder ?? 0,
       format: line?.format ?? lot.format,
+      dataType: line?.dataType ?? lot.dataType,
       subtypeLabel: labelByLine[it.lineIndex ?? 0] ?? lot.mediaSubtype,
-      name: it.name ?? null,
-      nameOnCase: it.nameOnCase ?? null,
-      description: it.description ?? null,
-      year: it.year ?? null,
-      month: it.month ?? null,
+      senderCode: it.senderCode ?? null,
+      dateRange: formatDateRange(isoDay(it.dateFrom), isoDay(it.dateTo)),
       place: it.place ?? null,
-      event: it.event ?? null,
-      people: it.people ?? null,
+      nameOnTape: it.nameOnTape ?? null,
+      nameOnCase: it.nameOnCase ?? null,
       physicalSource: it.physicalSource ?? null,
-      itemCondition: it.itemCondition ?? null,
       remarks: it.remarks ?? null,
-      existsInMls: d.existsInMls,
-      newCopyIsBetter: d.newCopyIsBetter,
-      conditionUsable: d.conditionUsable,
-      significant: d.significant,
-      verdict: d.verdict,
-      disposition: d.disposition,
-      reason: it.notDigitizedReason ?? null,
-      result: itemResult(d.verdict, d.disposition),
-      dispositionStatus: (it.dispositionStatus as 'pending' | 'done' | null) ?? null,
-      captureStatus: it.digitized
-        ? 'captured'
-        : lateStage && it.selectedForDigitization
-          ? 'missing'
-          : 'not_started',
+      duplicateCode: it.duplicateCode ?? null,
+      duplicatedBy: dupOf.get(it.code) ?? [],
+      digital: a.digital,
+      redigital: a.redigital,
+      discard: a.discard,
+      decisionRemark: dec.remark ?? null,
+      result: itemResultOf(a),
+      captured: Boolean(it.digitized),
       digitalSource: it.digitalSource ?? null,
       fileName: it.fileName ?? null,
-      taggedInMls: it.taggedInMls,
-      mlsDuplicateOf: it.mlsDuplicateOf ?? null,
+      phyStorageLoc: it.phyStorageLoc ?? null,
+      disposition: dec.disposition ?? null,
+      dispositionStatus: (it.dispositionStatus as 'pending' | 'done' | null) ?? null,
+      taggedInMls: Boolean(it.taggedInMls),
+      storageRemark: it.storageRemark ?? null,
+      logged: Boolean(it.logged),
+      loggedAt: isoDayToDmy(isoDay(it.loggedAt)),
+      loggerName: it.loggerName ?? null,
+      custom: (it.custom ?? {}) as GridItem['custom'],
     };
   });
 
@@ -242,7 +206,7 @@ export async function getItemsGrid(
   const works =
     can(viewer.grants, 'lot:edit') &&
     canWorkLot(lot, { id: viewer.userId, grants: viewer.grants }) &&
-    !isTerminalStage(lot.stage);
+    !gridLocked(lot.stage);
   return {
     items: rows,
     summary,
@@ -250,6 +214,8 @@ export async function getItemsGrid(
     stage: lot.stage,
     editable: { details: works, decision: works && decisionOpen(lot) },
     blockedBy: blockedBy(lot, summary),
+    hiddenColumns: lot.hiddenColumns ?? [],
+    customColumns: (lot.customColumns ?? []).map((c) => ({ key: c.key, label: c.label, type: c.type, dept: c.dept })),
   };
 }
 
@@ -257,95 +223,204 @@ export async function getItemsGrid(
 
 const clean = (v: unknown) => (typeof v === 'string' ? (v.trim() === '' ? null : v.trim()) : v);
 
+export interface ItemEdit {
+  id: string;
+  set: Record<string, unknown>;
+}
+
+type EditAudit = { kind?: ActivityKind; title?: string; detail?: string };
+
+/** Same values on many items — the grid's own save and its bulk bar. */
 export async function bulkUpdateItems(
   lotId: string,
   body: ItemsBulkBody,
   ctx: MutationContext,
 ): Promise<ItemsBulkResponse> {
-  const set = body.set as Record<string, unknown>;
-  for (const k of Object.keys(set)) set[k] = clean(set[k]);
+  const ids = [...new Set(body.itemIds)];
+  return applyItemEdits(lotId, ids.map((id) => ({ id, set: { ...(body.set as Record<string, unknown>) } })), ctx);
+}
+
+/**
+ * Applies per-item edits in ONE audited transaction (grid save, bulk bar and the Excel
+ * import all come through here), then lets the lot move on: decides it when the last item
+ * is decided, and keeps its stage in step with capture / MLS / logging.
+ */
+export async function applyItemEdits(
+  lotId: string,
+  edits: ItemEdit[],
+  ctx: MutationContext,
+  audit: EditAudit = {},
+): Promise<ItemsBulkResponse> {
+  for (const e of edits) for (const k of Object.keys(e.set)) if (k !== 'custom') e.set[k] = clean(e.set[k]);
+
   // Admin-managed vocabularies — reject retired/unknown values before writing.
-  await Promise.all([
-    set.physicalSource ? assertActiveReferenceValue('physicalSource', set.physicalSource as string) : null,
-    set.itemCondition ? assertActiveReferenceValue('itemCondition', set.itemCondition as string) : null,
-    set.reason ? assertActiveReferenceValue('notDigitizedReason', set.reason as string) : null,
-  ]);
-  const touchesDecision = DECISION_KEYS.some((k) => k in set);
-  const changed = [...DETAIL_KEYS, ...DECISION_KEYS].filter((k) => k in set);
-  const ids = [...new Set(body.itemIds)].map((id) => new Types.ObjectId(id));
+  const sources = new Set(edits.map((e) => e.set.physicalSource).filter((v): v is string => typeof v === 'string' && v !== ''));
+  await Promise.all([...sources].map((v) => assertActiveReferenceValue('physicalSource', v)));
+
+  const keys = new Set(edits.flatMap((e) => Object.keys(e.set)));
+  const touchesDecision = DECISION_KEYS.some((k) => keys.has(k));
+  const ids = edits.map((e) => new Types.ObjectId(e.id));
+  const n = ids.length;
 
   await withAudit({
     lotId,
     actor: auditActor(ctx),
-    kind: 'items_updated',
-    title: ids.length === 1 ? 'Item updated' : `${ids.length} items updated`,
-    detail: `Fields: ${changed.join(', ')}`,
+    kind: audit.kind ?? 'items_updated',
+    title: audit.title ?? (n === 1 ? 'Item updated' : `${n} items updated`),
+    detail: audit.detail ?? `Fields: ${[...keys].join(', ')}`,
     mutate: async (lot, session) => {
-      if (isTerminalStage(lot.stage)) throw new HttpError(403, 'Finished lots are locked.');
+      if (gridLocked(lot.stage)) throw new HttpError(403, 'Finished lots are locked.');
       if (touchesDecision && !decisionOpen(lot)) {
         throw new HttpError(400, 'Decisions are locked — this lot has already been decided. Request an override to revisit it.');
       }
       const items = (await LotItem.find({ _id: { $in: ids }, lot: lot._id }).session(session).lean()) as ItemLean[];
       if (items.length !== ids.length) throw new HttpError(404, 'Some items do not belong to this lot.');
+      const byId = new Map(items.map((i) => [String(i._id), i]));
+      const customDefs = new Map((lot.customColumns ?? []).map((c) => [c.key, c]));
 
       const now = new Date();
       const ops: AnyBulkWriteOperation[] = [];
-      let unnamed = 0;
-      for (const it of items) {
-        const before = decisionOf(it);
-        const next: ItemDecisionState = {
-          existsInMls: 'existsInMls' in set ? (set.existsInMls as Tri) : before.existsInMls,
-          newCopyIsBetter: 'newCopyIsBetter' in set ? (set.newCopyIsBetter as Tri) : before.newCopyIsBetter,
-          conditionUsable: 'conditionUsable' in set ? (set.conditionUsable as Tri) : before.conditionUsable,
-          significant: 'significant' in set ? (set.significant as Tri) : before.significant,
-          disposition: 'disposition' in set ? (set.disposition as 'return' | 'discard' | null) : before.disposition,
+      for (const edit of edits) {
+        const it = byId.get(edit.id)!;
+        const set = edit.set;
+        const fail = (msg: string): never => {
+          throw new HttpError(400, `${it.code}: ${msg}`);
         };
-        if (next.existsInMls === false) next.newCopyIsBetter = null;
-        const name = 'name' in set ? (set.name as string | null) : (it.name ?? null);
-        const anyAnswer =
-          next.existsInMls !== null || next.conditionUsable !== null || next.significant !== null || next.disposition !== null;
-        if (anyAnswer && !name) unnamed += 1;
-
-        const verdict = itemVerdict(next);
-        const disposition = verdict === 'return_or_discard' ? next.disposition : null;
-        const reasonIn = 'reason' in set ? (set.reason as string | null) : (it.notDigitizedReason ?? null);
-        const reason = verdict === 'return_or_discard' ? reasonIn : null;
-        const wasFinal = itemResult(before.verdict, before.disposition) !== null;
-        const isFinal = itemResult(verdict, disposition) !== null;
-
         const $set: Record<string, unknown> = {};
-        for (const k of DETAIL_KEYS) if (k in set) $set[k] = set[k];
-        if (touchesDecision) {
-          $set['decision.existsInMls'] = next.existsInMls;
-          $set['decision.newCopyIsBetter'] = next.newCopyIsBetter;
-          $set['decision.conditionUsable'] = next.conditionUsable;
-          $set['decision.significant'] = next.significant;
-          $set['decision.verdict'] = verdict;
-          $set['decision.disposition'] = disposition;
-          $set.notDigitizedReason = reason;
-          // Archive keeps the item for digitization; return/discard drops it.
-          if (verdict === 'archive') $set.selectedForDigitization = true;
-          if (verdict === 'return_or_discard') $set.selectedForDigitization = false;
-          if (isFinal && !wasFinal) {
-            $set['decision.decidedBy'] = new Types.ObjectId(ctx.userId);
-            $set['decision.decidedAt'] = now;
+        const $unset: Record<string, ''> = {};
+
+        for (const [key, field] of Object.entries(TEXT_FIELDS)) if (key in set) $set[field] = set[key] ?? null;
+
+        if ('dateRange' in set) {
+          if (set.dateRange === null) {
+            $set.dateFrom = null;
+            $set.dateTo = null;
+          } else {
+            const r = parseDateRange(String(set.dateRange));
+            if (!r.ok) fail(`Date: ${r.error}`);
+            else {
+              $set.dateFrom = new Date(`${r.from}T00:00:00.000Z`);
+              $set.dateTo = new Date(`${r.to}T00:00:00.000Z`);
+            }
           }
-          if (!isFinal) {
+        }
+        if ('captured' in set) $set.digitized = Boolean(set.captured);
+        if ('taggedInMls' in set) $set.taggedInMls = Boolean(set.taggedInMls);
+
+        // Logging: ticking Status stamps who and when (still editable afterwards).
+        if ('logged' in set) {
+          const on = Boolean(set.logged);
+          $set.logged = on;
+          if (on) {
+            if (!('loggedAt' in set) && !it.loggedAt) $set.loggedAt = now;
+            if (!('loggerName' in set) && !it.loggerName) $set.loggerName = ctx.userName;
+          } else {
+            if (!('loggedAt' in set)) $set.loggedAt = null;
+            if (!('loggerName' in set)) $set.loggerName = null;
+          }
+        }
+        if ('loggedAt' in set) {
+          if (set.loggedAt === null) $set.loggedAt = null;
+          else {
+            const r = parseDateRange(String(set.loggedAt));
+            if (!r.ok) fail(`Logging date: ${r.error}`);
+            else $set.loggedAt = new Date(`${r.from}T00:00:00.000Z`);
+          }
+        }
+
+        // Custom columns.
+        const custom = (set.custom ?? {}) as Record<string, unknown>;
+        for (const [ck, raw] of Object.entries(custom)) {
+          const def = customDefs.get(ck);
+          if (!def) fail('Unknown column.');
+          const v = typeof raw === 'string' ? clean(raw) : raw;
+          if (v === null || v === undefined) {
+            $unset[`custom.${ck}`] = '';
+            continue;
+          }
+          if (def!.type === 'number') {
+            const num = typeof v === 'number' ? v : Number(v);
+            if (!Number.isFinite(num)) fail(`${def!.label} must be a number.`);
+            $set[`custom.${ck}`] = num;
+          } else if (def!.type === 'yesno') {
+            if (typeof v !== 'boolean') fail(`${def!.label} must be Yes or No.`);
+            $set[`custom.${ck}`] = v;
+          } else if (def!.type === 'date') {
+            const r = parseDateRange(String(v));
+            if (!r.ok) fail(`${def!.label}: ${r.error}`);
+            else $set[`custom.${ck}`] = r.from;
+          } else {
+            $set[`custom.${ck}`] = String(v).slice(0, 2000);
+          }
+        }
+
+        // Decision + disposition.
+        const before = answersOf(it);
+        const beforeDec = (it.decision ?? {}) as { disposition?: 'return' | 'discard' | null };
+        const beforeDisp = beforeDec.disposition ?? null;
+        const next: ItemAnswers = {
+          digital: 'digital' in set ? (set.digital as Tri) : before.digital,
+          redigital: 'redigital' in set ? (set.redigital as Tri) : before.redigital,
+          discard: 'discard' in set ? (set.discard as Tri) : before.discard,
+        };
+        let disp: 'return' | 'discard' | null = 'disposition' in set ? (set.disposition as 'return' | 'discard' | null) : beforeDisp;
+        if ('disposition' in set) {
+          if (disp === 'discard') next.discard = true;
+          else if (disp === 'return') next.discard = false;
+          else if (beforeDisp === 'discard' && !('discard' in set)) next.discard = null;
+        } else if ('discard' in set) {
+          if (next.discard === true) disp = 'discard';
+          else if (disp === 'discard') disp = null;
+        }
+        if (disp !== beforeDisp && it.dispositionStatus === 'done') {
+          fail('This item was already marked returned / discarded in the queue — it can no longer change.');
+        }
+        const decisionTouched = DECISION_KEYS.some((k) => k in set) || 'disposition' in set;
+        if (decisionTouched) {
+          const result = itemResultOf(next);
+          const wasFinal = itemResultOf(before) !== null;
+          $set['decision.digital'] = next.digital;
+          $set['decision.redigital'] = next.redigital;
+          $set['decision.discard'] = next.discard;
+          $set['decision.disposition'] = disp;
+          // Legacy verdict mirror so old guards ("items already decided") keep working.
+          $set['decision.verdict'] = result === null ? null : result === 'archive' ? 'archive' : 'return_or_discard';
+          if (result !== null) {
+            $set.selectedForDigitization = result === 'archive';
+            if (result === 'archive') $set.notDigitizedReason = null;
+            if (!wasFinal) {
+              $set['decision.decidedBy'] = new Types.ObjectId(ctx.userId);
+              $set['decision.decidedAt'] = now;
+            }
+          } else {
             $set['decision.decidedBy'] = null;
             $set['decision.decidedAt'] = null;
           }
+          // Queue entry: pending while a return / discard is chosen, gone when it is cleared.
+          if (disp && it.dispositionStatus !== 'done') $set.dispositionStatus = 'pending';
+          if (!disp && it.dispositionStatus === 'pending') $set.dispositionStatus = null;
         }
-        ops.push({ updateOne: { filter: { _id: it._id }, update: { $set } } });
-      }
-      if (unnamed > 0) {
-        throw new HttpError(
-          400,
-          `Give ${unnamed === 1 ? 'the item' : `all ${unnamed} items`} a name before answering the decision questions.`,
-        );
+        if ('decisionRemark' in set) $set['decision.remark'] = set.decisionRemark ?? null;
+
+        if (Object.keys($set).length === 0 && Object.keys($unset).length === 0) continue;
+        ops.push({
+          updateOne: {
+            filter: { _id: it._id },
+            update: { ...(Object.keys($set).length ? { $set } : {}), ...(Object.keys($unset).length ? { $unset } : {}) },
+          },
+        });
       }
       for (let i = 0; i < ops.length; i += 1000) {
         await LotItem.bulkWrite(ops.slice(i, i + 1000), { session });
       }
+
+      // Denormalised progress counters (rule 4: no counting on read paths).
+      const [expected, found] = await Promise.all([
+        LotItem.countDocuments({ lot: lot._id, selectedForDigitization: true }).session(session),
+        LotItem.countDocuments({ lot: lot._id, selectedForDigitization: true, digitized: true }).session(session),
+      ]);
+      lot.set('digitization.expectedFileCount', expected);
+      lot.set('digitization.foundFileCount', found);
       return null;
     },
   });
@@ -356,24 +431,64 @@ export async function bulkUpdateItems(
   let finalized: ItemsBulkResponse['finalized'] = null;
   const blocked = blockedBy(lot, summary);
   if (touchesDecision && decisionOpen(lot) && summary.total > 0 && summary.decided === summary.total && blocked.length === 0) {
-    // Every return/discard item needs its reason before the lot can be decided.
-    const missingReason = await LotItem.countDocuments({
-      lot: lot._id,
-      'decision.verdict': 'return_or_discard',
-      $or: [{ notDigitizedReason: null }, { notDigitizedReason: '' }],
-    });
-    if (missingReason > 0) {
-      return {
-        updated: ids.length,
-        summary,
-        finalized: null,
-        blockedBy: [`Give a reason for ${missingReason} return/discard ${missingReason === 1 ? 'item' : 'items'}.`],
-      };
-    }
-    finalized = await finalizeItemDecisions(lotId, ctx);
+    const out = await finalizeItemDecisions(lotId, ctx);
+    finalized = { decision: out.decision, stage: out.stage };
     summary = await summarise(lot._id);
   }
-  return { updated: ids.length, summary, finalized, blockedBy: blocked };
+  await syncLotStage(lotId, ctx);
+  return { updated: n, summary, finalized, blockedBy: blocked };
+}
+
+/**
+ * Keeps an archived lot's stage in step with its items, so nobody has to press a stage
+ * button: first capture ⇒ scanning · every item to digitize captured ⇒ mls_tag · all of
+ * those tagged in MLS and every row logged ⇒ storage. Moves backwards too when a tick is
+ * undone. Only lots decided "archive" and not yet returned / discarded are touched.
+ */
+export async function syncLotStage(lotId: string, ctx: MutationContext): Promise<void> {
+  await connectToDatabase();
+  const lot = await ArchiveLot.findById(lotId).select('stage decision.status').lean();
+  if (!lot || lot.decision?.status !== 'archive') return;
+  if (!['metadata', 'scanning', 'mls_tag', 'storage'].includes(lot.stage)) return;
+
+  const [row] = await LotItem.aggregate<{ total: number; logged: number; dig: number; captured: number; tagged: number }>([
+    { $match: { lot: new Types.ObjectId(lotId) } },
+    {
+      $project: {
+        logged: { $cond: [{ $eq: ['$logged', true] }, 1, 0] },
+        dig: { $cond: [{ $eq: ['$selectedForDigitization', true] }, 1, 0] },
+        captured: { $cond: [{ $and: [{ $eq: ['$selectedForDigitization', true] }, { $eq: ['$digitized', true] }] }, 1, 0] },
+        tagged: { $cond: [{ $and: [{ $eq: ['$selectedForDigitization', true] }, { $eq: ['$taggedInMls', true] }] }, 1, 0] },
+      },
+    },
+    { $group: { _id: null, total: { $sum: 1 }, logged: { $sum: '$logged' }, dig: { $sum: '$dig' }, captured: { $sum: '$captured' }, tagged: { $sum: '$tagged' } } },
+  ]);
+  if (!row || row.total === 0) return;
+
+  let target = lot.stage;
+  if (row.dig > 0) {
+    if (row.captured === row.dig && row.tagged === row.dig && row.logged === row.total) target = 'storage';
+    else if (row.captured === row.dig) target = 'mls_tag';
+    else if (row.captured > 0) target = 'scanning';
+    else target = 'metadata';
+  } else {
+    // Nothing to digitize: the lot sits in storage (physical items are kept / returned / discarded one by one).
+    target = 'storage';
+  }
+  if (target === lot.stage) return;
+
+  await withAudit({
+    lotId,
+    actor: auditActor(ctx),
+    kind: 'items_updated',
+    title: `Stage updated from the Excel — ${target}`,
+    detail: `Items to digitize ${row.dig}, captured ${row.captured}, tagged ${row.tagged}, logged ${row.logged} of ${row.total}.`,
+    mutate: async (l) => {
+      if (l.stage !== lot.stage) return null; // someone else moved it meanwhile
+      l.stage = target as typeof l.stage;
+      return null;
+    },
+  });
 }
 
 /* ------------------------------------------- item return / discard queues */
@@ -392,14 +507,15 @@ export async function listItemDispositions(query: ItemDispositionQuery): Promise
   ]);
   return {
     rows: (docs as ItemLean[]).map((d) => {
-      const dec = (d.decision ?? {}) as { decidedAt?: Date | null };
+      const dec = (d.decision ?? {}) as { decidedAt?: Date | null; digital?: boolean | null; redigital?: boolean | null };
+      const digitizeFirst = dec.digital === true || dec.redigital === true;
       return {
         id: String(d._id),
         code: d.code,
-        name: d.name ?? null,
+        place: d.place ?? null,
         lotId: String(d.lot),
         lotReference: d.lotReference ?? '',
-        reason: d.notDigitizedReason ?? null,
+        waitingForCapture: digitizeFirst && !d.digitized,
         decidedAt: dec.decidedAt ? new Date(dec.decidedAt).toISOString() : null,
         doneAt: d.dispositionDoneAt ? new Date(d.dispositionDoneAt).toISOString() : null,
         doneByName: d.dispositionDoneByName ?? null,
@@ -411,7 +527,11 @@ export async function listItemDispositions(query: ItemDispositionQuery): Promise
   };
 }
 
-/** Mark item returns/discards done — one audited write per lot touched. */
+/**
+ * Mark item returns/discards done — one audited write per lot touched. An item that must be
+ * digitized first can only be marked once its file is captured. When that leaves a lot
+ * with nothing to digitize and every item handled, the lot becomes returned / discarded.
+ */
 export async function markItemDispositionsDone(
   body: ItemDispositionDoneBody,
   ctx: MutationContext,
@@ -423,8 +543,18 @@ export async function markItemDispositionsDone(
     'decision.disposition': body.kind,
     dispositionStatus: 'pending',
   })
-    .select('lot')
+    .select('lot code digitized decision')
     .lean();
+  const waiting = (items as ItemLean[]).filter((it) => {
+    const d = (it.decision ?? {}) as { digital?: boolean | null; redigital?: boolean | null };
+    return (d.digital === true || d.redigital === true) && !it.digitized;
+  });
+  if (waiting.length > 0) {
+    throw new HttpError(
+      400,
+      `${waiting.length === 1 ? waiting[0]!.code : `${waiting.length} items`} must be digitized (captured) before the physical copy is ${body.kind === 'return' ? 'returned' : 'discarded'}.`,
+    );
+  }
   const byLot = new Map<string, Types.ObjectId[]>();
   for (const it of items) {
     const k = String(it.lot);
@@ -447,6 +577,39 @@ export async function markItemDispositionsDone(
         return null;
       },
     });
+    await finishLotIfHandled(lot, ctx);
   }
   return { updated };
+}
+
+/** A lot with nothing to digitize whose every item has been returned / discarded is finished. */
+async function finishLotIfHandled(lotId: string, ctx: MutationContext): Promise<void> {
+  const lotObjectId = new Types.ObjectId(lotId);
+  const [total, digitize, open, returned] = await Promise.all([
+    LotItem.countDocuments({ lot: lotObjectId }),
+    LotItem.countDocuments({ lot: lotObjectId, $or: [{ 'decision.digital': true }, { 'decision.redigital': true }] }),
+    LotItem.countDocuments({ lot: lotObjectId, dispositionStatus: { $ne: 'done' } }),
+    LotItem.countDocuments({ lot: lotObjectId, 'decision.disposition': 'return', dispositionStatus: 'done' }),
+  ]);
+  if (total === 0 || digitize > 0 || open > 0) return;
+  const stage = returned > 0 ? 'returned' : 'discarded';
+  await withAudit({
+    lotId,
+    actor: auditActor(ctx),
+    kind: stage === 'returned' ? 'return_completed' : 'discard_confirmed',
+    title: stage === 'returned' ? 'Every item returned' : 'Every item discarded',
+    mutate: async (lot) => {
+      if (gridLocked(lot.stage)) return null;
+      if (stage === 'returned') {
+        lot.set('return.status', 'returned');
+        lot.set('return.returnedAt', new Date());
+      } else {
+        lot.set('discard.reason', 'other');
+        lot.set('discard.discardedBy', new Types.ObjectId(ctx.userId));
+        lot.set('discard.discardedAt', new Date());
+      }
+      lot.stage = stage;
+      return null;
+    },
+  });
 }

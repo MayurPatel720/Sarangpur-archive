@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { TERMINAL_STAGES } from '@/lib/domain';
+import { TERMINAL_STAGES, dataTypesMatching } from '@/lib/domain';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
 import { ArchiveLot, type ArchiveLotDoc } from '@/models/ArchiveLot';
@@ -255,7 +255,8 @@ export function buildLotFilter(
   if (query.stage) filter.stage = query.stage;
   if (query.decision) filter['decision.status'] = query.decision;
   if (query.format) filter.format = query.format;
-  if (query.dataType) filter.dataType = query.dataType;
+  // "Physical" / "Digital" also match "Physical + Digital" lots.
+  if (query.dataType) filter.dataType = { $in: dataTypesMatching(query.dataType) };
   if (query.receiver && Types.ObjectId.isValid(query.receiver)) {
     filter.receiver = new Types.ObjectId(query.receiver);
   }

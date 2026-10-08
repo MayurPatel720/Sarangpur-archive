@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import type { LotContactInput, LotDetailResponse, LotPatchBody } from '@/types/lot';
-import { STAGE_LABELS } from '@/lib/domain';
+import { STAGE_LABELS, dataTypeLabel } from '@/lib/domain';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { date, dateTime12, dmyToIso, num, prettyEnum, severityMark } from '@/lib/format';
 import type { Severity } from '@/types/dashboard';
@@ -40,7 +40,6 @@ import {
   type ContactRow,
   type ReferencePersonRow,
 } from './lot-form-fields';
-import { WorkflowSteps } from './WorkflowSteps';
 import { MediaLinesPanel } from './MediaLinesPanel';
 import { ItemsGrid } from './ItemsGrid';
 import { ActivityPanel } from './ActivityPanel';
@@ -49,19 +48,16 @@ import { LotProjectBar } from './LotProjectBar';
 
 type LotDetail = LotDetailResponse['lot'];
 
-/** Deep-linkable tabs; `?tab=` survives refresh. Legacy `?tab=intake` falls back to overview. */
-const TAB_IDS = ['overview', 'workflow', 'record', 'items', 'activity'] as const;
+/** Deep-linkable tabs; `?tab=` survives refresh. Legacy `?tab=intake` / `?tab=workflow` fall back to overview. */
+const TAB_IDS = ['overview', 'record', 'items', 'activity'] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 const TAB_LABELS: Record<TabId, string> = {
   overview: 'Overview',
-  workflow: 'Workflow',
   record: 'Full record',
   items: 'Items',
   activity: 'Activity',
 };
-
-const MAIN_PATH = ['intake', 'decision', 'metadata', 'scanning', 'mls_tag', 'storage'] as const;
 
 const STAGE_SEVERITY: Record<string, Severity> = {
   intake: 'info',
@@ -176,48 +172,6 @@ function JourneyPanel({ lot, stageLabel }: { lot: LotDetail; stageLabel: string 
         <Timeline events={journeyEvents(lot, stageLabel)} />
       </div>
     </Panel>
-  );
-}
-
-/* ------------------------------------------------------------------ hero */
-
-function Stepper({ stage }: { stage: string }) {
-  const terminal = stage === 'returned' || stage === 'discarded';
-  const currentIdx = MAIN_PATH.indexOf(stage as (typeof MAIN_PATH)[number]);
-  return (
-    <div className="flex items-center gap-0 overflow-x-auto py-1" aria-label="Lot journey">
-      {MAIN_PATH.map((s, i) => {
-        const done = terminal || (currentIdx >= 0 && i < currentIdx);
-        const current = !terminal && i === currentIdx;
-        const upcoming = !done && !current;
-        return (
-          <span key={s} className="flex items-center min-w-0">
-            {i > 0 ? <span aria-hidden className={`w-5 md:w-8 h-px mx-1.5 flex-shrink-0 ${done || current ? 'bg-accent' : 'bg-line-soft'}`} /> : null}
-            <span className="flex items-center gap-1.5 whitespace-nowrap">
-              <span
-                aria-hidden
-                className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  done ? 'bg-good-mark' : current ? 'bg-accent-bright ring-4 ring-accent-soft' : 'bg-neutral-mark opacity-50'
-                }`}
-              />
-              <span
-                className={`text-[12px] ${current ? 'font-semibold text-ink' : done ? 'font-medium text-ink-2' : 'font-medium text-ink-4'} ${upcoming ? '' : ''}`}
-              >
-                {STAGE_LABELS[s as keyof typeof STAGE_LABELS] ?? s}
-              </span>
-            </span>
-          </span>
-        );
-      })}
-      {terminal ? (
-        <span className="flex items-center">
-          <span aria-hidden className="w-5 md:w-8 h-px mx-1.5 flex-shrink-0 bg-accent" />
-          <Badge severity={STAGE_SEVERITY[stage] ?? 'neutral'}>
-            {STAGE_LABELS[stage as keyof typeof STAGE_LABELS] ?? stage}
-          </Badge>
-        </span>
-      ) : null}
-    </div>
   );
 }
 
@@ -585,7 +539,7 @@ function FullRecordSection({ lot, originLabel }: { lot: LotDetail; originLabel: 
             <GroupLabel>Media</GroupLabel>
             <RecordRow>
               <Definition label="Format"><span className="capitalize">{lot.format}</span></Definition>
-              <Definition label="Data type"><span className="capitalize">{lot.dataType}</span></Definition>
+              <Definition label="Data type">{dataTypeLabel(lot.dataType)}</Definition>
               <Definition label="Sub-type">{lot.mediaSubtypeLabel}</Definition>
               <Definition label="Quantity">{num(lot.quantity)}</Definition>
             </RecordRow>
@@ -1146,7 +1100,6 @@ function LotDetailInner({ lotId }: { lotId: string }) {
             {canEdit ? <GhostButton onClick={startEdit}>Edit</GhostButton> : null}
           </div>
         </div>
-        <Stepper stage={lot.stage} />
       </header>
 
       <LotProjectBar lot={lot} />
@@ -1165,19 +1118,12 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <LotProjectsSection lotId={lot.id} />
       </TabPanel>
 
-      <TabPanel id="workflow" active={tab === 'workflow'}>
-        {/* A disabled fieldset disables every native control inside — the server rejects the rest. */}
-        <fieldset disabled={!canWork} className="m-0 p-0 border-0 min-w-0 flex flex-col gap-3.5 md:gap-4 disabled:opacity-70">
-          <WorkflowSteps lot={lot} onChanged={onChanged} />
-        </fieldset>
-      </TabPanel>
-
       <TabPanel id="record" active={tab === 'record'}>
         <FullRecordSection lot={lot} originLabel={originLabel} />
       </TabPanel>
 
       <TabPanel id="items" active={tab === 'items'}>
-        <ItemsGrid lotId={lot.id} />
+        <ItemsGrid lotId={lot.id} lotReference={lot.lotReference} />
       </TabPanel>
 
       <TabPanel id="activity" active={tab === 'activity'}>
