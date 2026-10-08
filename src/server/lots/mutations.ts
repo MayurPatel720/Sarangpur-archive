@@ -114,6 +114,7 @@ async function buildItemDocs(
       docs.push({
         lot: lotId,
         code,
+        format: line.format,
         ...itemSlot(n),
         sortOrder: n,
         lineIndex,

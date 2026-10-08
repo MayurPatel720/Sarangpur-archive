@@ -18,6 +18,7 @@ import { useDrawer } from '@/components/shell/drawer-context';
 import { NotificationBell } from '@/components/shell/NotificationBell';
 import { SearchOverlay } from '@/components/shell/SearchOverlay';
 import { Kbd } from '@/components/ui/Kbd';
+import { FormatSwitcher } from '@/components/shell/FormatSwitcher';
 
 /** 'lead_reviewer' → 'Lead reviewer'. Session only carries the key, not the label. */
 function prettifyRoleKey(key: string): string {
@@ -116,6 +117,11 @@ export function Header({ page }: { page: string }) {
           {page}
         </span>
       </div>
+
+      {/* Format switcher — jump between media formats without going back to the picker */}
+      <Suspense fallback={null}>
+        <FormatSwitcher />
+      </Suspense>
 
       {/* Search — absolute center of the header (main column, excludes sidebar) */}
       <button

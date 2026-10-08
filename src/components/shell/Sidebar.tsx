@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useDrawer } from '@/components/shell/drawer-context';
 import { useMe } from '@/hooks/useCan';
 import { useFormatContext } from '@/hooks/useFormatParam';
+import { useAccessibleFormats, useLastFormat } from '@/hooks/useFormatChoice';
 import { dashboardApi, healthApi } from '@/lib/api-client';
 import { scopedHref } from '@/lib/dashboard-links';
 import { formatBytes, num } from '@/lib/format';
@@ -20,7 +21,9 @@ import {
   IconChevronRight,
   IconCheckCircle,
   IconClipboardList,
+  IconBox,
   IconDashboard,
+  IconDatabase,
   IconIntake,
   IconSettings,
   IconPlus,
@@ -32,8 +35,10 @@ import {
 type NavItem = { icon: React.ElementType; label: string; href: string };
 
 const WORKFLOW_ITEMS = [
+  { icon: IconBox, label: 'Main dashboard', href: '/dashboard', perm: 'dashboard:view' },
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard', perm: 'dashboard:view' },
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
+  { icon: IconDatabase, label: 'Master Excel', href: '/master', perm: 'lot:view' },
   { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
   { icon: IconCheckCircle, label: 'Tasks', href: '/tasks', perm: 'task:view' },
   { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
@@ -135,6 +140,10 @@ export function Sidebar() {
    * Storage/health and ⌘K stay global on purpose — filesystem health has no format.
    */
   const ctxFormat = useFormatContext();
+  const accessible = useAccessibleFormats();
+  const lastFormat = useLastFormat(ctxFormat);
+  /** Where the Dashboard tile goes: the format in view, else the last one used, else the first the user may open. */
+  const dashFormat = ctxFormat ?? (lastFormat && (accessible ?? []).includes(lastFormat) ? lastFormat : accessible?.[0]);
 
   const health = useQuery({
     queryKey: queryKeys.health.server(),
@@ -200,8 +209,10 @@ export function Sidebar() {
     if (!showCore(item.perm)) continue;
     // Admin runs the whole archive rather than owning lots, so "My lots" is hidden for them.
     if (item.label === 'My lots' && me?.roleKey === 'admin') continue;
-    // `/dashboard` is the format-block picker itself — keep it unscoped.
-    const isPicker = item.href === '/dashboard';
+    // Main dashboard = the format picker (unscoped). Dashboard = the dashboard of the current format.
+    const isPicker = item.label === 'Main dashboard';
+    const isFormatDash = item.label === 'Dashboard';
+    if (isFormatDash && ready && accessible && accessible.length === 0) continue;
     // Some rows deep-link with a query (e.g. `/projects?new=1`) — active only
     // when the pathname AND those exact params match; extra params are ignored.
     const [bare = item.href, itemQuery = ''] = item.href.split('?');
@@ -211,13 +222,19 @@ export function Sidebar() {
         .split('&')
         .every((pair) => searchParams.get(pair.split('=')[0] ?? '') === (pair.split('=')[1] ?? ''));
     rows.push({
-      item: isPicker ? item : { ...item, href: scopedHref(item.href, ctxFormat) },
+      item: isPicker
+        ? item
+        : isFormatDash
+          ? { ...item, href: dashFormat ? `/dashboard/${dashFormat}` : '/dashboard' }
+          : { ...item, href: scopedHref(item.href, ctxFormat) },
       active:
         item.href === '/register'
           ? onRegister && pathname !== '/register/new' && !formatParam && !stageParam && searchParams.get('assignee') !== 'me'
           : isPicker
-            ? pathname === '/dashboard' || pathname.startsWith('/dashboard/')
-            : pathname === bare && queryMatches,
+            ? pathname === '/dashboard'
+            : isFormatDash
+              ? pathname.startsWith('/dashboard/')
+              : pathname === bare && queryMatches,
       badge: item.href === '/alerts' && alertBadge > 0 ? alertBadge : null,
       badgeTitle: item.href === '/alerts' ? `${alertBadge} open alerts` : undefined,
     });
@@ -379,7 +396,7 @@ export function Sidebar() {
       >
         {rows.map((row) => (
           <NavRow
-            key={row.item.href + (row.badge ?? '')}
+            key={row.item.label + row.item.href + (row.badge ?? '')}
             item={row.item}
             active={row.active}
             collapsed={!showFull}

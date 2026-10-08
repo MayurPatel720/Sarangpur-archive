@@ -27,7 +27,7 @@ export const DEPARTMENTS = [
 ] as const;
 export type DeptId = (typeof DEPARTMENTS)[number]['id'];
 export const DEPT_IDS = DEPARTMENTS.map((d) => d.id) as [DeptId, ...DeptId[]];
-export const deptLabel = (id: string) => DEPARTMENTS.find((d) => d.id === id)?.label ?? id;
+export const deptLabel = (id: string) => (id === 'lot' ? 'Lot' : (DEPARTMENTS.find((d) => d.id === id)?.label ?? id));
 
 export type ColumnKind =
   | 'readonly' //  shown, never edited here
@@ -45,7 +45,8 @@ export type ColumnKind =
 export interface ColumnSpec {
   id: string;
   label: string;
-  dept: DeptId;
+  /** `lot` = the Master Excel's lot / project columns (not part of a lot's own Excel). */
+  dept: DeptId | 'lot';
   kind: ColumnKind;
   /** Key in `ItemsBulkSet` for editable columns. */
   field?: string;

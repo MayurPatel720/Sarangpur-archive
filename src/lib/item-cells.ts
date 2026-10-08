@@ -1,7 +1,8 @@
-import { DATA_TYPE_LABELS, FORMAT_LABELS, type DataType, type Format } from '@/lib/domain';
+import { DATA_TYPE_LABELS, FORMAT_LABELS, STAGE_LABELS, type DataType, type Format, type Stage } from '@/lib/domain';
 import { isoDayToDmy } from '@/lib/date-range';
 import type { ColumnSpec, CustomColumn } from '@/lib/item-columns';
 import type { GridItem } from '@/types/items';
+import type { MasterRow } from '@/types/master';
 
 /**
  * The text a grid cell shows — also what the Excel export writes and what the import
@@ -31,7 +32,19 @@ export function cellText(
     if (spec.custom.type === 'date') return isoDayToDmy(String(v));
     return String(v);
   }
+  // Master Excel only — present on its rows, absent on a lot's own Excel.
+  const m = row as Partial<MasterRow>;
   switch (spec.id) {
+    case 'lotNo':
+      return m.lotReference ?? '';
+    case 'projectNo':
+      return m.projectCode ?? '';
+    case 'lotStage':
+      return m.lotStage ? (STAGE_LABELS[m.lotStage as Stage] ?? m.lotStage) : '';
+    case 'assignee':
+      return m.assigneeName ?? '';
+    case 'result':
+      return row.result === 'archive' ? 'Digitize' : row.result === 'discard' ? 'Discard' : row.result === 'physical' ? 'Keep physical' : 'Undecided';
     case 'mediaType':
       return mediaTypeText(row);
     case 'code':

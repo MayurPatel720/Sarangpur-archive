@@ -61,7 +61,7 @@ const TEXT_FIELDS: Record<string, string> = {
 /** The grid is read-only once the lot has been returned or discarded. */
 export const gridLocked = (stage: string): boolean => stage === 'returned' || stage === 'discarded';
 
-type ItemLean = LotItemDoc & { _id: Types.ObjectId };
+export type ItemLean = LotItemDoc & { _id: Types.ObjectId };
 
 function answersOf(it: ItemLean): ItemAnswers {
   const d = (it.decision ?? {}) as Record<string, unknown>;
@@ -122,6 +122,60 @@ function blockedBy(lot: LotGate, summary: ItemsSummary): string[] {
 
 const isoDay = (d: Date | null | undefined) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
+/** What a row needs to know about its lot (resolved once per lot, never per item). */
+export interface RowLotInfo {
+  format: string;
+  dataType: string;
+  mediaSubtype: string;
+  lines: { format: string; dataType: string; mediaSubtype: string }[];
+  labelByLine: string[];
+  duplicatedBy: string[];
+}
+
+/** One LotItem document → the row the lot Excel and the Master Excel both show. */
+export function toGridRow(it: ItemLean, lot: RowLotInfo): GridItem {
+  const a = answersOf(it);
+  const line = lot.lines[it.lineIndex ?? 0];
+  const dec = (it.decision ?? {}) as { remark?: string | null; disposition?: 'return' | 'discard' | null };
+  return {
+      id: String(it._id),
+      code: it.code,
+      groupNo: it.groupNo,
+      itemNo: it.itemNo,
+      lineIndex: it.lineIndex ?? 0,
+      sortOrder: it.sortOrder ?? 0,
+      format: line?.format ?? lot.format,
+      dataType: line?.dataType ?? lot.dataType,
+      subtypeLabel: lot.labelByLine[it.lineIndex ?? 0] ?? lot.mediaSubtype,
+      senderCode: it.senderCode ?? null,
+      dateRange: formatDateRange(isoDay(it.dateFrom), isoDay(it.dateTo)),
+      place: it.place ?? null,
+      nameOnTape: it.nameOnTape ?? null,
+      nameOnCase: it.nameOnCase ?? null,
+      physicalSource: it.physicalSource ?? null,
+      remarks: it.remarks ?? null,
+      duplicateCode: it.duplicateCode ?? null,
+      duplicatedBy: lot.duplicatedBy,
+      digital: a.digital,
+      redigital: a.redigital,
+      discard: a.discard,
+      decisionRemark: dec.remark ?? null,
+      result: itemResultOf(a),
+      captured: Boolean(it.digitized),
+      digitalSource: it.digitalSource ?? null,
+      fileName: it.fileName ?? null,
+      phyStorageLoc: it.phyStorageLoc ?? null,
+      disposition: dec.disposition ?? null,
+      dispositionStatus: (it.dispositionStatus as 'pending' | 'done' | null) ?? null,
+      taggedInMls: Boolean(it.taggedInMls),
+      storageRemark: it.storageRemark ?? null,
+      logged: Boolean(it.logged),
+      loggedAt: isoDayToDmy(isoDay(it.loggedAt)),
+      loggerName: it.loggerName ?? null,
+      custom: (it.custom ?? {}) as GridItem['custom'],
+    };
+}
+
 /* --------------------------------------------------------------------- read */
 
 export async function getItemsGrid(
@@ -159,48 +213,16 @@ export async function getItemsGrid(
     dupOf.set(k, [...(dupOf.get(k) ?? []), d.code]);
   }
 
-  const rows: GridItem[] = items.map((it) => {
-    const a = answersOf(it);
-    const line = lines[it.lineIndex ?? 0];
-    const dec = (it.decision ?? {}) as { remark?: string | null; disposition?: 'return' | 'discard' | null };
-    return {
-      id: String(it._id),
-      code: it.code,
-      groupNo: it.groupNo,
-      itemNo: it.itemNo,
-      lineIndex: it.lineIndex ?? 0,
-      sortOrder: it.sortOrder ?? 0,
-      format: line?.format ?? lot.format,
-      dataType: line?.dataType ?? lot.dataType,
-      subtypeLabel: labelByLine[it.lineIndex ?? 0] ?? lot.mediaSubtype,
-      senderCode: it.senderCode ?? null,
-      dateRange: formatDateRange(isoDay(it.dateFrom), isoDay(it.dateTo)),
-      place: it.place ?? null,
-      nameOnTape: it.nameOnTape ?? null,
-      nameOnCase: it.nameOnCase ?? null,
-      physicalSource: it.physicalSource ?? null,
-      remarks: it.remarks ?? null,
-      duplicateCode: it.duplicateCode ?? null,
+  const rows: GridItem[] = items.map((it) =>
+    toGridRow(it, {
+      format: lot.format,
+      dataType: lot.dataType,
+      mediaSubtype: lot.mediaSubtype,
+      lines,
+      labelByLine,
       duplicatedBy: dupOf.get(it.code) ?? [],
-      digital: a.digital,
-      redigital: a.redigital,
-      discard: a.discard,
-      decisionRemark: dec.remark ?? null,
-      result: itemResultOf(a),
-      captured: Boolean(it.digitized),
-      digitalSource: it.digitalSource ?? null,
-      fileName: it.fileName ?? null,
-      phyStorageLoc: it.phyStorageLoc ?? null,
-      disposition: dec.disposition ?? null,
-      dispositionStatus: (it.dispositionStatus as 'pending' | 'done' | null) ?? null,
-      taggedInMls: Boolean(it.taggedInMls),
-      storageRemark: it.storageRemark ?? null,
-      logged: Boolean(it.logged),
-      loggedAt: isoDayToDmy(isoDay(it.loggedAt)),
-      loggerName: it.loggerName ?? null,
-      custom: (it.custom ?? {}) as GridItem['custom'],
-    };
-  });
+    }),
+  );
 
   const summary = await summarise(lot._id);
   const works =

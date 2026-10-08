@@ -93,6 +93,7 @@ export async function createItem(
               groupNo,
               itemNo,
               sortOrder,
+              format: lot.mediaLines?.[0]?.format ?? lot.format,
               // Manual entries attach to the primary media line (index 0):
               // per-line breakdowns stay intake-defined, totals stay truthful.
               lineIndex: 0,

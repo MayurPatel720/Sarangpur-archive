@@ -15,6 +15,7 @@
     "db:backfill-media-lines": "tsx scripts/backfill-media-lines.ts",
     "db:backfill-data-type-both": "tsx scripts/backfill-data-type-both.ts",
     "db:reset-sample": "tsx scripts/reset-data.ts",
+    "db:backfill-item-format": "tsx scripts/backfill-item-format.ts",
     "db:backfill-format-grants": "tsx scripts/backfill-format-grants.ts",
     "db:backfill-system-grants": "tsx scripts/backfill-system-grants.ts",
     "db:backfill-task-grants": "tsx scripts/backfill-task-grants.ts",

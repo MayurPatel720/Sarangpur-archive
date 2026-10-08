@@ -145,7 +145,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const specs = useMemo(() => allColumns(data?.customColumns ?? []), [data?.customColumns]);
   const hiddenIds = useMemo(() => new Set(data?.hiddenColumns ?? []), [data?.hiddenColumns]);
   const visibleSpecs = useMemo(
-    () => specs.filter((s) => !hiddenIds.has(s.id) && (shownDepts.includes(s.dept) || s.kind === 'code')),
+    () => specs.filter((s) => !hiddenIds.has(s.id) && (s.dept === 'lot' || shownDepts.includes(s.dept) || s.kind === 'code')),
     [specs, hiddenIds, shownDepts],
   );
   const hiddenSpecs = useMemo(() => specs.filter((s) => hiddenIds.has(s.id)), [specs, hiddenIds]);
@@ -296,12 +296,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           <p role="note" className="m-0 text-[12px] text-ink-3">
             Decisions are locked — this lot has been decided. The other columns stay editable.
           </p>
-        ) : (
-          <p className="m-0 text-[12px] text-ink-3 max-w-[90ch]">
-            Fill in each row, then answer digital, redigital and discard (Yes / No). When every item is decided, the lot
-            moves on by itself.
-          </p>
-        )}
+        ) : null}
         {data.blockedBy.length ? (
           <div role="note" className="rounded-[6px] border border-line bg-surface-sunken px-3 py-2 text-[12.5px] text-ink-2">
             {data.blockedBy.join(' ')}

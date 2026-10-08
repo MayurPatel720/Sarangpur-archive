@@ -119,6 +119,7 @@ import {
   type SheetCodeResponse,
   type ItemsGridResponse,
 } from '@/types/items';
+import { masterResponseSchema, type MasterResponse } from '@/types/master';
 import {
   searchResponseSchema,
   type SearchResponse,
@@ -521,6 +522,14 @@ export const itemsGridApi = {
     ),
   markDone: (body: ItemDispositionDoneBody) =>
     sendJson<{ updated: number }>('/api/items/dispositions', 'POST', body, itemDispositionDoneResponseSchema),
+};
+
+export const masterApi = {
+  list: (params: Record<string, string | number | undefined>) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    return getJson<MasterResponse>(`/api/items/master?${qs}`, masterResponseSchema);
+  },
 };
 
 export const projectsApi = {

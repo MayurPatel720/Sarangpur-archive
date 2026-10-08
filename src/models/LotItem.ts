@@ -14,6 +14,8 @@ import { Schema, model, models, type InferSchemaType, type Model } from 'mongoos
 const lotItemSchema = new Schema(
   {
     lot: { type: Schema.Types.ObjectId, ref: 'ArchiveLot', required: true, index: true },
+    /** Media format of the item's line (photo / video / …) — denormalised so the Master Excel can filter without joining. */
+    format: { type: String, trim: true, default: null, index: true },
     /** Full item code, e.g. NEG-MUM-014-01-03. Unique across the archive. */
     code: { type: String, required: true, unique: true, trim: true },
     /** Group within the lot — a film roll, a tape, an album. */

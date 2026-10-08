@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -25,7 +24,7 @@ export function useLotAccess(lot: DetailLot) {
   return { isAdmin, restricted, isAssignee, canWork: !restricted || isAdmin || isAssignee };
 }
 
-/** Project + assignee strip on the lot header: sync notice, owner, admin reassign. */
+/** Assignee strip on the lot header: admins can reassign; others see a note when the lot is read-only for them. */
 export function LotProjectBar({ lot }: { lot: DetailLot }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -46,22 +45,6 @@ export function LotProjectBar({ lot }: { lot: DetailLot }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-[8px] border border-line bg-surface-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
-        <div className="min-w-0 flex flex-col gap-0.5">
-          {lot.syncProject ? (
-            <span>
-              Part of project{' '}
-              <Link href={`/projects/${lot.syncProject.id}`} className="font-semibold text-accent no-underline hover:underline">
-                {lot.syncProject.code}
-              </Link>
-              . Origin, owner, contacts, condition and rights are shared — a change here applies to all{' '}
-              {lot.syncProject.siblingCount} {lot.syncProject.siblingCount === 1 ? 'lot' : 'lots'}.
-            </span>
-          ) : null}
-          <span>
-            Assigned to <span className="font-semibold text-ink">{lot.assignee ? lot.assignee.name : 'no one yet'}</span>
-            {lot.assignee ? ' — only they and admins can change this lot.' : ' — only admins can change this lot until it is assigned.'}
-          </span>
-        </div>
         {isAdmin ? (
           <div className="sm:ml-auto sm:w-[220px] flex-shrink-0">
             <Select

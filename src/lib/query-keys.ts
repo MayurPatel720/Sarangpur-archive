@@ -45,6 +45,10 @@ export const queryKeys = {
     triage: (id: string) => [...queryKeys.lots.all, 'triage', id] as const,
     itemsGrid: (id: string) => [...queryKeys.lots.all, 'items-grid', id] as const,
   },
+  master: {
+    all: ['master'] as const,
+    list: (params: string) => [...queryKeys.master.all, 'list', params] as const,
+  },
   queues: {
     all: ['queues'] as const,
     itemDispositions: (kind: string, status: string, page: number, pageSize: number) =>
