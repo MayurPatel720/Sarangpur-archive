@@ -49,7 +49,6 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
     options: [
       { value: 'archive', label: 'Digitize' },
       { value: 'discard', label: 'Discard' },
-      { value: 'physical', label: 'Keep physical' },
       { value: 'undecided', label: 'Undecided' },
     ],
   },
