@@ -100,6 +100,7 @@ export async function createItem(
               selectedForDigitization: selected,
               notDigitizedReason: selected ? null : (body.notDigitizedReason ?? null),
               fileName: body.fileName?.trim() || null,
+              ...((lot.mediaLines?.[0]?.dataType ?? lot.dataType) === 'both' ? { decision: { digital: true } } : {}),
             },
           ],
           { session },

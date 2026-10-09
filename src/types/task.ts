@@ -45,6 +45,8 @@ export const taskRowSchema = z.object({
   checklistTotal: z.number(),
   checklistDone: z.number(),
   commentCount: z.number(),
+  /** A private to-do the user added for themselves. */
+  personal: z.boolean(),
   doneAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -140,11 +142,25 @@ export const taskChecklistItemSchema = z.object({
 });
 export type TaskChecklistItem = z.infer<typeof taskChecklistItemSchema>;
 
+/** An image on a comment (stored in Cloudinary; the wire shape is the stored metadata). */
+export const taskAttachmentSchema = z.object({
+  url: z.string().url().max(600),
+  publicId: z.string().min(1).max(300),
+  fileName: z.string().min(1).max(160),
+  contentType: z.string().min(1).max(60),
+  sizeBytes: z.number().int().min(0),
+  width: z.number().int().nullable(),
+  height: z.number().int().nullable(),
+});
+export type TaskAttachment = z.infer<typeof taskAttachmentSchema>;
+export const MAX_COMMENT_IMAGES = 6;
+
 export const taskCommentSchema = z.object({
   id: z.string(),
   authorId: z.string(),
   authorName: z.string(),
   text: z.string(),
+  attachments: z.array(taskAttachmentSchema),
   at: z.string(),
 });
 export type TaskComment = z.infer<typeof taskCommentSchema>;
@@ -222,8 +238,38 @@ export const taskStatusBodySchema = z
   });
 export type TaskStatusBody = z.infer<typeof taskStatusBodySchema>;
 
-export const taskCommentBodySchema = z.object({ text: z.string().trim().min(1).max(2000) });
-export type TaskCommentBody = z.infer<typeof taskCommentBodySchema>;
+/** A comment is text, images, or both. Images are uploaded first (`/attachments`) and referenced here. */
+export const taskCommentBodySchema = z
+  .object({
+    text: z.string().trim().max(2000).default(''),
+    attachments: z.array(taskAttachmentSchema).max(MAX_COMMENT_IMAGES).default([]),
+  })
+  .refine((b) => b.text.length > 0 || b.attachments.length > 0, {
+    message: 'Write something or attach an image.',
+    path: ['text'],
+  });
+export type TaskCommentBody = z.input<typeof taskCommentBodySchema>;
+
+/* ----------------------------------------------------------- my to-do (personal) */
+
+/** A private to-do: only a title is required; the importance tag defaults to Normal. */
+export const taskPersonalCreateBodySchema = z.object({
+  title: z.string().trim().min(1, 'Give the to-do a title.').max(160),
+  description: z.string().trim().max(2000).optional(),
+  priority: taskPrioritySchema.default('normal'),
+  dueDate: isoDaySchema.optional(),
+  checklist: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+});
+export type TaskPersonalCreateBody = z.infer<typeof taskPersonalCreateBodySchema>;
+export type TaskPersonalCreateInput = z.input<typeof taskPersonalCreateBodySchema>;
+
+export const taskPersonalUpdateBodySchema = z.object({
+  title: z.string().trim().min(1).max(160).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  priority: taskPrioritySchema.optional(),
+  dueDate: isoDaySchema.nullable().optional(),
+});
+export type TaskPersonalUpdateBody = z.infer<typeof taskPersonalUpdateBodySchema>;
 
 /** Full replacement. Items with an `id` keep it; items without are new. */
 export const taskChecklistBodySchema = z.object({
@@ -242,3 +288,5 @@ export type TaskChecklistBody = z.infer<typeof taskChecklistBodySchema>;
 /** Create / update / status / comment / checklist all answer with the fresh detail. */
 export const taskMutationResponseSchema = taskDetailResponseSchema;
 export type TaskMutationResponse = TaskDetailResponse;
+
+export const taskAttachmentResponseSchema = taskAttachmentSchema;

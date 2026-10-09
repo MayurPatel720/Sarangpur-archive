@@ -499,7 +499,7 @@ export async function syncLotStage(lotId: string, ctx: MutationContext): Promise
     actor: auditActor(ctx),
     kind: 'items_updated',
     title: `Stage updated from the Excel — ${target}`,
-    detail: `Items to digitize ${row.dig}, captured ${row.captured}, tagged ${row.tagged}, logged ${row.logged} of ${row.total}.`,
+    detail: `Items to digitize ${row.dig}, digitalized ${row.captured}, tagged ${row.tagged}, logged ${row.logged} of ${row.total}.`,
     mutate: async (l) => {
       if (l.stage !== lot.stage) return null; // someone else moved it meanwhile
       l.stage = target as typeof l.stage;
@@ -569,7 +569,7 @@ export async function markItemDispositionsDone(
   if (waiting.length > 0) {
     throw new HttpError(
       400,
-      `${waiting.length === 1 ? waiting[0]!.code : `${waiting.length} items`} must be digitized (captured) before the physical copy is ${body.kind === 'return' ? 'returned' : 'discarded'}.`,
+      `${waiting.length === 1 ? waiting[0]!.code : `${waiting.length} items`} must be digitalized before the physical copy is ${body.kind === 'return' ? 'returned' : 'discarded'}.`,
     );
   }
   const byLot = new Map<string, Types.ObjectId[]>();
@@ -599,8 +599,20 @@ export async function markItemDispositionsDone(
   return { updated };
 }
 
-/** A lot with nothing to digitize whose every item has been returned / discarded is finished. */
-async function finishLotIfHandled(lotId: string, ctx: MutationContext): Promise<void> {
+/** Handover details copied onto the lot when its last item goes back. */
+export interface ReturnHandover {
+  recipient: { name: string; email: string | null; phone: string | null; place: string | null };
+  method: string | null;
+  trackingReference: string | null;
+  notes: string | null;
+  returnedAt: Date;
+}
+
+/**
+ * A lot with nothing to digitize whose every item has been returned / discarded is finished.
+ * Returns true when it moved to Returned / Discarded.
+ */
+export async function finishLotIfHandled(lotId: string, ctx: MutationContext, handover?: ReturnHandover): Promise<boolean> {
   const lotObjectId = new Types.ObjectId(lotId);
   const [total, digitize, open, returned] = await Promise.all([
     LotItem.countDocuments({ lot: lotObjectId }),
@@ -608,7 +620,7 @@ async function finishLotIfHandled(lotId: string, ctx: MutationContext): Promise<
     LotItem.countDocuments({ lot: lotObjectId, dispositionStatus: { $ne: 'done' } }),
     LotItem.countDocuments({ lot: lotObjectId, 'decision.disposition': 'return', dispositionStatus: 'done' }),
   ]);
-  if (total === 0 || digitize > 0 || open > 0) return;
+  if (total === 0 || digitize > 0 || open > 0) return false;
   const stage = returned > 0 ? 'returned' : 'discarded';
   await withAudit({
     lotId,
@@ -619,7 +631,14 @@ async function finishLotIfHandled(lotId: string, ctx: MutationContext): Promise<
       if (gridLocked(lot.stage)) return null;
       if (stage === 'returned') {
         lot.set('return.status', 'returned');
-        lot.set('return.returnedAt', new Date());
+        lot.set('return.returnedAt', handover?.returnedAt ?? new Date());
+        if (handover) {
+          lot.set('return.recipient', handover.recipient);
+          lot.set('return.method', handover.method ?? undefined);
+          lot.set('return.trackingReference', handover.trackingReference ?? undefined);
+          lot.set('return.notes', handover.notes ?? undefined);
+          lot.set('return.handledBy', new Types.ObjectId(ctx.userId));
+        }
       } else {
         lot.set('discard.reason', 'other');
         lot.set('discard.discardedBy', new Types.ObjectId(ctx.userId));
@@ -629,4 +648,5 @@ async function finishLotIfHandled(lotId: string, ctx: MutationContext): Promise<
       return null;
     },
   });
+  return true;
 }

@@ -52,7 +52,7 @@ export function TaskCard({
             <AssigneeAvatars assignees={task.assignees} />
           </span>
         ) : null}
-        <span>{FORMAT_LABELS[task.format]}</span>
+        {task.personal ? <span>Personal</span> : <span>{FORMAT_LABELS[task.format]}</span>}
         <TaskDueChip dueDate={task.dueDate} overdue={task.overdue} />
         {task.lotId && task.lotCode ? (
           <Link href={`/register/${task.lotId}`} className={chipLink}>

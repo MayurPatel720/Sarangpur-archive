@@ -118,6 +118,20 @@ const lotItemSchema = new Schema(
     dispositionStatus: { type: String, enum: ['pending', 'done', null], default: null },
     dispositionDoneAt: { type: Date, default: null },
     dispositionDoneByName: { type: String, trim: true, default: null },
+    /**
+     * How a returned item was handed over. Items returned in one handover share `batchId`,
+     * so the Returned history shows them as one row.
+     */
+    returnInfo: {
+      batchId: { type: String, default: null, index: true },
+      recipientName: { type: String, trim: true, default: null },
+      recipientEmail: { type: String, trim: true, default: null },
+      recipientPhone: { type: String, trim: true, default: null },
+      recipientPlace: { type: String, trim: true, default: null },
+      method: { type: String, trim: true, default: null },
+      trackingReference: { type: String, trim: true, default: null },
+      notes: { type: String, trim: true, default: null },
+    },
     /** Denormalised at finalise time for the item return/discard queues (no $lookup). */
     lotReference: { type: String, trim: true, default: null },
   },

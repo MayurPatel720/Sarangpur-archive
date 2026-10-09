@@ -120,6 +120,9 @@ async function buildItemDocs(
         lineIndex,
         selectedForDigitization: selected,
         notDigitizedReason: selected ? null : line.notDigitizedReason,
+        // Physical + Digital media: a digital copy already exists, so the Decision band's
+        // "Digital" answer starts as Yes (still editable).
+        ...(line.dataType === 'both' ? { decision: { digital: true } } : {}),
       });
       n += 1;
     });

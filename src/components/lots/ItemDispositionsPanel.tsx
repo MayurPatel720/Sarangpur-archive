@@ -72,7 +72,7 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
       </PanelHeader>
       <div className="p-3 md:p-4 flex flex-col gap-3">
         <p className="m-0 text-[12px] text-ink-3">
-          Items whose Return / discard says “{kind}”. An item that is also being digitized can be marked once its file is captured.
+          Items whose Return / discard says “{kind}”. An item that is also being digitized can be marked once it is digitalized.
         </p>
         {list.isLoading ? (
           <Skeleton className="h-24 w-full" />
@@ -130,7 +130,7 @@ export function ItemDispositionsPanel({ kind }: { kind: 'return' | 'discard' }) 
                     <Link href={`/register/${r.lotId}?tab=items`} className="text-accent no-underline hover:underline">
                       {r.lotReference || 'Lot'}
                     </Link>{' '}
-                    {r.waitingForCapture ? '· waiting for capture' : ''}
+                    {r.waitingForCapture ? '· waiting to be digitalized' : ''}
                   </span>
                   <span className="col-start-2 sm:col-start-auto text-[12px] text-ink-3">
                     {status === 'pending' ? `Decided ${date(r.decidedAt)}` : `${date(r.doneAt)} · ${r.doneByName ?? ''}`}

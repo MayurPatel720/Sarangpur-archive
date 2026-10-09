@@ -16,6 +16,7 @@
     "db:backfill-data-type-both": "tsx scripts/backfill-data-type-both.ts",
     "db:reset-sample": "tsx scripts/reset-data.ts",
     "db:backfill-item-format": "tsx scripts/backfill-item-format.ts",
+    "db:backfill-digital-yes": "tsx scripts/backfill-digital-yes.ts",
     "db:backfill-format-grants": "tsx scripts/backfill-format-grants.ts",
     "db:backfill-system-grants": "tsx scripts/backfill-system-grants.ts",
     "db:backfill-task-grants": "tsx scripts/backfill-task-grants.ts",
@@ -25,6 +26,7 @@
     "verify:reconcile": "tsx scripts/verify-reconcile.ts",
     "verify:search": "tsx scripts/verify-search.ts",
     "verify:project-sync": "tsx scripts/verify-project-sync.ts",
+    "verify:returns-todo": "tsx scripts/verify-returns-todo.ts",
     "verify:item-decisions": "tsx scripts/verify-item-decisions.ts",
     "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile && npm run verify:search",
     "db:check": "tsx scripts/check-db.ts"

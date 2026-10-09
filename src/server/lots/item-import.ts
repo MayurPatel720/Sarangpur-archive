@@ -27,11 +27,12 @@ function resolveColumn(header: string, specs: Spec[]): Spec | null {
   const [d, ...rest] = header.split('|');
   const label = norm(rest.join('|'));
   const dept = norm(d ?? '');
-  const inDept = specs.filter((s) => norm(s.label) === label && (dept === '' || norm(deptLabel(s.dept)) === dept));
+  const names = (s: Spec) => [s.label, ...(s.aliases ?? [])].map(norm);
+  const inDept = specs.filter((s) => names(s).includes(label) && (dept === '' || norm(deptLabel(s.dept)) === dept));
   if (inDept.length === 1) return inDept[0]!;
   if (inDept.length === 0 && dept !== '') {
     // The department cell may be missing / reworded — fall back to the label alone when it is unique.
-    const byLabel = specs.filter((s) => norm(s.label) === label);
+    const byLabel = specs.filter((s) => names(s).includes(label));
     return byLabel.length === 1 ? byLabel[0]! : null;
   }
   return null;

@@ -463,7 +463,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                       {empty ? `0 match (of ${sh.all.length})` : `${sh.rows.length}${sh.rows.length === sh.all.length ? '' : ` of ${sh.all.length}`} ${sh.all.length === 1 ? 'item' : 'items'}`}
                     </span>
                     <span className="text-[12px] text-ink-3 tabular-nums sm:ml-auto">
-                      {decided}/{sh.all.length} decided · {captured} captured · {tagged} tagged
+                      {decided}/{sh.all.length} decided · {captured} digitalized · {tagged} tagged
                     </span>
                   </button>
                   {open && !empty ? <div className="border-t border-line">{gridBox}</div> : null}

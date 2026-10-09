@@ -40,6 +40,7 @@ const WORKFLOW_ITEMS = [
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
   { icon: IconDatabase, label: 'Master Excel', href: '/master', perm: 'lot:view' },
   { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
+  { icon: IconCheckCircle, label: 'My to-do', href: '/todo', perm: 'task:view' },
   { icon: IconCheckCircle, label: 'Tasks', href: '/tasks', perm: 'task:view' },
   { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
   { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },

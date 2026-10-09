@@ -33,11 +33,27 @@ const checklistItemSchema = new Schema(
   { _id: true },
 );
 
+/** An image attached to a comment. Bytes live in Cloudinary; this is the metadata. */
+const commentAttachmentSchema = new Schema(
+  {
+    url: { type: String, required: true, trim: true },
+    publicId: { type: String, required: true, trim: true },
+    fileName: { type: String, required: true, trim: true },
+    contentType: { type: String, required: true, trim: true },
+    sizeBytes: { type: Number, required: true, min: 0 },
+    width: { type: Number, default: null },
+    height: { type: Number, default: null },
+  },
+  { _id: false },
+);
+
 const commentSchema = new Schema(
   {
     author: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     authorName: { type: String, required: true, trim: true },
-    text: { type: String, required: true, trim: true, maxlength: 2000 },
+    /** May be empty when the comment is images only (the API requires text OR images). */
+    text: { type: String, trim: true, maxlength: 2000, default: '' },
+    attachments: { type: [commentAttachmentSchema], default: [] },
     at: { type: Date, required: true },
   },
   { _id: true },
@@ -86,6 +102,12 @@ const taskSchema = new Schema(
 
     doneAt: { type: Date, default: null },
     cancelledAt: { type: Date, default: null },
+
+    /**
+     * A private to-do the user added for themselves (My to-do page). Assignee and creator
+     * are the same person; nobody else — admins included — sees it in lists or panels.
+     */
+    personal: { type: Boolean, required: true, default: false },
   },
   { timestamps: true, collection: 'tasks' },
 );

@@ -169,7 +169,7 @@ export function ItemCodeDialog({
           </p>
           {captured > 0 ? (
             <p role="note" className="m-0 text-[12px] text-warn">
-              {captured} item{captured === 1 ? ' is' : 's are'} already captured — rename their files to match the new codes.
+              {captured} item{captured === 1 ? ' is' : 's are'} already digitalized — rename their files to match the new codes.
             </p>
           ) : null}
           <div>

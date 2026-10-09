@@ -240,6 +240,13 @@ const archiveLotSchema = new Schema(
       handledBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
       trackingReference: { type: String, trim: true },
       notes: { type: String, trim: true },
+      /** Who the material went to (filled when the return is recorded on the Returns screen). */
+      recipient: {
+        name: { type: String, trim: true, default: null },
+        email: { type: String, trim: true, default: null },
+        phone: { type: String, trim: true, default: null },
+        place: { type: String, trim: true, default: null },
+      },
     },
 
     discard: {

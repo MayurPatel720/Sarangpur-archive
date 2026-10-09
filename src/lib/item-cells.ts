@@ -1,4 +1,4 @@
-import { DATA_TYPE_LABELS, FORMAT_LABELS, STAGE_LABELS, type DataType, type Format, type Stage } from '@/lib/domain';
+import { STAGE_LABELS, type Stage } from '@/lib/domain';
 import { isoDayToDmy } from '@/lib/date-range';
 import type { ColumnSpec, CustomColumn } from '@/lib/item-columns';
 import type { GridItem } from '@/types/items';
@@ -12,11 +12,9 @@ import type { MasterRow } from '@/types/master';
 
 const yn = (v: boolean | null) => (v === true ? 'Yes' : v === false ? 'No' : '');
 
-/** `Photo · Print — Album · Physical + Digital`. */
-export function mediaTypeText(row: Pick<GridItem, 'format' | 'dataType' | 'subtypeLabel'>): string {
-  const fmt = FORMAT_LABELS[row.format as Format] ?? row.format;
-  const dt = DATA_TYPE_LABELS[row.dataType as DataType] ?? row.dataType;
-  return `${fmt} · ${row.subtypeLabel} · ${dt}`;
+/** Just the sub-type: `VHS`, `35MM Film — Negatives` (no format / data-type prefix). */
+export function mediaTypeText(row: Pick<GridItem, 'subtypeLabel'>): string {
+  return row.subtypeLabel;
 }
 
 /** Display text of one cell. `refLabel` resolves an admin-list value to its label. */
