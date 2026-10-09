@@ -55,8 +55,6 @@ export interface ColumnSpec {
   refList?: string;
   /** Short hint shown as the header tooltip. */
   hint?: string;
-  /** Older header names, so sheets exported before a rename still import. */
-  aliases?: string[];
 }
 
 export const BUILTIN_COLUMNS: ColumnSpec[] = [
@@ -69,21 +67,21 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170 },
   { id: 'nameOnCase', label: 'Name on case', dept: 'details', kind: 'text', field: 'nameOnCase', width: 170 },
   { id: 'physicalSource', label: 'Phy source', dept: 'details', kind: 'text', field: 'physicalSource', width: 160 },
-  { id: 'remarks', label: 'Details remark', aliases: ['Remark'], dept: 'details', kind: 'text', field: 'remarks', width: 190 },
+  { id: 'remarks', label: 'Details remark', dept: 'details', kind: 'text', field: 'remarks', width: 190 },
   { id: 'duplicateCode', label: 'Duplicate code', dept: 'details', kind: 'duplicate', width: 210, hint: 'Type the code of the item this one duplicates (any lot).' },
   // Decision
   { id: 'digital', label: 'Digital', dept: 'decision', kind: 'yesno', field: 'digital', width: 100 },
   { id: 'redigital', label: 'Redigital', dept: 'decision', kind: 'yesno', field: 'redigital', width: 110 },
   { id: 'discard', label: 'Discard', dept: 'decision', kind: 'yesno', field: 'discard', width: 100 },
-  { id: 'decisionRemark', label: 'Decision remark', aliases: ['Remark'], dept: 'decision', kind: 'text', field: 'decisionRemark', width: 190 },
+  { id: 'decisionRemark', label: 'Decision remark', dept: 'decision', kind: 'text', field: 'decisionRemark', width: 190 },
   // Digitalization & Storage
-  { id: 'captured', label: 'Digitalized', aliases: ['Captured'], dept: 'storage', kind: 'flag', field: 'captured', width: 120, hint: 'Yes = the digital file exists.' },
+  { id: 'captured', label: 'Digitalized', dept: 'storage', kind: 'flag', field: 'captured', width: 120, hint: 'Yes = the digital file exists.' },
   { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, hint: 'Where the digital copy came from, e.g. Mumbai.' },
   { id: 'fileName', label: 'File path', dept: 'storage', kind: 'text', field: 'fileName', width: 240 },
   { id: 'phyStorageLoc', label: 'Phy storage loc.', dept: 'storage', kind: 'text', field: 'phyStorageLoc', width: 170 },
   { id: 'disposition', label: 'Return / discard', dept: 'storage', kind: 'disposition', field: 'disposition', width: 150 },
   { id: 'taggedInMls', label: 'MLS tagged', dept: 'storage', kind: 'flag', field: 'taggedInMls', width: 120 },
-  { id: 'storageRemark', label: 'Storage remark', aliases: ['Remark'], dept: 'storage', kind: 'text', field: 'storageRemark', width: 190 },
+  { id: 'storageRemark', label: 'Storage remark', dept: 'storage', kind: 'text', field: 'storageRemark', width: 190 },
   // Logging
   { id: 'logged', label: 'Status', dept: 'logging', kind: 'flag', field: 'logged', width: 100, hint: 'Yes = this row has been logged.' },
   { id: 'loggedAt', label: 'Logging date', dept: 'logging', kind: 'date', field: 'loggedAt', width: 140 },

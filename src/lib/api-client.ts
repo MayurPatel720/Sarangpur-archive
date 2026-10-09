@@ -97,7 +97,6 @@ import {
   codeInfoResponseSchema,
   columnsResponseSchema,
   itemDuplicateResponseSchema,
-  importResponseSchema,
   itemNumberResponseSchema,
   itemOrderResponseSchema,
   sheetCodeResponseSchema,
@@ -111,8 +110,6 @@ import {
   type ColumnsResponse,
   type ItemDuplicateBody,
   type ItemDuplicateResponse,
-  type ImportBody,
-  type ImportResponse,
   type ItemNumberBody,
   type ItemOrderBody,
   type SheetCodeBody,
@@ -524,8 +521,6 @@ export const itemsGridApi = {
     sendJson<{ updated: number }>(`/api/lots/${encodeURIComponent(lotId)}/items/order`, 'PATCH', body, itemOrderResponseSchema),
   columns: (lotId: string, body: ColumnsBody) =>
     sendJson<ColumnsResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/columns`, 'PATCH', body, columnsResponseSchema),
-  importRows: (lotId: string, body: ImportBody) =>
-    sendJson<ImportResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/import`, 'POST', body, importResponseSchema),
   dispositions: (kind: 'return' | 'discard', status: 'pending' | 'done', page: number, pageSize: number) =>
     getJson<ItemDispositionList>(
       `/api/queues/item-dispositions?${new URLSearchParams({ kind, status, page: String(page), pageSize: String(pageSize) })}`,

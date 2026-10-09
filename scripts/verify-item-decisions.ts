@@ -1,6 +1,6 @@
 /**
  * Integration check for the lot's Excel (Items tab): decisions, stage follow-through, item
- * codes, duplicates, row order, custom / hidden columns and Excel import.
+ * codes, duplicates, row order, custom / hidden columns.
  *
  *   npm run verify:item-decisions
  *
@@ -19,13 +19,11 @@ import { ALL_PERMISSIONS } from '../src/server/permissions';
 import { createIntake } from '../src/server/lots/mutations';
 import { bulkUpdateItems, getItemsGrid, listItemDispositions, markItemDispositionsDone } from '../src/server/lots/item-grid';
 import { markDuplicate, recodeSheet, reorderItems, setItemNumber, updateColumns } from '../src/server/lots/item-codes';
-import { importItems } from '../src/server/lots/item-import';
 import { parseDateRange, formatDateRange } from '../src/lib/date-range';
 import { itemResultOf } from '../src/lib/item-decision';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
-import type { GridItem, ImportBody } from '../src/types/items';
+import type { GridItem } from '../src/types/items';
 import { allColumns } from '../src/lib/item-columns';
-import { buildItemsWorkbook, readItemsFromExcel } from '../src/components/lots/excel-io';
 
 let failures = 0;
 const check = (label: string, ok: boolean, extra?: unknown) => {
@@ -65,37 +63,8 @@ function pureChecks() {
   check('item code round-trips', p ? buildItemCode(p) === 'ALB-surat-0001-R-000' : false);
 }
 
-/** Export → .xlsx → read back: the layout (department band, names) must survive a round trip. */
-async function excelRoundTrip() {
-  console.log('excel file round trip');
-  const row = (n: number, over: Partial<GridItem> = {}): GridItem => ({
-    id: String(n), code: `ALB-surat-000${n}-R-000`, groupNo: 1, itemNo: n, lineIndex: 0, sortOrder: n, format: 'photo', dataType: 'both',
-    subtypeLabel: '35MM Film — Album', senderCode: null, dateRange: '', place: null, nameOnTape: null, nameOnCase: null,
-    physicalSource: null, remarks: null, duplicateCode: null, duplicatedBy: [], digital: null, redigital: null, discard: null,
-    decisionRemark: null, result: null, captured: false, digitalSource: null, fileName: null, phyStorageLoc: null,
-    disposition: null, dispositionStatus: null, taggedInMls: false, storageRemark: null, logged: false, loggedAt: '',
-    loggerName: null, custom: {}, ...over,
-  });
-  const custom = [{ key: 'c_1', label: 'Reel', type: 'number' as const, dept: 'storage' as const }];
-  const wb = await buildItemsWorkbook({
-    sheets: [{ name: 'Album: 35MM/Film', rows: [row(1, { place: 'Surat, Mumbai', dateRange: '12/03/1998 - 20/03/1998', digital: true, redigital: false, discard: true, remarks: 'r1', custom: { c_1: 4 } }), row(2)] }],
-    columns: allColumns(custom),
-    refLabel: (_l, v) => v ?? '',
-  });
-  const buf = await wb.xlsx.writeBuffer();
-  const parsed = await readItemsFromExcel(new File([buf], 'x.xlsx'));
-  const r1 = parsed.rows.find((r) => r.code === 'ALB-surat-0001-R-000');
-  check('sheet name made Excel-safe and read back', parsed.sheets === 1 && wb.worksheets[0]!.name === 'Album 35MM Film', wb.worksheets[0]!.name);
-  check('both rows read, keyed by Archive code', parsed.rows.length === 2 && Boolean(r1), parsed.rows.length);
-  check('cells keyed by department and column name', r1?.cells['Details|Place'] === 'Surat, Mumbai' && r1.cells['Details|Date'] === '12/03/1998 - 20/03/1998' && r1.cells['Decision|Digital'] === 'Yes' && r1.cells['Decision|Discard'] === 'Yes', r1?.cells);
-  check('same column name in two departments stays apart', r1?.cells['Details|Remark'] === 'r1' && !('Decision|Remark' in r1.cells), r1?.cells);
-  check('custom column travels with its department', r1?.cells['Digitalization & Storage|Reel'] === '4', r1?.cells);
-  check('blank cells are left out', !('Details|Place' in (parsed.rows.find((r) => r.code === 'ALB-surat-0002-R-000')?.cells ?? {})));
-}
-
 async function main() {
   pureChecks();
-  await excelRoundTrip();
   await connectToDatabase();
   const u = await User.findOne({}).select('name').lean();
   if (!u) throw new Error('Run `npm run seed` first.');
@@ -235,20 +204,6 @@ async function main() {
     const hid = await updateColumns(lotB.id, { hidden: ['place', 'code', 'nope'] }, admin);
     check('hide keeps the code visible and ignores unknown ids', hid.hiddenColumns.length === 1 && hid.hiddenColumns[0] === 'place', hid);
     check('hidden columns are shared (saved on the lot)', (await grid(lotB.id)).hiddenColumns.includes('place'));
-
-    console.log('excel import');
-    const codes = (await grid(lotB.id)).items.map((i) => i.code);
-    const rows: ImportBody['rows'] = [
-      { code: codes[0]!, cells: { 'Details|Place': 'Pune', 'Details|Date': '1999', 'Decision|Remark': 'x' } },
-      { code: codes[1]!, cells: { 'Details|Date': '99/99/1999' } },
-      { code: 'NOPE-0000-0001-R-000', cells: { 'Details|Place': 'x' } },
-    ];
-    const pv = await importItems(lotB.id, { apply: false, rows }, admin);
-    check('preview reports a bad cell and an unknown code', pv.errors.length === 1 && pv.unknownCodes.length === 1 && !pv.applied, pv);
-    const ok = await importItems(lotB.id, { apply: true, rows: [rows[0]!] }, admin);
-    check('import applies', ok.applied && ok.willChange === 1, ok);
-    const imported = (await grid(lotB.id)).items.find((i) => i.code === codes[0])!;
-    check('imported cells saved', imported.place === 'Pune' && imported.dateRange === '01/01/1999 - 31/12/1999', imported);
   } finally {
     await LotItem.deleteMany({ lot: { $in: created } });
     await ActivityLog.deleteMany({ lot: { $in: created } });
