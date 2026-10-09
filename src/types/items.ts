@@ -261,6 +261,40 @@ export const columnsResponseSchema = z.object({
 });
 export type ColumnsResponse = z.output<typeof columnsResponseSchema>;
 
+/* ------------------------------------------------------------ Excel import */
+
+/** POST …/items/import — rows read from an uploaded .xlsx. `apply: false` only previews. */
+export const importBodySchema = z.object({
+  apply: z.boolean().default(false),
+  rows: z
+    .array(
+      z.object({
+        /** Archive code of the row. */
+        code: z.string().trim().min(1).max(60),
+        /** `"<department>|<column name>"` → cell text. Blank cells are left out. */
+        cells: z.record(z.string().max(120), z.string().max(4000)),
+      }),
+    )
+    .min(1)
+    .max(20000),
+});
+export type ImportBody = z.input<typeof importBodySchema>;
+export const importResponseSchema = z.object({
+  applied: z.boolean(),
+  /** Rows whose code matched an item of this lot. */
+  matched: z.number(),
+  /** Rows that would change (or did change) at least one cell. */
+  willChange: z.number(),
+  unknownCodes: z.array(z.string()),
+  /** First changes, for the preview table. */
+  changes: z.array(z.object({ code: z.string(), column: z.string(), from: z.string(), to: z.string() })),
+  changesTotal: z.number(),
+  errors: z.array(z.object({ code: z.string(), column: z.string(), message: z.string() })),
+  ignoredColumns: z.array(z.string()),
+  blockedBy: z.array(z.string()),
+});
+export type ImportResponse = z.output<typeof importResponseSchema>;
+
 /* ------------------------------------------- item return / discard queues */
 
 export const itemDispositionQuerySchema = z.object({

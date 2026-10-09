@@ -16,7 +16,9 @@ import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/t
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
 import { DuplicateDialog } from './DuplicateDialog';
+import { exportItemsToExcel } from './excel-io';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
+import { ImportDialog } from './ImportDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { ItemFamilyGrid } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
@@ -26,7 +28,7 @@ import { useMe } from '@/hooks/useCan';
  * four departments (Details · Decision · Digitalization & Storage · Logging; see
  * src/lib/item-columns.ts). Column headers hide a column on click, "⋯" brings hidden ones
  * back and "+" adds a column of the team's own — both shared by everyone on THIS lot.
- * Rows can be dragged to reorder. Deciding the last item
+ * Rows can be dragged to reorder. Excel export / import sit top right. Deciding the last item
  * decides the lot, and the lot's stage then follows capture / MLS / logging by itself.
  */
 
@@ -53,6 +55,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [expanded, setExpanded] = useState<Record<number, boolean> | null>(null);
   const [selectedBy, setSelectedBy] = useState<Record<number, string[]>>(SELECTION_CLEAR);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [columnError, setColumnError] = useState<string | null>(null);
   const [codeFor, setCodeFor] = useState<GridItem | null>(null);
@@ -199,8 +202,22 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const onOpenCode = useCallback((item: GridItem) => setCodeFor(item), []);
   const onDuplicate = useCallback((item: GridItem, code: string) => setDuplicateFor({ item, code }), []);
 
+  const exportExcel = async () => {
+    if (!data) return;
+    try {
+      await exportItemsToExcel({
+        fileName: `${lotReference}-items`,
+        sheets: sheets.map((s) => ({ name: s.name, rows: s.all })),
+        columns: visibleSpecs,
+        refLabel,
+      });
+    } catch {
+      toast.error('Could not export', 'Try again, or reload the page.');
+    }
+  };
+
   // Full screen: lock page scroll; Escape exits (unless a dialog or a cell editor/popup is using it).
-  const dialogOpen = showAdd || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
+  const dialogOpen = showAdd || showImport || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
   useEffect(() => {
     if (!fullscreen) return;
     const prev = document.body.style.overflow;
@@ -340,7 +357,13 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 <GhostButton onClick={() => setAll(false)}>Collapse all</GhostButton>
               </div>
             ) : null}
-            <div role="toolbar" aria-label="Column tools" className="flex items-center gap-1.5 sm:ml-auto">
+            <div role="toolbar" aria-label="Excel tools" className="flex items-center gap-1.5 sm:ml-auto">
+              {canDetails ? (
+                <GhostButton onClick={() => setShowImport(true)}>Import</GhostButton>
+              ) : null}
+              <GhostButton onClick={() => void exportExcel()} disabled={s.total === 0}>
+                Export
+              </GhostButton>
               {canDetails ? (
                 <button
                   type="button"
@@ -458,6 +481,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           }}
         />
       ) : null}
+      {showImport ? <ImportDialog lotId={lotId} onClose={() => setShowImport(false)} onDone={refresh} /> : null}
       {showAddColumn ? (
         <AddColumnDialog
           pending={columns.isPending}
