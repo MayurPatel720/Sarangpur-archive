@@ -157,6 +157,16 @@ import {
   type ProjectImagesResponse,
 } from '@/types/project-image';
 import {
+  todoDeleteResponseSchema,
+  todoListResponseSchema,
+  todoResponseSchema,
+  type TodoCreateBody,
+  type TodoListQueryInput,
+  type TodoListResponse,
+  type TodoPatchBody,
+  type TodoResponse,
+} from '@/types/todo';
+import {
   lotImageDeleteResponseSchema,
   lotImageResponseSchema,
   lotImagesResponseSchema,
@@ -690,6 +700,19 @@ export const lotImagesApi = {
 const qs = (params: Record<string, string>) => {
   const q = new URLSearchParams(params).toString();
   return q ? `?${q}` : '';
+};
+
+export const todosApi = {
+  list: (query: TodoListQueryInput) => {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(query)) if (v !== undefined) q.set(k, String(v));
+    return getJson<TodoListResponse>(`/api/todos?${q}`, todoListResponseSchema);
+  },
+  create: (body: TodoCreateBody) => sendJson<TodoResponse>('/api/todos', 'POST', body, todoResponseSchema),
+  update: (id: string, body: TodoPatchBody) =>
+    sendJson<TodoResponse>(`/api/todos/${encodeURIComponent(id)}`, 'PATCH', body, todoResponseSchema),
+  remove: (id: string) =>
+    sendJson<{ ok: true }>(`/api/todos/${encodeURIComponent(id)}`, 'DELETE', {}, todoDeleteResponseSchema),
 };
 
 export const tasksApi = {

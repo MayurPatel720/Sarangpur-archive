@@ -29,9 +29,14 @@ import { IconTrash } from '@/components/ui/icons';
 export function AssignTaskDialog({
   defaultFormat,
   defaultProject,
+  defaultTitle,
+  defaultDescription,
   onClose,
   onCreated,
 }: {
+  /** Pre-fills the title / details (e.g. when delegating a personal to-do). */
+  defaultTitle?: string;
+  defaultDescription?: string;
   defaultFormat?: Format;
   /** Pre-links the task to this project (the user can still clear it). */
   defaultProject?: TaskLink;
@@ -41,8 +46,8 @@ export function AssignTaskDialog({
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  const [title, setTitle] = useState(defaultTitle ?? '');
+  const [description, setDescription] = useState(defaultDescription ?? '');
   const [assignees, setAssignees] = useState<TaskAssignee[]>([]);
   const [priority, setPriority] = useState<TaskPriority>('normal');
   const [dueDate, setDueDate] = useState('');
