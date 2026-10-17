@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { OVERRIDE_STATUSES } from '@/lib/domain';
+import { MAX_ASSIGNEES, isoDaySchema, taskPrioritySchema } from './task';
 
 /**
  * Contracts for the intake register (API.md §3).
@@ -131,6 +132,21 @@ export const lotCreateBodySchema = z
     /** Calendar due date for the return, ISO datetime with offset. */
     returnDueAt: z.string().datetime({ offset: true }).optional(),
     rights: rightsSchema.optional(),
+    /**
+     * Who owns the lot from the start (needs `project:assign`). Optional — an unassigned lot is
+     * admin-only until someone is assigned. With `task` (needs `task:assign`) the owner and any
+     * others also get a task linked to this lot; the title and links are filled in by the server.
+     */
+    assigneeId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Expected an ObjectId string.').optional(),
+    task: z
+      .object({
+        description: z.string().trim().max(2000).optional(),
+        checklist: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+        priority: taskPrioritySchema.default('normal'),
+        dueDate: isoDaySchema.optional(),
+        assigneeIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/)).min(1, 'Pick at least one assignee.').max(MAX_ASSIGNEES),
+      })
+      .optional(),
   })
   .refine(
     (b) => b.mediaLines.reduce((sum, l) => sum + l.quantity, 0) <= 20000,

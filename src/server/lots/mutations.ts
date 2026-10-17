@@ -16,7 +16,9 @@ import { assertActive } from '@/server/reference/runtime';
 import { computeVerdict, unionSignificanceFlags, type SignificanceFlags, type Verdict } from '@/server/lots/decision-rule';
 import { allocateItemCodes, generateLotReference, generateNamingCode, itemSlot, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
 import { isTerminalStage } from '@/server/lots/queries';
-import type { Stage } from '@/lib/domain';
+import { FORMATS, FORMAT_LABELS, type Format, type Stage } from '@/lib/domain';
+import { User } from '@/models/User';
+import { assertNotPast, assertRealDay, createTaskInSession } from '@/server/tasks/mutations';
 import type { LotCreateBody, LotPatchBody, DecisionBody, DecisionResponse, OverrideRequestBody, OverrideDecideBody } from '@/types/lot';
 import type { TriageBulkBody } from '@/types/triage';
 
@@ -278,6 +280,34 @@ export async function insertLotInSession(
   return { id: String(lot!._id), lotReference, format: primary.format, itemsCreated: totalQuantity };
 }
 
+const isTaskFormat = (f: string): f is Format => (FORMATS as readonly string[]).includes(f);
+
+/**
+ * Checks the optional owner / task of a standalone intake BEFORE any write: the owner needs
+ * `project:assign`, the task needs `task:assign` and an owner, the due date must be a real day
+ * that is not in the past, and every person must exist. Returns the owner (or null).
+ */
+async function resolveIntakeOwner(
+  body: LotCreateBody,
+  ctx: MutationContext,
+): Promise<{ id: string; name: string } | null> {
+  if (!body.assigneeId && !body.task) return null;
+  if (!can(ctx.grants, 'project:assign')) throw new HttpError(403, 'Your role cannot assign a lot.');
+  if (body.task) {
+    if (!can(ctx.grants, 'task:assign')) throw new HttpError(403, 'Your role cannot assign tasks. Choose only the lot owner.');
+    if (!body.assigneeId) throw new HttpError(400, 'Pick the lot owner before adding a task.');
+    if (body.task.dueDate) {
+      assertRealDay(body.task.dueDate);
+      assertNotPast(body.task.dueDate);
+    }
+  }
+  const ids = [...new Set([body.assigneeId, ...(body.task?.assigneeIds ?? [])].filter((x): x is string => Boolean(x)))];
+  const users = await User.find({ _id: { $in: ids } }).select('name').lean();
+  if (users.length !== ids.length) throw new HttpError(400, 'Unknown user selected.');
+  const owner = users.find((u) => String(u._id) === body.assigneeId);
+  return owner ? { id: String(owner._id), name: owner.name as string } : null;
+}
+
 /** Standalone intake: one lot in its own transaction. */
 export async function createIntake(
   body: LotCreateBody,
@@ -285,11 +315,30 @@ export async function createIntake(
 ): Promise<{ id: string; lotReference: string; itemsCreated: number }> {
   const vocab = await validateLotVocab(body);
   await connectToDatabase();
+  const owner = await resolveIntakeOwner(body, ctx);
   const session = await ArchiveLot.startSession();
   try {
     let out!: { id: string; lotReference: string; itemsCreated: number };
     await session.withTransaction(async () => {
-      out = await insertLotInSession(body, vocab, ctx, session);
+      const lot = await insertLotInSession(body, vocab, ctx, session, { assignee: owner });
+      out = lot;
+      // The task (owner + others) is created in the same transaction: a failure rolls the intake back.
+      if (body.task && isTaskFormat(lot.format)) {
+        await createTaskInSession(
+          {
+            title: `${lot.lotReference} — ${FORMAT_LABELS[lot.format]} lot`.slice(0, 160),
+            description: body.task.description || undefined,
+            assigneeIds: body.task.assigneeIds,
+            priority: body.task.priority,
+            dueDate: body.task.dueDate,
+            format: lot.format,
+            lotId: lot.id,
+            checklist: body.task.checklist,
+          },
+          ctx,
+          session,
+        );
+      }
     });
     return { id: out.id, lotReference: out.lotReference, itemsCreated: out.itemsCreated };
   } finally {

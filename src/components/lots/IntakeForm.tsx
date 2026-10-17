@@ -12,7 +12,13 @@ import { FormError, GhostButton, PrimaryButton } from '@/components/ui/Form';
 import { ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { focusEditableCell } from '@/components/ui/EditableTable';
 import { FormSection, StepBlocks } from '@/components/ui/FormSection';
-import { useMe } from '@/hooks/useCan';
+import { useCan, useMe } from '@/hooks/useCan';
+import { useRowAssign } from '@/hooks/useRowAssign';
+import { RowAssignButton } from '@/components/tasks/RowAssignButton';
+import { RowAssignDialog } from '@/components/tasks/RowAssignDialog';
+
+/** The single assignment of a standalone intake is stored under this key (a lot has one owner). */
+const LOT_ASSIGN_KEY = 'lot';
 import {
   ConditionStep,
   EMPTY_LINE,
@@ -79,6 +85,29 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   const markDone = (index: number, done: boolean) =>
     setStepsDone((prev) => (prev[index] === done ? prev : prev.map((v, k) => (k === index ? done : v))));
   const [formError, setFormError] = useState<string | null>(null);
+
+  // "Assign this lot": one owner for the whole lot (+ an optional task), same dialog as the project wizard.
+  const rowAssign = useRowAssign();
+  const canAssignLot = useCan('project:assign');
+  const lotAssignment = rowAssign.drafts[LOT_ASSIGN_KEY];
+  const assignmentBody = (): Pick<LotCreateBody, 'assigneeId' | 'task'> => {
+    const owner = lotAssignment?.assignees[0];
+    if (!canAssignLot || !lotAssignment || !owner) return {};
+    return {
+      assigneeId: owner.id,
+      ...(rowAssign.canAssignTasks
+        ? {
+            task: {
+              ...(lotAssignment.description.trim() ? { description: lotAssignment.description.trim() } : {}),
+              checklist: lotAssignment.checklist.map((c) => c.trim()).filter(Boolean),
+              priority: lotAssignment.priority,
+              ...(lotAssignment.dueDate ? { dueDate: lotAssignment.dueDate } : {}),
+              assigneeIds: [...new Set(lotAssignment.assignees.map((a) => a.id))],
+            },
+          }
+        : {}),
+    };
+  };
 
   const ctx: StepCtx = {
     mode: 'lot',
@@ -221,6 +250,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
       ...(draft.digitalFilePath.trim() ? { digitalFilePath: draft.digitalFilePath.trim() } : {}),
       ...(draft.physicalLabelApplied ? { physicalLabelApplied: true } : {}),
       ...(draft.containerLabelApplied ? { containerLabelApplied: true } : {}),
+      ...assignmentBody(),
     };
     create.mutate(body);
   };
@@ -238,7 +268,26 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
 
         {step === STEP_ORIGIN ? <OriginContactsStep ctx={ctx} /> : null}
         {step === STEP_CONDITION ? <ConditionStep ctx={ctx} /> : null}
-        {step === STEP_MEDIA ? <MediaStep ctx={ctx} /> : null}
+        {step === STEP_MEDIA ? (
+          <MediaStep
+            ctx={ctx}
+            footerNote={
+              canAssignLot ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
+                  <span className="text-[12.5px] font-semibold text-ink-2">Assign this lot</span>
+                  <RowAssignButton
+                    format={draft.lines[0]?.format ?? ''}
+                    draft={lotAssignment}
+                    onOpen={() => rowAssign.open(LOT_ASSIGN_KEY)}
+                  />
+                  <span className="text-[12px] text-ink-3">
+                    One owner for the whole lot, whatever formats it holds. Optional — leave it to assign later.
+                  </span>
+                </div>
+              ) : null
+            }
+          />
+        ) : null}
         {step === 3 ? (
           <StepBlocks>
             <RightsSection ctx={ctx} />
@@ -277,6 +326,15 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
           </div>
         </div>
       </div>
+      {rowAssign.editing ? (
+        <RowAssignDialog
+          initial={lotAssignment ?? null}
+          canAssignTasks={rowAssign.canAssignTasks}
+          onSave={(d) => rowAssign.save(LOT_ASSIGN_KEY, d)}
+          onClear={lotAssignment ? () => rowAssign.clear(LOT_ASSIGN_KEY) : undefined}
+          onClose={rowAssign.close}
+        />
+      ) : null}
     </Panel>
   );
 }

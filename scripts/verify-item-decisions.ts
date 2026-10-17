@@ -14,6 +14,7 @@ import { ArchiveLot } from '../src/models/ArchiveLot';
 import { ActivityLog } from '../src/models/ActivityLog';
 import { LotItem } from '../src/models/LotItem';
 import { User } from '../src/models/User';
+import { Task } from '../src/models/Task';
 import type { MutationContext } from '../src/lib/api';
 import { ALL_PERMISSIONS } from '../src/server/permissions';
 import { createIntake } from '../src/server/lots/mutations';
@@ -283,6 +284,37 @@ async function main() {
     const imported = (await grid(lotB.id)).items.find((i) => i.code === codes[0])!;
     check('imported cells saved', imported.place === 'Pune' && imported.dateRange === '01/01/1999 - 31/12/1999', imported);
 
+    console.log('intake assignment');
+    const base = {
+      dateReceived: new Date().toISOString(),
+      originSource: sample.originSource!,
+      owner: { name: 'Verify Owner' },
+      pointsOfContact: [],
+      mediaLines: [{ format: 'photo', dataType: sample.dataType, mediaSubtype: sample.mediaSubtype, quantity: 1 }],
+    };
+    const me = String(u._id);
+    const owned = await createIntake({ ...base, assigneeId: me }, admin);
+    created.push(owned.id);
+    const ownedLot = await ArchiveLot.findById(owned.id).select('assignee assigneeName').lean();
+    check('intake with an owner assigns the lot', String(ownedLot?.assignee) === me && Boolean(ownedLot?.assigneeName), ownedLot);
+    check('no task without task details', (await Task.countDocuments({ lot: owned.id })) === 0);
+
+    const day = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+    const tasked = await createIntake({ ...base, assigneeId: me, task: { checklist: ['Sort photos'], priority: 'urgent', dueDate: day, assigneeIds: [me] } }, admin);
+    created.push(tasked.id);
+    const t = await Task.findOne({ lot: tasked.id }).lean();
+    check('intake with a task creates it linked to the lot', Boolean(t) && String(t!.lot) === tasked.id && t!.format === 'photo', t?.title);
+
+    const before = await ArchiveLot.countDocuments({});
+    await rejects('a past due date is refused', () => createIntake({ ...base, assigneeId: me, task: { checklist: [], priority: 'normal', dueDate: '2020-01-01', assigneeIds: [me] } }, admin), 400);
+    await rejects('a task without an owner is refused', () => createIntake({ ...base, task: { checklist: [], priority: 'normal', assigneeIds: [me] } }, admin), 400);
+    await rejects('an unknown user is refused', () => createIntake({ ...base, assigneeId: '0'.repeat(24) }, admin), 400);
+    const noAssign: MutationContext = { ...admin, grants: admin.grants.filter((g) => g !== 'project:assign') };
+    await rejects('assigning needs project:assign', () => createIntake({ ...base, assigneeId: me }, noAssign), 403);
+    const noTask: MutationContext = { ...admin, grants: admin.grants.filter((g) => g !== 'task:assign') };
+    await rejects('a task needs task:assign', () => createIntake({ ...base, assigneeId: me, task: { checklist: [], priority: 'normal', assigneeIds: [me] } }, noTask), 403);
+    check('refused intakes create nothing', (await ArchiveLot.countDocuments({})) === before);
+
     console.log('prasadi');
     const prs = await createIntake(
       {
@@ -330,6 +362,7 @@ async function main() {
     await bulkUpdateItems(lot.id, { itemIds: [a], set: { recheckWeeks: 4 } }, admin);
     check('recheck weeks never lands on a non-Prasadi item', (await grid(lot.id)).items.find((i) => i.id === a)!.recheckWeeks === null);
   } finally {
+    await Task.deleteMany({ lot: { $in: created } });
     await LotItem.deleteMany({ lot: { $in: created } });
     await ActivityLog.deleteMany({ lot: { $in: created } });
     await ArchiveLot.deleteMany({ _id: { $in: created } });
