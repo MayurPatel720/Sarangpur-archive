@@ -15,6 +15,9 @@
  * Users can add their own columns to a lot's Excel (`lot.customColumns`) — each one belongs
  * to one of the departments above and is stored per item under `custom[key]`.
  *
+ * Some columns belong to one media format only (`formats` / `notFormats`) — Prasadi sheets
+ * show their own set; see `appliesToFormat`.
+ *
  * TO CHANGE A COLUMN: edit its line below. `field` is the key the grid PATCH accepts
  * (`ItemsBulkSet`); a column without `field` is read-only (or has its own flow).
  */
@@ -40,7 +43,9 @@ export type ColumnKind =
   | 'flag' //      Yes / blank (two-state)
   | 'disposition' // Return / Discard / blank
   | 'code' //      the item code (own popup)
-  | 'duplicate'; // duplicate code (own flow)
+  | 'duplicate' // duplicate code (own flow)
+  | 'weeks' //     whole number of weeks, always shown as "3 weeks"
+  | 'info'; //     computed text, shown but never edited here
 
 export interface ColumnSpec {
   id: string;
@@ -55,7 +60,37 @@ export interface ColumnSpec {
   refList?: string;
   /** Short hint shown as the header tooltip. */
   hint?: string;
+  /** Only on sheets of these media formats (default: every format). */
+  formats?: string[];
+  /** Left out of sheets of these media formats (default: none). */
+  notFormats?: string[];
+  /**
+   * Format-specific value kept in the item's `attrs` map under `field` (so a new column needs no
+   * model, type or API change — only a line here). Without it the value has its own item field.
+   */
+  attr?: boolean;
 }
+
+type FormatRule = Pick<ColumnSpec, 'formats' | 'notFormats'>;
+
+/** Does this column belong on a sheet of the given media format? `null` = no format known: show it. */
+export const appliesToFormat = (c: FormatRule, format: string | null): boolean =>
+  format === null || ((!c.formats || c.formats.includes(format)) && !c.notFormats?.includes(format));
+
+/** A column every media format has — what the Master Excel shows when no single format is chosen. */
+export const isCommonColumn = (c: FormatRule): boolean => !c.formats && !c.notFormats;
+
+
+/*
+ * Prasadi = a physical holy item blessed by a Guru (Mahant Swami, Pramukh Swami, Yogiji, Shastriji
+ * Maharaj …). It is stored, stickered with its archive code and tracked here. A lot's intake form
+ * already records who it came from, so these columns describe the ITEM: what it is, who blessed it,
+ * when / where / on what occasion, its condition, whether the sticker is on, and where it is kept.
+ * Tape / case names, the digital-copy source and duplicate links only make sense for media, so
+ * Prasadi sheets leave them out.
+ */
+export const PRASADI_FORMAT = 'prasadi';
+const PRASADI = [PRASADI_FORMAT];
 
 export const BUILTIN_COLUMNS: ColumnSpec[] = [
   // Details
@@ -64,21 +99,31 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'senderCode', label: "Sender's code", dept: 'details', kind: 'text', field: 'senderCode', width: 140 },
   { id: 'dateRange', label: 'Date', dept: 'details', kind: 'dateRange', field: 'dateRange', width: 210, hint: 'dd/mm/yyyy or a range: dd/mm/yyyy - dd/mm/yyyy' },
   { id: 'place', label: 'Place', dept: 'details', kind: 'text', field: 'place', width: 160, hint: 'More than one place: separate with commas.' },
-  { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170 },
-  { id: 'nameOnCase', label: 'Name on case', dept: 'details', kind: 'text', field: 'nameOnCase', width: 170 },
+  { id: 'itemName', label: 'Prasadi item', dept: 'details', kind: 'text', field: 'itemName', width: 190, formats: PRASADI, hint: 'What it is, e.g. Mala, Vastra, Charnarvind, Walking stick.' },
+  { id: 'description', label: 'Description', dept: 'details', kind: 'text', field: 'description', width: 260, formats: PRASADI, hint: 'Colour, size, material, markings — enough to recognise it.' },
+  { id: 'blessedBy', label: 'Blessed by', dept: 'details', kind: 'text', field: 'blessedBy', attr: true, width: 190, formats: PRASADI, hint: 'The Guru it came from, e.g. Pramukh Swami Maharaj.' },
+  { id: 'event', label: 'Occasion', dept: 'details', kind: 'text', field: 'event', width: 200, formats: PRASADI, hint: 'When / how it was given, e.g. Diksha day, home visit, festival.' },
+  { id: 'itemCondition', label: 'Condition', dept: 'details', kind: 'text', field: 'itemCondition', width: 150, formats: PRASADI, hint: 'e.g. Good, Fragile, Needs care.' },
+  { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170, notFormats: PRASADI },
+  { id: 'nameOnCase', label: 'Name on case', dept: 'details', kind: 'text', field: 'nameOnCase', width: 170, notFormats: PRASADI },
   { id: 'physicalSource', label: 'Phy source', dept: 'details', kind: 'text', field: 'physicalSource', width: 160 },
   { id: 'remarks', label: 'Remark', dept: 'details', kind: 'text', field: 'remarks', width: 180 },
-  { id: 'duplicateCode', label: 'Duplicate code', dept: 'details', kind: 'duplicate', width: 210, hint: 'Type the code of the item this one duplicates (any lot).' },
+  { id: 'duplicateCode', label: 'Duplicate code', dept: 'details', kind: 'duplicate', width: 210, notFormats: PRASADI, hint: 'Type the code of the item this one duplicates (any lot).' },
   // Decision
-  { id: 'digital', label: 'Digital', dept: 'decision', kind: 'yesno', field: 'digital', width: 100 },
-  { id: 'redigital', label: 'Redigital', dept: 'decision', kind: 'yesno', field: 'redigital', width: 110 },
-  { id: 'discard', label: 'Discard', dept: 'decision', kind: 'yesno', field: 'discard', width: 100 },
-  { id: 'decisionRemark', label: 'Remark', dept: 'decision', kind: 'text', field: 'decisionRemark', width: 180 },
+  // (Prasadi cannot be digitized: it is kept physically, so it has no Decision columns.)
+  { id: 'digital', label: 'Digital', dept: 'decision', kind: 'yesno', field: 'digital', width: 100, notFormats: PRASADI },
+  { id: 'redigital', label: 'Redigital', dept: 'decision', kind: 'yesno', field: 'redigital', width: 110, notFormats: PRASADI },
+  { id: 'discard', label: 'Discard', dept: 'decision', kind: 'yesno', field: 'discard', width: 100, notFormats: PRASADI },
+  { id: 'decisionRemark', label: 'Remark', dept: 'decision', kind: 'text', field: 'decisionRemark', width: 180, notFormats: PRASADI },
   // Digitalization & Storage
-  { id: 'captured', label: 'Captured', dept: 'storage', kind: 'flag', field: 'captured', width: 110 },
-  { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, hint: 'Where the digital copy came from, e.g. Mumbai.' },
+  { id: 'captured', label: 'Captured', dept: 'storage', kind: 'flag', field: 'captured', width: 110, notFormats: PRASADI },
+  { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, notFormats: PRASADI, hint: 'Where the digital copy came from, e.g. Mumbai.' },
   { id: 'fileName', label: 'File path', dept: 'storage', kind: 'text', field: 'fileName', width: 240 },
   { id: 'phyStorageLoc', label: 'Phy storage loc.', dept: 'storage', kind: 'text', field: 'phyStorageLoc', width: 170 },
+  { id: 'stickerApplied', label: 'Sticker applied', dept: 'storage', kind: 'flag', field: 'stickerApplied', attr: true, width: 130, formats: PRASADI, hint: 'Yes = the archive-code sticker is on the item.' },
+  { id: 'recheckWeeks', label: 'Re-check in', dept: 'storage', kind: 'weeks', field: 'recheckWeeks', width: 130, formats: PRASADI, hint: 'Type a number of weeks. When they pass, the item shows on the Alerts page to be checked again.' },
+  { id: 'nextCheckDue', label: 'Next check due', dept: 'storage', kind: 'info', width: 140, formats: PRASADI },
+  { id: 'lastCheckedAt', label: 'Last checked', dept: 'storage', kind: 'info', width: 130, formats: PRASADI },
   { id: 'disposition', label: 'Return / discard', dept: 'storage', kind: 'disposition', field: 'disposition', width: 150 },
   { id: 'taggedInMls', label: 'MLS tagged', dept: 'storage', kind: 'flag', field: 'taggedInMls', width: 120 },
   { id: 'storageRemark', label: 'Remark', dept: 'storage', kind: 'text', field: 'storageRemark', width: 180 },

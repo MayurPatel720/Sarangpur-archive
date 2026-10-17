@@ -53,6 +53,7 @@ export const queryKeys = {
     all: ['queues'] as const,
     itemDispositions: (kind: string, status: string, page: number, pageSize: number) =>
       ['queues', 'item-dispositions', kind, status, page, pageSize] as const,
+    prasadiChecks: (page: number, pageSize: number) => ['queues', 'prasadi-checks', page, pageSize] as const,
     returns: (page: number, pageSize: number, format?: string) =>
       [...queryKeys.queues.all, 'returns', page, pageSize, format ?? 'all'] as const,
     discards: (page: number, pageSize: number, format?: string) =>

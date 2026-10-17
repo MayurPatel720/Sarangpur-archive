@@ -30,6 +30,7 @@ import {
   IconUser,
   IconReturn,
   IconDiscard,
+  IconClock,
 } from '@/components/ui/icons';
 
 type NavItem = { icon: React.ElementType; label: string; href: string };
@@ -58,6 +59,12 @@ const QUEUE_ITEMS = [
     label: 'Discards',
     href: '/queues/discards',
     perm: 'discards:view' as Permission,
+  },
+  {
+    icon: IconClock,
+    label: 'Prasadi checks',
+    href: '/queues/prasadi-checks',
+    perm: 'lot:view' as Permission,
   },
 ] as const;
 

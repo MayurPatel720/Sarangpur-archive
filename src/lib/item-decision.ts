@@ -27,5 +27,23 @@ export function itemResultOf(a: ItemAnswers): ItemResult | null {
   return 'physical';
 }
 
+/**
+ * Formats that can never be digitized (Prasadi is a physical holy item). Their items are
+ * created already decided as "keep physical" — Digital, Redigital and Discard all No — so the
+ * lot is not held up waiting for answers nobody can give. Null for every other format.
+ */
+export const PHYSICAL_ONLY_FORMATS: readonly string[] = ['prasadi'];
+
+export function autoDecisionFields(format: string): {
+  selectedForDigitization: false;
+  decision: { digital: false; redigital: false; discard: false; disposition: null; verdict: 'return_or_discard' };
+} | null {
+  if (!PHYSICAL_ONLY_FORMATS.includes(format)) return null;
+  return {
+    selectedForDigitization: false,
+    decision: { digital: false, redigital: false, discard: false, disposition: null, verdict: 'return_or_discard' },
+  };
+}
+
 /** True when the item is to be digitized (decided and digital or redigital = Yes). */
 export const isDigitize = (a: ItemAnswers): boolean => itemResultOf(a) === 'archive';

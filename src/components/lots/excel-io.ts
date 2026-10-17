@@ -33,10 +33,11 @@ function sheetName(raw: string, used: Set<string>): string {
 /** The workbook for an export (one sheet per media type) — kept apart from the download so it can be tested. */
 export async function buildItemsWorkbook({
   sheets,
-  columns,
+  columns: allColumns,
   refLabel,
 }: {
-  sheets: { name: string; rows: GridItem[] }[];
+  /** A sheet may carry its own columns (e.g. a Prasadi sheet); otherwise `columns` is used. */
+  sheets: { name: string; rows: GridItem[]; columns?: Spec[] }[];
   columns: Spec[];
   refLabel: (list: string, value: string | null) => string;
 }): Promise<Workbook> {
@@ -46,6 +47,7 @@ export async function buildItemsWorkbook({
   const used = new Set<string>();
 
   for (const sheet of sheets) {
+    const columns = sheet.columns ?? allColumns;
     const ws: Worksheet = wb.addWorksheet(sheetName(sheet.name, used));
     // Row 1 — department bands, merged over their columns.
     let bandStart = 1;
@@ -86,7 +88,7 @@ export async function exportItemsToExcel({
   refLabel,
 }: {
   fileName: string;
-  sheets: { name: string; rows: GridItem[] }[];
+  sheets: { name: string; rows: GridItem[]; columns?: Spec[] }[];
   columns: Spec[];
   refLabel: (list: string, value: string | null) => string;
 }): Promise<void> {

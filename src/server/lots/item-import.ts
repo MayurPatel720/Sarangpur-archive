@@ -1,8 +1,9 @@
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { parseDateRange } from '@/lib/date-range';
-import { allColumns, deptLabel, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
+import { allColumns, appliesToFormat, deptLabel, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
 import { cellText } from '@/lib/item-cells';
+import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
 import { getReferenceList } from '@/server/reference';
 import { applyItemEdits, getItemsGrid, type ItemEdit } from '@/server/lots/item-grid';
 import type { ImportBody, ImportResponse } from '@/types/items';
@@ -81,7 +82,12 @@ export async function importItems(
         ignored.add(header.split('|').pop() ?? header);
         continue;
       }
-      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate') {
+      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info') {
+        ignored.add(spec.label);
+        continue;
+      }
+      // A column that does not exist for this row's media format (e.g. "Blessed by" on a video) is ignored.
+      if (!spec.custom && !appliesToFormat(spec, item.format)) {
         ignored.add(spec.label);
         continue;
       }
@@ -137,6 +143,16 @@ export async function importItems(
           value = n;
           break;
         }
+        case 'weeks': {
+          const n = Number(text.replace(/\s*weeks?$/i, ''));
+          if (!Number.isInteger(n) || n < 1 || n > MAX_RECHECK_WEEKS) {
+            bad(`Use a whole number of weeks (1–${MAX_RECHECK_WEEKS}).`);
+            continue;
+          }
+          value = n;
+          shown = weeksText(n);
+          break;
+        }
         case 'ref': {
           const hit = sources.find((s) => norm(s.label) === norm(text) || norm(s.value) === norm(text));
           if (!hit) {
@@ -161,6 +177,7 @@ export async function importItems(
           value = text;
       }
       if (shown === '' && before === '') continue;
+      if (norm(before) === norm(shown)) continue; // same value once parsed (e.g. "3" vs "3 weeks")
 
       changesTotal += 1;
       if (changes.length < MAX_SHOWN) changes.push({ code: row.code, column: colName, from: before, to: shown });
@@ -169,6 +186,8 @@ export async function importItems(
         const c = (edit.set.custom ?? {}) as Record<string, unknown>;
         c[spec.custom.key] = value;
         edit.set.custom = c;
+      } else if (spec.attr) {
+        edit.set.attrs = { ...((edit.set.attrs ?? {}) as Record<string, unknown>), [spec.id]: value };
       } else if (spec.field) {
         edit.set[spec.field] = value;
       }

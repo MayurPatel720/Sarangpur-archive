@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BUILTIN_COLUMNS } from '@/lib/item-columns';
 import { gridItemSchema } from './items';
 
 /**
@@ -26,6 +27,10 @@ export const masterQuerySchema = z.object({
   /** `dd/mm/yyyy` or a range: items whose date range overlaps it. */
   date: text,
   place: text,
+  itemName: text,
+  description: text,
+  event: text,
+  itemCondition: text,
   nameOnTape: text,
   nameOnCase: text,
   physicalSource: text,
@@ -48,6 +53,8 @@ export const masterQuerySchema = z.object({
   // Logging
   logged: yesNo,
   loggerName: text,
+  // Format-specific columns (`attr` in item-columns.ts), one filter each: a_<column id>.
+  ...Object.fromEntries(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [`a_${c.id}`, c.kind === 'flag' ? yesNo : text])),
 });
 export type MasterQuery = z.output<typeof masterQuerySchema>;
 export type MasterQueryInput = z.input<typeof masterQuerySchema>;

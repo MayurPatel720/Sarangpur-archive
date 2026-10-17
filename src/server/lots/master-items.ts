@@ -3,6 +3,7 @@ import type { MutationContext } from '@/lib/api';
 import { connectToDatabase } from '@/lib/mongo';
 import { FORMATS, dataTypesMatching } from '@/lib/domain';
 import { parseDateRange } from '@/lib/date-range';
+import { BUILTIN_COLUMNS } from '@/lib/item-columns';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { Project } from '@/models/Project';
@@ -71,6 +72,18 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   if (query.code) f.code = contains(query.code);
   if (query.senderCode) f.senderCode = contains(query.senderCode);
   if (query.place) f.place = contains(query.place);
+  if (query.itemName) f.name = contains(query.itemName);
+  if (query.description) f.description = contains(query.description);
+  if (query.event) f.event = contains(query.event);
+  if (query.itemCondition) f.itemCondition = contains(query.itemCondition);
+  // Format-specific columns: one generic filter per registry `attr` column (a_<id>).
+  for (const col of BUILTIN_COLUMNS) {
+    if (!col.attr) continue;
+    const v = (query as unknown as Record<string, string | undefined>)[`a_${col.id}`];
+    if (!v) continue;
+    if (col.kind === 'flag') flag(f, `attrs.${col.id}`, v);
+    else f[`attrs.${col.id}`] = contains(v);
+  }
   if (query.nameOnTape) f.nameOnTape = contains(query.nameOnTape);
   if (query.nameOnCase) f.nameOnCase = contains(query.nameOnCase);
   if (query.physicalSource) f.physicalSource = contains(query.physicalSource);

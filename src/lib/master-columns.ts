@@ -12,7 +12,7 @@ export const MASTER_LOT_COLUMNS: ColumnSpec[] = [
   { id: 'assignee', label: 'Assigned to', dept: 'lot', kind: 'readonly', width: 150 },
 ];
 
-const RESULT_COLUMN: ColumnSpec = { id: 'result', label: 'Result', dept: 'decision', kind: 'readonly', width: 130 };
+const RESULT_COLUMN: ColumnSpec = { id: 'result', label: 'Result', dept: 'decision', kind: 'readonly', width: 130, notFormats: ['prasadi'] };
 
 export const MASTER_COLUMNS: ColumnSpec[] = [
   ...MASTER_LOT_COLUMNS,
@@ -25,7 +25,17 @@ export type MasterFilter =
   | { param: string; type: 'yesno' }
   | { param: string; type: 'select'; options: { value: string; label: string }[] | 'stage' | 'dataType' | 'physicalSource' };
 
+/** Query parameter of a format-specific (`attr`) column filter — generated from the registry. */
+export const attrParam = (columnId: string) => `a_${columnId}`;
+
 export const MASTER_FILTERS: Record<string, MasterFilter> = {
+  // Format-specific columns: one filter each, straight from the registry.
+  ...Object.fromEntries(
+    BUILTIN_COLUMNS.filter((c) => c.attr).map((c): [string, MasterFilter] => [
+      c.id,
+      { param: attrParam(c.id), type: c.kind === 'flag' ? 'yesno' : 'text' },
+    ]),
+  ),
   lotNo: { param: 'lot', type: 'text' },
   projectNo: { param: 'project', type: 'text' },
   lotStage: { param: 'stage', type: 'select', options: 'stage' },
@@ -34,6 +44,10 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
   senderCode: { param: 'senderCode', type: 'text' },
   dateRange: { param: 'date', type: 'text' },
   place: { param: 'place', type: 'text' },
+  itemName: { param: 'itemName', type: 'text' },
+  description: { param: 'description', type: 'text' },
+  event: { param: 'event', type: 'text' },
+  itemCondition: { param: 'itemCondition', type: 'text' },
   nameOnTape: { param: 'nameOnTape', type: 'text' },
   nameOnCase: { param: 'nameOnCase', type: 'text' },
   physicalSource: { param: 'physicalSource', type: 'text' },

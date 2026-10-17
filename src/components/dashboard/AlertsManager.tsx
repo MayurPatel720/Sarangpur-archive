@@ -25,6 +25,7 @@ const ALERT_ICON: Record<string, typeof IconAlertTriangle> = {
   override_pending: IconStar,
   return_overdue: IconReturn,
   mls_duplicate: IconCopy,
+  prasadi_check_due: IconClock,
 };
 
 const ICON_TILE: Record<Severity, string> = {

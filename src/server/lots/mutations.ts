@@ -9,6 +9,7 @@ import { can } from '@/server/permissions';
 import { withAudit, auditActor } from '@/server/audit';
 import { LOT_PATCH_SHARED_KEYS, propagateFromLot } from '@/server/projects/sync';
 import { intakeMissing } from '@/lib/intake-gate';
+import { autoDecisionFields, PHYSICAL_ONLY_FORMATS } from '@/lib/item-decision';
 import { assertActiveReferenceValue, getActiveReferenceItems, getReferenceList, bumpUsage, transferUsage } from '@/server/reference';
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { assertActive } from '@/server/reference/runtime';
@@ -120,6 +121,8 @@ async function buildItemDocs(
         lineIndex,
         selectedForDigitization: selected,
         notDigitizedReason: selected ? null : line.notDigitizedReason,
+        // Prasadi is never digitized: it starts already decided as "keep physical".
+        ...autoDecisionFields(line.format),
       });
       n += 1;
     });
@@ -337,7 +340,8 @@ export async function replaceMediaLines(
           { nameOnCase: { $nin: [null, ''] } },
           { place: { $nin: [null, ''] } },
           { duplicateCode: { $nin: [null, ''] } },
-          { 'decision.verdict': { $ne: null } },
+          // Auto-decided items (Prasadi starts as "keep physical") are not user work.
+          { 'decision.verdict': { $ne: null }, format: { $nin: [...PHYSICAL_ONLY_FORMATS] } },
         ],
       }).session(session);
       if (touched > 0) {

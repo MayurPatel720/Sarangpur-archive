@@ -1,5 +1,6 @@
 import { DATA_TYPE_LABELS, FORMAT_LABELS, STAGE_LABELS, type DataType, type Format, type Stage } from '@/lib/domain';
 import { isoDayToDmy } from '@/lib/date-range';
+import { weeksText } from '@/lib/recheck';
 import type { ColumnSpec, CustomColumn } from '@/lib/item-columns';
 import type { GridItem } from '@/types/items';
 import type { MasterRow } from '@/types/master';
@@ -32,6 +33,12 @@ export function cellText(
     if (spec.custom.type === 'date') return isoDayToDmy(String(v));
     return String(v);
   }
+  // Format-specific columns live in the item's `attrs` map (registry columns with `attr: true`).
+  if (spec.attr) {
+    const v = row.attrs[spec.id];
+    if (spec.kind === 'flag') return v === true ? 'Yes' : 'No';
+    return v === null || v === undefined ? '' : String(v);
+  }
   // Master Excel only — present on its rows, absent on a lot's own Excel.
   const m = row as Partial<MasterRow>;
   switch (spec.id) {
@@ -63,6 +70,20 @@ export function cellText(
       return spec.refList ? refLabel(spec.refList, row.physicalSource) : (row.physicalSource ?? '');
     case 'remarks':
       return row.remarks ?? '';
+    case 'itemName':
+      return row.itemName ?? '';
+    case 'description':
+      return row.description ?? '';
+    case 'event':
+      return row.event ?? '';
+    case 'itemCondition':
+      return row.itemCondition ?? '';
+    case 'recheckWeeks':
+      return row.recheckWeeks ? weeksText(row.recheckWeeks) : '';
+    case 'nextCheckDue':
+      return row.nextCheckDue;
+    case 'lastCheckedAt':
+      return row.lastCheckedAt;
     case 'duplicateCode':
       return row.duplicateCode ?? '';
     case 'digital':

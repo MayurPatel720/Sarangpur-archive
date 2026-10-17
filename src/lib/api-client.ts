@@ -93,6 +93,8 @@ import {
 import {
   itemDispositionDoneResponseSchema,
   itemDispositionListSchema,
+  prasadiCheckListSchema,
+  prasadiCheckDoneResponseSchema,
   itemsBulkResponseSchema,
   codeInfoResponseSchema,
   columnsResponseSchema,
@@ -104,6 +106,8 @@ import {
   itemsGridResponseSchema,
   type ItemDispositionDoneBody,
   type ItemDispositionList,
+  type PrasadiCheckList,
+  type PrasadiCheckDoneBody,
   type ItemsBulkBody,
   type ItemsBulkResponse,
   type CodeInfoResponse,
@@ -522,6 +526,16 @@ export const itemsGridApi = {
     ),
   markDone: (body: ItemDispositionDoneBody) =>
     sendJson<{ updated: number }>('/api/items/dispositions', 'POST', body, itemDispositionDoneResponseSchema),
+};
+
+export const prasadiChecksApi = {
+  due: (page: number, pageSize: number) =>
+    getJson<PrasadiCheckList>(
+      `/api/queues/prasadi-checks?${new URLSearchParams({ page: String(page), pageSize: String(pageSize) })}`,
+      prasadiCheckListSchema,
+    ),
+  markChecked: (body: PrasadiCheckDoneBody) =>
+    sendJson<{ updated: number }>('/api/items/prasadi-checks', 'POST', body, prasadiCheckDoneResponseSchema),
 };
 
 export const masterApi = {

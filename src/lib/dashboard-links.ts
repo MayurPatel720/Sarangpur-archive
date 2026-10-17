@@ -26,4 +26,5 @@ export const ALERT_HREF: Record<string, string> = {
   override_pending: '/register?stage=decision',
   return_overdue: '/queues/returns',
   mls_duplicate: '/register?stage=mls_tag',
+  prasadi_check_due: '/queues/prasadi-checks',
 };

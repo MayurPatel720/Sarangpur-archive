@@ -257,3 +257,17 @@ export function formatBlocksPipeline(w: DashboardWindow): Pipeline {
     { $sort: { _id: 1 } },
   ];
 }
+
+/**
+ * Prasadi quality checks that are due: items whose "re-check in N weeks" date has come.
+ * Runs on `lotitems` (index { format, nextCheckDue }), one row: how many items, across how many
+ * lots, and the oldest due date. `now` is compared as a calendar day (a check due today is due).
+ */
+export function prasadiChecksDuePipeline(now: Date): Pipeline {
+  const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
+  return [
+    { $match: { format: 'prasadi', nextCheckDue: { $ne: null, $lte: endOfToday } } },
+    { $group: { _id: null, n: { $sum: 1 }, lots: { $addToSet: '$lot' }, oldest: { $min: '$nextCheckDue' } } },
+    { $project: { _id: 0, n: 1, lots: { $size: '$lots' }, oldest: 1 } },
+  ];
+}

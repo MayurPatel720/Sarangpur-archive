@@ -12,7 +12,7 @@ import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { cellText } from '@/lib/item-cells';
-import { DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
+import { appliesToFormat, isCommonColumn, DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
 import { MASTER_COLUMNS, MASTER_FILTERS, type MasterFilter } from '@/lib/master-columns';
 import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { num } from '@/lib/format';
@@ -125,7 +125,12 @@ export function MasterExcel() {
     placeholderData: keepPreviousData,
   });
 
-  const columns = useMemo(() => MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId)), [shown]);
+  // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
+  // every format has — a format's own columns need that format picked (and Export writes a sheet each).
+  const columns = useMemo(
+    () => MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId) && (format ? appliesToFormat(c, format) : isCommonColumn(c))),
+    [shown, format],
+  );
   const bands = useMemo(() => {
     const out: { id: string; label: string; span: number }[] = [];
     for (const c of columns) {
@@ -151,7 +156,18 @@ export function MasterExcel() {
         toast.info('Nothing to export', 'No items match the filters.');
         return;
       }
-      const wb = await buildItemsWorkbook({ sheets: [{ name: 'Master', rows }], columns, refLabel });
+      // One format: one sheet. All formats: one sheet per format, each with that format's own columns.
+      const shownCols = MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId));
+      const byFormat = new Map<string, MasterRow[]>();
+      for (const r of rows) byFormat.set(r.format, [...(byFormat.get(r.format) ?? []), r]);
+      const sheets = format
+        ? [{ name: 'Master', rows, columns }]
+        : [...byFormat.entries()].map(([f, fr]) => ({
+            name: FORMAT_LABELS[f as Format] ?? f,
+            rows: fr,
+            columns: shownCols.filter((c) => appliesToFormat(c, f)),
+          }));
+      const wb = await buildItemsWorkbook({ sheets, columns, refLabel });
       const buf = await wb.xlsx.writeBuffer();
       const url = URL.createObjectURL(
         new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),

@@ -20,11 +20,13 @@ import { createIntake } from '../src/server/lots/mutations';
 import { bulkUpdateItems, getItemsGrid, listItemDispositions, markItemDispositionsDone } from '../src/server/lots/item-grid';
 import { markDuplicate, recodeSheet, reorderItems, setItemNumber, updateColumns } from '../src/server/lots/item-codes';
 import { importItems } from '../src/server/lots/item-import';
-import { parseDateRange, formatDateRange } from '../src/lib/date-range';
-import { itemResultOf } from '../src/lib/item-decision';
+import { listPrasadiChecks, markPrasadiChecked } from '../src/server/lots/prasadi-checks';
+import { parseDateRange, formatDateRange, isoDayToDmy } from '../src/lib/date-range';
+import { autoDecisionFields, itemResultOf } from '../src/lib/item-decision';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
 import type { GridItem, ImportBody } from '../src/types/items';
-import { allColumns } from '../src/lib/item-columns';
+import { allColumns, appliesToFormat, isCommonColumn } from '../src/lib/item-columns';
+import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
 import { buildItemsWorkbook, readItemsFromExcel } from '../src/components/lots/excel-io';
 
 let failures = 0;
@@ -40,6 +42,8 @@ async function rejects(label: string, fn: () => Promise<unknown>, status: number
     check(label, (e as { status?: number }).status === status, (e as Error).message);
   }
 }
+
+const isoToDmy = (d: Date) => isoDayToDmy(d.toISOString().slice(0, 10));
 
 function pureChecks() {
   console.log('pure helpers');
@@ -74,7 +78,8 @@ async function excelRoundTrip() {
     physicalSource: null, remarks: null, duplicateCode: null, duplicatedBy: [], digital: null, redigital: null, discard: null,
     decisionRemark: null, result: null, captured: false, digitalSource: null, fileName: null, phyStorageLoc: null,
     disposition: null, dispositionStatus: null, taggedInMls: false, storageRemark: null, logged: false, loggedAt: '',
-    loggerName: null, custom: {}, ...over,
+    loggerName: null, custom: {}, itemName: null, description: null, event: null, itemCondition: null, attrs: {},
+    recheckWeeks: null, nextCheckDue: '', lastCheckedAt: '', ...over,
   });
   const custom = [{ key: 'c_1', label: 'Reel', type: 'number' as const, dept: 'storage' as const }];
   const wb = await buildItemsWorkbook({
@@ -91,6 +96,34 @@ async function excelRoundTrip() {
   check('same column name in two departments stays apart', r1?.cells['Details|Remark'] === 'r1' && !('Decision|Remark' in r1.cells), r1?.cells);
   check('custom column travels with its department', r1?.cells['Digitalization & Storage|Reel'] === '4', r1?.cells);
   check('blank cells are left out', !('Details|Place' in (parsed.rows.find((r) => r.code === 'ALB-surat-0002-R-000')?.cells ?? {})));
+
+  // Prasadi sheets: their own columns, no tape / case / digital-source / duplicate columns.
+  const labelsFor = (format: string) => allColumns([]).filter((c) => appliesToFormat(c, format)).map((c) => c.label);
+  const prs = labelsFor('prasadi');
+  const vid = labelsFor('video');
+  check('prasadi gets its own columns', ['Prasadi item', 'Description', 'Blessed by', 'Occasion', 'Condition', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
+  check('prasadi has no quantity column', !prs.includes('Quantity'), prs);
+  check('prasadi drops video-only columns', !['Name on tape', 'Name on case', 'Dig source', 'Duplicate code'].some((l) => prs.includes(l)), prs);
+  check('prasadi has no Decision columns and no Captured', !['Digital', 'Redigital', 'Discard', 'Captured'].some((l) => prs.includes(l)), prs);
+  check('prasadi keeps path / storage / MLS / remark', ['File path', 'Phy storage loc.', 'MLS tagged', 'Return / discard', 'Remark', 'Date', 'Place'].every((l) => prs.includes(l)), prs);
+  check('video has no prasadi columns but keeps tape / case / decision', !vid.includes('Blessed by') && !vid.includes('Sticker applied') && !vid.includes('Re-check in') && vid.includes('Name on tape') && vid.includes('Name on case') && vid.includes('Digital') && vid.includes('Captured'), vid);
+  check('no format known = every column', allColumns([]).every((c) => appliesToFormat(c, null)));
+  const common = allColumns([]).filter(isCommonColumn).map((c) => c.label);
+  check('common columns carry no format-specific column', !['Blessed by', 'Name on tape', 'Digital', 'Re-check in'].some((l) => common.includes(l)) && common.includes('Place') && common.includes('Logging date'), common);
+  check('every attr column is prasadi-only and text / flag', allColumns([]).filter((c) => c.attr).every((c) => c.formats?.includes('prasadi') && (c.kind === 'text' || c.kind === 'flag')));
+  check('weeks → due date', nextCheckDate(new Date('2026-10-17T15:00:00Z'), 3).toISOString().slice(0, 10) === '2026-11-07');
+  check('overdue days', daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-10T08:00:00Z')) === 3 && daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-07T23:00:00Z')) === 0);
+  check('weeks text', weeksText(1) === '1 week' && weeksText(3) === '3 weeks');
+  check('prasadi auto-decides as keep physical', itemResultOf(autoDecisionFields('prasadi')!.decision) === 'physical' && autoDecisionFields('video') === null);
+  const prsRow = row(3, { format: 'prasadi', itemName: 'Mala', attrs: { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: true }, recheckWeeks: 3, nextCheckDue: '07/11/2026' });
+  const prsWb = await buildItemsWorkbook({
+    sheets: [{ name: 'Prasadi', rows: [prsRow], columns: allColumns([]).filter((c) => appliesToFormat(c, 'prasadi')) }],
+    columns: allColumns([]),
+    refLabel: (_l, v) => v ?? '',
+  });
+  const prsParsed = await readItemsFromExcel(new File([await prsWb.xlsx.writeBuffer()], 'p.xlsx'));
+  const pc = prsParsed.rows[0]?.cells ?? {};
+  check('prasadi sheet exports Prasadi cells and no tape column', pc['Details|Prasadi item'] === 'Mala' && pc['Details|Blessed by'] === 'Pramukh Swami Maharaj' && pc['Digitalization & Storage|Sticker applied'] === 'Yes' && pc['Digitalization & Storage|Re-check in'] === '3 weeks' && pc['Digitalization & Storage|Next check due'] === '07/11/2026' && !('Details|Name on tape' in pc), pc);
 }
 
 async function main() {
@@ -249,6 +282,53 @@ async function main() {
     check('import applies', ok.applied && ok.willChange === 1, ok);
     const imported = (await grid(lotB.id)).items.find((i) => i.code === codes[0])!;
     check('imported cells saved', imported.place === 'Pune' && imported.dateRange === '01/01/1999 - 31/12/1999', imported);
+
+    console.log('prasadi');
+    const prs = await createIntake(
+      {
+        dateReceived: new Date().toISOString(),
+        originSource: sample.originSource!,
+        owner: { name: 'Verify Owner' },
+        pointsOfContact: [],
+        mediaLines: [{ format: 'prasadi', dataType: 'physical', mediaSubtype: 'Prasadi', quantity: 2 }],
+      },
+      admin,
+    );
+    created.push(prs.id);
+    const pg = await grid(prs.id);
+    const [p1, p2] = pg.items.map((i) => i.id) as [string, string];
+    check('prasadi items start decided as keep physical', pg.items.length === 2 && pg.items.every((i) => i.result === 'physical' && i.format === 'prasadi'), pg.items.map((i) => i.result));
+    check('prasadi summary: all decided, none to digitize', pg.summary.decided === 2 && pg.summary.archive === 0 && pg.summary.physical === 2, pg.summary);
+
+    await bulkUpdateItems(prs.id, { itemIds: [p1], set: { itemName: 'Mala', attrs: { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: true }, remarks: 'wooden beads' } }, admin);
+    const pa = (await grid(prs.id)).items.find((i) => i.id === p1)!;
+    check('prasadi details and attrs saved', pa.itemName === 'Mala' && pa.attrs.blessedBy === 'Pramukh Swami Maharaj' && pa.attrs.stickerApplied === true, pa.attrs);
+    const pl = await ArchiveLot.findById(prs.id).select('stage decision.status').lean();
+    check('a Prasadi lot is decided by its first edit and moves to storage', pl?.decision?.status === 'archive' && pl.stage === 'storage', [pl?.stage, pl?.decision?.status]);
+    await rejects('unknown attr column refused', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { nope: 'x' } } }, admin), 400);
+
+    await bulkUpdateItems(prs.id, { itemIds: [p1, p2], set: { recheckWeeks: 3 } }, admin);
+    const pw = (await grid(prs.id)).items.find((i) => i.id === p1)!;
+    check('re-check in 3 weeks sets the due date 21 days ahead', pw.recheckWeeks === 3 && pw.nextCheckDue === isoToDmy(nextCheckDate(new Date(), 3)), [pw.recheckWeeks, pw.nextCheckDue]);
+    check('nothing is due yet', (await listPrasadiChecks({ page: 1, pageSize: 50 }, new Date())).rows.every((r) => r.lotId !== prs.id));
+
+    const later = new Date(Date.now() + 22 * 86_400_000);
+    const due = await listPrasadiChecks({ page: 1, pageSize: 50 }, later);
+    const mine = due.rows.filter((r) => r.lotId === prs.id);
+    check('after 3 weeks both items are due, with name and Guru', mine.length === 2 && mine.some((r) => r.itemName === 'Mala' && r.blessedBy === 'Pramukh Swami Maharaj'), mine);
+
+    const marked = await markPrasadiChecked({ itemIds: [p1], result: 'needs_care', note: 'faded', nextWeeks: 2 }, admin, later);
+    const pc = (await grid(prs.id)).items.find((i) => i.id === p1)!;
+    check('mark checked: condition, last checked and next check', marked.updated === 1 && pc.itemCondition === 'Needs care' && pc.recheckWeeks === 2 && pc.lastCheckedAt === isoToDmy(later) && pc.nextCheckDue === isoToDmy(nextCheckDate(later, 2)), pc);
+    await markPrasadiChecked({ itemIds: [p2], result: 'good', nextWeeks: null }, admin, later);
+    const pn = (await grid(prs.id)).items.find((i) => i.id === p2)!;
+    check('an empty next-weeks box stops the reminder', pn.recheckWeeks === null && pn.nextCheckDue === '' && pn.itemCondition === 'Good', pn);
+    check('the lot leaves the queue once checked', (await listPrasadiChecks({ page: 1, pageSize: 50 }, later)).rows.every((r) => r.lotId !== prs.id));
+    await rejects('only Prasadi items can be checked', () => markPrasadiChecked({ itemIds: [a], result: 'good', nextWeeks: null }, admin), 404);
+
+    // A recheck on a non-Prasadi item is ignored (a mixed bulk selection must not mark photos).
+    await bulkUpdateItems(lot.id, { itemIds: [a], set: { recheckWeeks: 4 } }, admin);
+    check('recheck weeks never lands on a non-Prasadi item', (await grid(lot.id)).items.find((i) => i.id === a)!.recheckWeeks === null);
   } finally {
     await LotItem.deleteMany({ lot: { $in: created } });
     await ActivityLog.deleteMany({ lot: { $in: created } });

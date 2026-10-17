@@ -63,8 +63,9 @@ const lotItemSchema = new Schema(
 
     /*
      * Excel columns (the lot's Items tab). Departments: Details · Decision ·
-     * Digitalization & Storage · Logging. `name`, `description`, `event`, `people`, `year`,
-     * `month` and `itemCondition` are no longer shown or written (old data is kept).
+     * Digitalization & Storage · Logging. `people`, `year` and `month` are no longer shown or
+     * written (old data is kept). `name`, `description`, `event` and `itemCondition` are used
+     * only by Prasadi sheets ("Prasadi item", "Description", "Occasion", "Condition").
      */
     /** Position in the lot's Excel; the user can drag rows. Display only — codes never change with it. */
     sortOrder: { type: Number, default: 0 },
@@ -83,6 +84,19 @@ const lotItemSchema = new Schema(
     logged: { type: Boolean, default: false },
     loggedAt: { type: Date, default: null },
     loggerName: { type: String, trim: true, default: null },
+    /**
+     * Format-specific Excel values (e.g. Prasadi "blessedBy", "stickerApplied"), keyed by the
+     * column id in src/lib/item-columns.ts (`attr: true`). A new format column needs no schema change.
+     */
+    attrs: { type: Schema.Types.Mixed, default: undefined },
+    /**
+     * Prasadi quality check: "look at this again in N weeks". `nextCheckDue` (a calendar day at UTC
+     * midnight) is what the Alerts page watches; marking the item checked stamps `lastChecked*`.
+     */
+    recheckWeeks: { type: Number, default: null, min: 1, max: 260 },
+    nextCheckDue: { type: Date, default: null },
+    lastCheckedAt: { type: Date, default: null },
+    lastCheckedByName: { type: String, trim: true, default: null },
     /** User-added columns of the lot's Excel, keyed by the column's key (lot.customColumns). */
     custom: { type: Schema.Types.Mixed, default: undefined },
 
@@ -130,6 +144,7 @@ lotItemSchema.index({ lot: 1, lineIndex: 1 }); // per-media-type progress
 lotItemSchema.index({ lot: 1, digitized: 1 }); // per-lot scan progress
 lotItemSchema.index({ selectedForDigitization: 1, notDigitizedReason: 1 }); // exclusion report
 lotItemSchema.index({ 'decision.disposition': 1, dispositionStatus: 1 }); // item return/discard queues
+lotItemSchema.index({ format: 1, nextCheckDue: 1 }); // Prasadi checks due (Alerts + queue)
 
 export type LotItemDoc = InferSchemaType<typeof lotItemSchema>;
 

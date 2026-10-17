@@ -1,6 +1,6 @@
 import type { PipelineStage } from 'mongoose';
 import { connectToDatabase } from '@/lib/mongo';
-import { ActivityLog, ArchiveLot } from '@/models';
+import { ActivityLog, ArchiveLot, LotItem } from '@/models';
 import {
   ACTIVITY_SEVERITY,
   BOARD_STAGES,
@@ -14,6 +14,7 @@ import {
   formatBlocksPipeline,
   lotFacetPipeline,
   pipelineBoardPipeline,
+  prasadiChecksDuePipeline,
   recentActivityPipeline,
   type DashboardWindow,
   type Pipeline,
@@ -252,7 +253,14 @@ export async function getSummary(now = new Date(), format?: string): Promise<Sum
 
 /* ------------------------------------------------------------------- alerts */
 
-export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow): AlertsResponse {
+/** Result of `prasadiChecksDuePipeline` (absent when nothing is due). */
+export interface PrasadiDue {
+  n: number;
+  lots: number;
+  oldest: Date | string;
+}
+
+export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow, prasadiDue?: PrasadiDue): AlertsResponse {
   const decisionOverdue = first(facet.decisionOverdue);
   const scanOverdue = first(facet.scanOverdue);
   const overrides = count(facet.overridesPending);
@@ -309,6 +317,16 @@ export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow): Ale
       severity: 'info',
       href: '/mls',
     },
+    {
+      key: 'prasadi_check_due',
+      title: 'Prasadi check due',
+      detail: prasadiDue
+        ? `Look at ${prasadiDue.n === 1 ? 'this item' : 'these items'} again · ${prasadiDue.lots} ${prasadiDue.lots === 1 ? 'lot' : 'lots'} · oldest due ${daysSince(prasadiDue.oldest, window.now)} ${daysSince(prasadiDue.oldest, window.now) === 1 ? 'day' : 'days'} ago`
+        : 'Look at these items again',
+      count: prasadiDue?.n ?? 0,
+      severity: 'warning',
+      href: '/queues/prasadi-checks',
+    },
   ];
 
   // An alert with a count of zero is noise, not information.
@@ -332,7 +350,12 @@ export async function getAlerts(now = new Date(), format?: string): Promise<Aler
     asPipeline(lotFacetPipeline(window, format)),
   );
   if (!facet) throw new Error('Alerts aggregation returned no facet document');
-  return shapeAlerts(facet, window);
+  // Prasadi checks live on items, not lots — and only exist for the Prasadi format.
+  const [prasadiDue] =
+    !format || format === 'prasadi'
+      ? await LotItem.aggregate<PrasadiDue>(asPipeline(prasadiChecksDuePipeline(now)))
+      : [];
+  return shapeAlerts(facet, window, prasadiDue);
 }
 
 /* ----------------------------------------------------------------- pipeline */

@@ -16,6 +16,7 @@ import { AgGridReact, agGridTheme } from '@/components/ui/AgGridShell';
 import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { mediaTypeText } from '@/lib/item-cells';
+import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
 
@@ -156,7 +157,67 @@ export function ItemFamilyGrid({
         };
       }
 
+      // Format-specific columns (registry `attr`): kept in the row's `attrs` map.
+      if (spec.attr) {
+        const key = spec.id;
+        if (spec.kind === 'flag') {
+          return {
+            ...base,
+            editable: canDetails,
+            valueGetter: (p) => (p.data ? (p.data.attrs[key] === true ? 'Yes' : 'No') : ''),
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              p.data.attrs = { ...p.data.attrs, [key]: p.newValue === 'Yes' };
+              return true;
+            },
+            cellEditor: 'agSelectCellEditor',
+            cellEditorParams: { values: ['Yes', 'No'] },
+          };
+        }
+        return {
+          ...base,
+          editable: canDetails,
+          cellEditor: 'agTextCellEditor',
+          valueGetter: (p) => (p.data ? String(p.data.attrs[key] ?? '') : ''),
+          valueSetter: (p: ValueSetterParams<GridItem>) => {
+            if (!p.data) return false;
+            const text = String(p.newValue ?? '').trim();
+            p.data.attrs = { ...p.data.attrs, [key]: text === '' ? null : text };
+            return true;
+          },
+        };
+      }
+
       switch (spec.kind) {
+        case 'weeks':
+          // Only a number is typed; "weeks" is always written beside it.
+          return {
+            ...base,
+            editable: canDetails,
+            valueGetter: (p) => p.data?.recheckWeeks ?? null,
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              const raw = String(p.newValue ?? '').trim();
+              const n = raw === '' ? null : Number(raw);
+              if (n !== null && (!Number.isInteger(n) || n < 1 || n > MAX_RECHECK_WEEKS)) {
+                onInvalid(`Use a whole number of weeks (1–${MAX_RECHECK_WEEKS}).`);
+                return false;
+              }
+              p.data.recheckWeeks = n;
+              return true;
+            },
+            cellEditor: 'agNumberCellEditor',
+            cellEditorParams: { min: 1, max: MAX_RECHECK_WEEKS, precision: 0 },
+            cellRenderer: (p: ICellRendererParams<GridItem>) =>
+              p.value ? <span>{weeksText(p.value as number)}</span> : <span className="text-ink-4">__ weeks</span>,
+          };
+        case 'info':
+          return {
+            ...base,
+            editable: false,
+            cellClass: 'text-ink-3',
+            valueGetter: (p) => (p.data ? String((p.data as unknown as Record<string, unknown>)[spec.id] ?? '') : ''),
+          };
         case 'readonly':
           return { ...base, valueGetter: (p) => (p.data ? mediaTypeText(p.data) : '') };
         case 'code':
@@ -302,6 +363,11 @@ export function ItemFamilyGrid({
     const id = e.data.id;
     if (spec.custom) {
       onSave([id], { custom: { [spec.custom.key]: e.data.custom[spec.custom.key] ?? null } });
+      return;
+    }
+    if (spec.attr) {
+      const v = e.data.attrs[spec.id];
+      onSave([id], { attrs: { [spec.id]: spec.kind === 'flag' ? v === true : (v ?? null) } });
       return;
     }
     const field = spec.field as keyof ItemsBulkSet | undefined;

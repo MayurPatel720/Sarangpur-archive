@@ -39,6 +39,13 @@ export const gridItemSchema = z.object({
   nameOnCase: z.string().nullable(),
   physicalSource: z.string().nullable(),
   remarks: z.string().nullable(),
+  // Prasadi sheets only (null / false elsewhere)
+  itemName: z.string().nullable(),
+  description: z.string().nullable(),
+  event: z.string().nullable(),
+  itemCondition: z.string().nullable(),
+  /** Format-specific values by column id (src/lib/item-columns.ts, `attr: true`). */
+  attrs: z.record(z.string(), customValueSchema),
   /** The original this item duplicates (set together with the D-kind code). */
   duplicateCode: z.string().nullable(),
   /** Codes of items (any lot) that are duplicates of THIS item — worked out on read, never stored here. */
@@ -60,6 +67,10 @@ export const gridItemSchema = z.object({
   digitalSource: z.string().nullable(),
   fileName: z.string().nullable(),
   phyStorageLoc: z.string().nullable(),
+  /** Prasadi quality check: weeks until the next one (null = none planned) and its dates (`dd/mm/yyyy` or ''). */
+  recheckWeeks: z.number().nullable(),
+  nextCheckDue: z.string(),
+  lastCheckedAt: z.string(),
   /** The physical item's final fate. */
   disposition: z.enum(['return', 'discard']).nullable(),
   dispositionStatus: z.enum(['pending', 'done']).nullable(),
@@ -122,6 +133,14 @@ export const itemsBulkBodySchema = z.object({
       nameOnCase: text(300),
       physicalSource: text(60),
       remarks: text(2000),
+      itemName: text(300),
+      description: text(2000),
+      event: text(300),
+      itemCondition: text(200),
+      /** Format-specific columns by id (`attr: true` in item-columns.ts). */
+      attrs: z.record(z.string().max(40), customValueSchema).optional(),
+      /** Prasadi: re-check in this many weeks; null clears the reminder. */
+      recheckWeeks: z.number().int().min(1).max(260).nullable().optional(),
       digital: tri,
       redigital: tri,
       discard: tri,
@@ -332,3 +351,47 @@ export const itemDispositionDoneBodySchema = z.object({
 });
 export type ItemDispositionDoneBody = z.input<typeof itemDispositionDoneBodySchema>;
 export const itemDispositionDoneResponseSchema = z.object({ updated: z.number() });
+
+/* ------------------------------------------------------ Prasadi quality checks */
+
+/** GET /api/queues/prasadi-checks — Prasadi items whose re-check date has come, oldest first. */
+export const prasadiCheckQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type PrasadiCheckQuery = z.output<typeof prasadiCheckQuerySchema>;
+
+export const prasadiCheckRowSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  itemName: z.string().nullable(),
+  blessedBy: z.string().nullable(),
+  condition: z.string().nullable(),
+  lotId: z.string(),
+  lotReference: z.string(),
+  recheckWeeks: z.number().nullable(),
+  /** ISO day the check was due. */
+  dueAt: z.string(),
+  daysOverdue: z.number(),
+  lastCheckedAt: z.string().nullable(),
+});
+export const prasadiCheckListSchema = z.object({
+  rows: z.array(prasadiCheckRowSchema),
+  total: z.number(),
+  page: z.number(),
+  pageSize: z.number(),
+});
+export type PrasadiCheckList = z.output<typeof prasadiCheckListSchema>;
+
+/**
+ * POST /api/items/prasadi-checks — record that items were looked at. `result` is written to the
+ * item's Condition; `nextWeeks` plans the next check (null = no further reminder).
+ */
+export const prasadiCheckDoneBodySchema = z.object({
+  itemIds: z.array(objectIdSchema).min(1).max(1000),
+  result: z.enum(['good', 'needs_care']),
+  note: z.string().trim().max(500).optional(),
+  nextWeeks: z.number().int().min(1).max(260).nullable(),
+});
+export type PrasadiCheckDoneBody = z.input<typeof prasadiCheckDoneBodySchema>;
+export const prasadiCheckDoneResponseSchema = z.object({ updated: z.number() });

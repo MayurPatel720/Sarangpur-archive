@@ -3,6 +3,7 @@ import { HttpError } from '@/lib/api';
 import { LotItem } from '@/models/LotItem';
 import { allocateItemCodes } from '@/server/codes';
 import { parseItemCodeParts } from '@/lib/item-code';
+import { autoDecisionFields } from '@/lib/item-decision';
 import { namingPrefix } from '@/server/lots/mutations';
 import { withAudit, auditActor } from '@/server/audit';
 import { assertActiveReferenceValue } from '@/server/reference';
@@ -83,6 +84,7 @@ export async function createItem(
       );
       if (!code) throw new HttpError(500, 'Could not allocate an item code.');
       const sortOrder = (sibling?.sortOrder ?? -1) + 1;
+      const format = lot.mediaLines?.[0]?.format ?? lot.format;
       let itemId = '';
       try {
         const [item] = await LotItem.create(
@@ -93,13 +95,14 @@ export async function createItem(
               groupNo,
               itemNo,
               sortOrder,
-              format: lot.mediaLines?.[0]?.format ?? lot.format,
+              format,
               // Manual entries attach to the primary media line (index 0):
               // per-line breakdowns stay intake-defined, totals stay truthful.
               lineIndex: 0,
               selectedForDigitization: selected,
               notDigitizedReason: selected ? null : (body.notDigitizedReason ?? null),
               fileName: body.fileName?.trim() || null,
+              ...autoDecisionFields(format),
             },
           ],
           { session },
@@ -116,7 +119,7 @@ export async function createItem(
         throw error;
       }
 
-      if (selected) {
+      if (selected && !autoDecisionFields(format)) {
         lot.set('digitization.expectedFileCount', (lot.digitization?.expectedFileCount ?? 0) + 1);
       }
       return { id: itemId, code, groupNo, itemNo };

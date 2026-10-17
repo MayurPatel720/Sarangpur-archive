@@ -11,7 +11,7 @@ import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/componen
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, appliesToFormat, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -22,6 +22,7 @@ import { ImportDialog } from './ImportDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { ItemFamilyGrid } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
+import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
 
 /**
  * The lot's Items tab — the lot's Excel: one collapsible sheet per media type, columns in
@@ -148,14 +149,27 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     () => specs.filter((s) => !hiddenIds.has(s.id) && (s.dept === 'lot' || shownDepts.includes(s.dept) || s.kind === 'code')),
     [specs, hiddenIds, shownDepts],
   );
-  const hiddenSpecs = useMemo(() => specs.filter((s) => hiddenIds.has(s.id)), [specs, hiddenIds]);
+  /** Media formats present in this lot — a column that fits none of them is not offered at all. */
+  const lotFormats = useMemo(() => [...new Set((data?.items ?? []).map((i) => i.format))], [data?.items]);
+  /** Prasadi is kept physically and never digitized: a lot of only Prasadi has nothing to decide. */
+  const prasadiOnly = lotFormats.length > 0 && lotFormats.every((f) => f === PRASADI_FORMAT);
+  const hasPrasadi = lotFormats.includes(PRASADI_FORMAT);
+  const hiddenSpecs = useMemo(
+    () => specs.filter((s) => hiddenIds.has(s.id) && (lotFormats.length === 0 || lotFormats.some((f) => appliesToFormat(s, f)))),
+    [specs, hiddenIds, lotFormats],
+  );
+  /** Visible columns per media format: a Prasadi sheet gets Prasadi columns, a video sheet its tape / case columns. */
+  const columnsByFormat = useMemo(
+    () => new Map(lotFormats.map((f) => [f, visibleSpecs.filter((s) => appliesToFormat(s, f))])),
+    [lotFormats, visibleSpecs],
+  );
 
   /** One sheet per media line, in intake order, with every item (for progress) and the filtered rows. */
   const sheets = useMemo(() => {
-    const map = new Map<number, { name: string; all: GridItem[]; rows: GridItem[] }>();
+    const map = new Map<number, { name: string; format: string; all: GridItem[]; rows: GridItem[] }>();
     for (const it of data?.items ?? []) {
       let g = map.get(it.lineIndex);
-      if (!g) map.set(it.lineIndex, (g = { name: it.subtypeLabel.trim() || 'Other', all: [], rows: [] }));
+      if (!g) map.set(it.lineIndex, (g = { name: it.subtypeLabel.trim() || 'Other', format: it.format, all: [], rows: [] }));
       g.all.push(it);
       if (matchesFilter(it, filter)) g.rows.push(it);
     }
@@ -208,7 +222,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     try {
       await exportItemsToExcel({
         fileName: `${lotReference}-items`,
-        sheets: sheets.map((s) => ({ name: s.name, rows: s.all })),
+        sheets: sheets.map((s) => ({ name: s.name, rows: s.all, columns: columnsByFormat.get(s.format) ?? visibleSpecs })),
         columns: visibleSpecs,
         refLabel,
       });
@@ -278,14 +292,28 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
       </PanelHeader>
       <div className="p-3 md:p-4 flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12.5px] text-ink-2">
-          <span>
-            <span className="font-semibold text-ink tabular-nums">{s.decided}</span> of {s.total} decided
-          </span>
-          <span className="flex flex-wrap gap-1.5">
-            <Badge severity="good">Digitize {s.archive}</Badge>
-            <Badge severity="critical">Discard {s.discard}</Badge>
-            <Badge severity="neutral">Keep physical {s.physical}</Badge>
-          </span>
+          {prasadiOnly ? (
+            <>
+              <span>
+                <span className="font-semibold text-ink tabular-nums">{s.total}</span> {s.total === 1 ? 'item' : 'items'}
+              </span>
+              <span className="flex flex-wrap gap-1.5">
+                <Badge severity="good">Sticker on {data.items.filter((i) => i.attrs.stickerApplied === true).length}</Badge>
+                <Badge severity="info">Check planned {data.items.filter((i) => i.recheckWeeks).length}</Badge>
+              </span>
+            </>
+          ) : (
+            <>
+              <span>
+                <span className="font-semibold text-ink tabular-nums">{s.decided}</span> of {s.total} decided
+              </span>
+              <span className="flex flex-wrap gap-1.5">
+                <Badge severity="good">Digitize {s.archive}</Badge>
+                <Badge severity="critical">Discard {s.discard}</Badge>
+                <Badge severity="neutral">Keep physical {s.physical}</Badge>
+              </span>
+            </>
+          )}
         </div>
 
         {!canDetails ? (
@@ -321,7 +349,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
-            <div role="group" aria-label="Show items" className="flex flex-wrap gap-1.5">
+            <div role="group" aria-label="Show items" className={prasadiOnly ? 'hidden' : 'flex flex-wrap gap-1.5'}>
               {FILTERS.map((f) => (
                 <button
                   key={f.id}
@@ -387,7 +415,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           {selected.length > 0 && canDetails ? (
             <BulkBar
               count={selected.length}
-              canDecide={canDecide}
+              canDecide={canDecide && !prasadiOnly}
+              hasPrasadi={hasPrasadi}
               physical={physicalItems}
               pending={save.isPending}
               onApply={(set) =>
@@ -413,7 +442,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 <ItemFamilyGrid
                   lineIndex={sh.lineIndex}
                   rows={sh.rows}
-                  columns={visibleSpecs}
+                  columns={columnsByFormat.get(sh.format) ?? visibleSpecs}
                   canDetails={canDetails}
                   canDecide={canDecide}
                   canReorder={canReorder}
@@ -463,7 +492,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                       {empty ? `0 match (of ${sh.all.length})` : `${sh.rows.length}${sh.rows.length === sh.all.length ? '' : ` of ${sh.all.length}`} ${sh.all.length === 1 ? 'item' : 'items'}`}
                     </span>
                     <span className="text-[12px] text-ink-3 tabular-nums sm:ml-auto">
-                      {decided}/{sh.all.length} decided · {captured} captured · {tagged} tagged
+                      {sh.format === PRASADI_FORMAT
+                        ? `${sh.all.filter((r) => r.attrs.stickerApplied === true).length} stickered · ${sh.all.filter((r) => r.recheckWeeks).length} check planned`
+                        : `${decided}/${sh.all.length} decided · ${captured} captured · ${tagged} tagged`}
                     </span>
                   </button>
                   {open && !empty ? <div className="border-t border-line">{gridBox}</div> : null}
@@ -534,6 +565,7 @@ type Opt = { value: string; label: string };
 function BulkBar({
   count,
   canDecide,
+  hasPrasadi,
   physical,
   pending,
   onApply,
@@ -541,6 +573,8 @@ function BulkBar({
 }: {
   count: number;
   canDecide: boolean;
+  /** The lot has Prasadi sheets — offer "Re-check in (weeks)" (applies to the selected Prasadi rows). */
+  hasPrasadi: boolean;
   physical: Opt[];
   pending: boolean;
   onApply: (set: ItemsBulkSet) => void;
@@ -570,7 +604,11 @@ function BulkBar({
       if (raw === '') continue;
       if (['digital', 'redigital', 'discard'].includes(k)) out[k] = raw === '__clear' ? null : raw === 'Yes';
       else if (k === 'logged') out[k] = raw === 'Yes';
-      else out[k] = raw;
+      else if (k === 'recheckWeeks') {
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1 || n > MAX_RECHECK_WEEKS) continue;
+        out[k] = n;
+      } else out[k] = raw;
     }
     if (Object.keys(out).length === 0) return;
     onApply(out as ItemsBulkSet);
@@ -607,6 +645,22 @@ function BulkBar({
         {txt('senderCode', "Sender's code")}
         {txt('digitalSource', 'Dig source')}
         {txt('phyStorageLoc', 'Phy storage loc.')}
+        {hasPrasadi ? (
+          <Field label="Prasadi re-check in">
+            <span className="flex items-center gap-1.5">
+              <TextInput
+                type="number"
+                min={1}
+                max={MAX_RECHECK_WEEKS}
+                value={v.recheckWeeks ?? ''}
+                onChange={set('recheckWeeks')}
+                placeholder="No change"
+                aria-label="Re-check in how many weeks, for selected Prasadi items"
+              />
+              <span className="text-[12.5px] text-ink-2">weeks</span>
+            </span>
+          </Field>
+        ) : null}
         <Field label="Logging status">
           <Select value={v.logged ?? ''} onChange={set('logged')} aria-label="Logging status for selected items">
             <option value="">No change</option>

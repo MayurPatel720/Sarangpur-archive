@@ -22,6 +22,7 @@ import {
   formatBlocksPipeline,
   lotFacetPipeline,
   pipelineBoardPipeline,
+  prasadiChecksDuePipeline,
   recentActivityPipeline,
 } from '../src/server/dashboard/pipelines';
 import {
@@ -227,6 +228,28 @@ check(
   alerts.alerts.find((a) => a.key === 'decision_overdue')?.detail,
   'Receiver / in-charge notified · oldest is day 11',
 );
+
+/* --- 3b. Prasadi checks due ------------------------------------------------ */
+
+console.log('\nPrasadi checks due');
+const ITEMS = [
+  { _id: 'i1', lot: 'L1', format: 'prasadi', nextCheckDue: ago(10) }, // due, oldest
+  { _id: 'i2', lot: 'L1', format: 'prasadi', nextCheckDue: ago(2) }, // due
+  { _id: 'i3', lot: 'L2', format: 'prasadi', nextCheckDue: new Date('2026-09-18T00:00:00.000Z') }, // due today
+  { _id: 'i4', lot: 'L2', format: 'prasadi', nextCheckDue: ahead(3) }, // not yet
+  { _id: 'i5', lot: 'L3', format: 'video', nextCheckDue: ago(5) }, // other format
+  { _id: 'i6', lot: 'L3', format: 'prasadi', nextCheckDue: null }, // no check planned
+];
+const due = run<{ n: number; lots: number; oldest: Date }>(prasadiChecksDuePipeline(NOW), ITEMS);
+check('3 items due across 2 lots (today counts, future / other format / unplanned do not)', [due[0]?.n, due[0]?.lots], [3, 2]);
+check('oldest due date', new Date(due[0]!.oldest).toISOString(), ago(10).toISOString());
+check('nothing due → no row', run(prasadiChecksDuePipeline(new Date('2026-09-01T00:00:00.000Z')), ITEMS).length, 0);
+const prasadiAlerts = shapeAlerts(facet, w, due[0]);
+check('alert response with Prasadi still matches its Zod contract', alertsResponseSchema.safeParse(prasadiAlerts).success, true);
+const prasadiAlert = prasadiAlerts.alerts.find((a) => a.key === 'prasadi_check_due');
+check('Prasadi alert count and link', [prasadiAlert?.count, prasadiAlert?.href], [3, '/queues/prasadi-checks']);
+check('open total includes Prasadi checks', prasadiAlerts.totalOpen, alerts.totalOpen + 3);
+check('no Prasadi alert when nothing is due', alerts.alerts.some((a) => a.key === 'prasadi_check_due'), false);
 
 /* --- 4. the pipeline board ------------------------------------------------ */
 

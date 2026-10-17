@@ -5,6 +5,8 @@ import { connectToDatabase } from '@/lib/mongo';
 import { intakeMissing } from '@/lib/intake-gate';
 import { formatDateRange, isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { itemResultOf, type ItemAnswers, type Tri } from '@/lib/item-decision';
+import { appliesToFormat, BUILTIN_COLUMNS, PRASADI_FORMAT } from '@/lib/item-columns';
+import { nextCheckDate } from '@/lib/recheck';
 import type { ActivityKind } from '@/lib/domain';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem, type LotItemDoc } from '@/models/LotItem';
@@ -42,6 +44,9 @@ import type {
 
 const DECISION_KEYS = ['digital', 'redigital', 'discard'] as const;
 
+/** The registry's format-specific columns, by id — the only keys an edit may put under `attrs`. */
+const ATTR_COLUMNS = new Map(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [c.id, c]));
+
 /** Plain text columns: grid key → LotItem field. */
 const TEXT_FIELDS: Record<string, string> = {
   senderCode: 'senderCode',
@@ -50,6 +55,10 @@ const TEXT_FIELDS: Record<string, string> = {
   nameOnCase: 'nameOnCase',
   physicalSource: 'physicalSource',
   remarks: 'remarks',
+  itemName: 'name',
+  description: 'description',
+  event: 'event',
+  itemCondition: 'itemCondition',
   digitalSource: 'digitalSource',
   fileName: 'fileName',
   phyStorageLoc: 'phyStorageLoc',
@@ -153,6 +162,14 @@ export function toGridRow(it: ItemLean, lot: RowLotInfo): GridItem {
       nameOnCase: it.nameOnCase ?? null,
       physicalSource: it.physicalSource ?? null,
       remarks: it.remarks ?? null,
+      itemName: it.name ?? null,
+      description: it.description ?? null,
+      event: it.event ?? null,
+      itemCondition: it.itemCondition ?? null,
+      attrs: (it.attrs ?? {}) as GridItem['attrs'],
+      recheckWeeks: it.recheckWeeks ?? null,
+      nextCheckDue: isoDayToDmy(isoDay(it.nextCheckDue)),
+      lastCheckedAt: isoDayToDmy(isoDay(it.lastCheckedAt)),
       duplicateCode: it.duplicateCode ?? null,
       duplicatedBy: lot.duplicatedBy,
       digital: a.digital,
@@ -324,6 +341,24 @@ export async function applyItemEdits(
         if ('captured' in set) $set.digitized = Boolean(set.captured);
         if ('taggedInMls' in set) $set.taggedInMls = Boolean(set.taggedInMls);
 
+        // Format-specific columns (the registry's `attr` columns): text or Yes / No.
+        for (const [ak, raw] of Object.entries((set.attrs ?? {}) as Record<string, unknown>)) {
+          const def = ATTR_COLUMNS.get(ak);
+          if (!def) fail('Unknown column.');
+          if (!appliesToFormat(def!, it.format ?? null)) continue; // e.g. a bulk edit that also selected other formats
+          const v = typeof raw === 'string' ? clean(raw) : raw;
+          if (def!.kind === 'flag') $set[`attrs.${ak}`] = v === true;
+          else if (v === null || v === undefined) $unset[`attrs.${ak}`] = '';
+          else $set[`attrs.${ak}`] = String(v).slice(0, 2000);
+        }
+
+        // Prasadi quality check: N weeks from today; clearing it stops the reminder.
+        if ('recheckWeeks' in set && it.format === PRASADI_FORMAT) {
+          const weeks = set.recheckWeeks as number | null;
+          $set.recheckWeeks = weeks ?? null;
+          $set.nextCheckDue = weeks ? nextCheckDate(now, weeks) : null;
+        }
+
         // Logging: ticking Status stamps who and when (still editable afterwards).
         if ('logged' in set) {
           const on = Boolean(set.logged);
@@ -447,7 +482,20 @@ export async function applyItemEdits(
   let summary = await summarise(lot._id);
   let finalized: ItemsBulkResponse['finalized'] = null;
   const blocked = blockedBy(lot, summary);
-  if (touchesDecision && decisionOpen(lot) && summary.total > 0 && summary.decided === summary.total && blocked.length === 0) {
+  // Prasadi items are decided automatically (kept physically), so any edit of a lot that has them
+  // may be the one that completes it — not only a Decision edit. Not after an approved override:
+  // that reopens decisions on purpose and must not re-decide by itself.
+  const autoDecided =
+    !touchesDecision &&
+    (lot.decision?.status ?? 'pending') === 'pending' &&
+    Boolean(await LotItem.exists({ lot: lot._id, format: PRASADI_FORMAT }));
+  if (
+    (touchesDecision || autoDecided) &&
+    decisionOpen(lot) &&
+    summary.total > 0 &&
+    summary.decided === summary.total &&
+    blocked.length === 0
+  ) {
     const out = await finalizeItemDecisions(lotId, ctx);
     finalized = { decision: out.decision, stage: out.stage };
     summary = await summarise(lot._id);
