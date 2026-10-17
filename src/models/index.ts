@@ -25,3 +25,4 @@ export { Task, type TaskDoc } from './Task';
 export { Notification, type NotificationDoc } from './Notification';
 export { LotPickup, type LotPickupDoc } from './LotPickup';
 export { ProjectImage, type ProjectImageDoc } from './ProjectImage';
+export { LotImage, type LotImageDoc } from './LotImage';

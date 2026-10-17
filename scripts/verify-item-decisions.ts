@@ -15,6 +15,7 @@ import { ActivityLog } from '../src/models/ActivityLog';
 import { LotItem } from '../src/models/LotItem';
 import { User } from '../src/models/User';
 import { Task } from '../src/models/Task';
+import { deleteLotImage, listLotImages } from '../src/server/lots/images';
 import type { MutationContext } from '../src/lib/api';
 import { ALL_PERMISSIONS } from '../src/server/permissions';
 import { createIntake } from '../src/server/lots/mutations';
@@ -314,6 +315,16 @@ async function main() {
     const noTask: MutationContext = { ...admin, grants: admin.grants.filter((g) => g !== 'task:assign') };
     await rejects('a task needs task:assign', () => createIntake({ ...base, assigneeId: me, task: { checklist: [], priority: 'normal', assigneeIds: [me] } }, noTask), 403);
     check('refused intakes create nothing', (await ArchiveLot.countDocuments({})) === before);
+
+    console.log('lot photos');
+    const imgs = await listLotImages(owned.id, admin);
+    check('a new lot has no photos and the admin may manage them', imgs.images.length === 0 && imgs.can.manage === true, imgs);
+    const otherUser = await User.findOne({ _id: { $ne: u._id } }).select('_id').lean();
+    const viewerOnly: MutationContext = { userId: otherUser ? String(otherUser._id) : '0'.repeat(24), userName: 'Viewer', roleKey: 'test', grants: ['lot:view', 'lot:edit'] };
+    check('an assigned lot cannot be managed by a non-assignee without project:assign', (await listLotImages(owned.id, viewerOnly)).can.manage === false);
+    await rejects('a non-assignee cannot delete a photo', () => deleteLotImage(owned.id, '0'.repeat(24), viewerOnly), 403);
+    await rejects('deleting a missing photo is a 404', () => deleteLotImage(owned.id, '0'.repeat(24), admin), 404);
+    await rejects('an unknown lot is a 404', () => listLotImages('0'.repeat(24), admin), 404);
 
     console.log('prasadi');
     const prs = await createIntake(

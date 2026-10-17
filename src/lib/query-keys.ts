@@ -44,6 +44,7 @@ export const queryKeys = {
       [...queryKeys.lots.all, 'activity', id, page, pageSize] as const,
     triage: (id: string) => [...queryKeys.lots.all, 'triage', id] as const,
     itemsGrid: (id: string) => [...queryKeys.lots.all, 'items-grid', id] as const,
+    images: (id: string) => [...queryKeys.lots.all, 'images', id] as const,
   },
   master: {
     all: ['master'] as const,

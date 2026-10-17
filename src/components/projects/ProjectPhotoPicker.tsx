@@ -18,10 +18,12 @@ export interface PickedPhoto {
 function PickedTile({
   photo,
   disabled,
+  showFormat,
   onChange,
   onRemove,
 }: {
   photo: PickedPhoto;
+  showFormat: boolean;
   disabled?: boolean;
   onChange: (patch: Partial<PickedPhoto>) => void;
   onRemove: () => void;
@@ -64,12 +66,14 @@ function PickedTile({
         disabled={disabled}
         aria-label={`Caption for ${photo.file.name}`}
       />
-      <PhotoFormatSelect
-        value={photo.format}
-        onChange={(format) => onChange({ format })}
-        disabled={disabled}
-        label={`Format tag for ${photo.file.name}`}
-      />
+      {showFormat ? (
+        <PhotoFormatSelect
+          value={photo.format}
+          onChange={(format) => onChange({ format })}
+          disabled={disabled}
+          label={`Format tag for ${photo.file.name}`}
+        />
+      ) : null}
     </li>
   );
 }
@@ -82,10 +86,16 @@ export function ProjectPhotoPicker({
   photos,
   onChange,
   disabled,
+  showFormat = true,
+  waitingNote = 'Photos are resized and uploaded after the project is created.',
 }: {
   photos: PickedPhoto[];
   onChange: (next: PickedPhoto[]) => void;
   disabled?: boolean;
+  /** Per-photo format tag (projects). Off for a lot, whose photos carry no tag. */
+  showFormat?: boolean;
+  /** Hint shown before any photo is chosen. */
+  waitingNote?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
@@ -124,7 +134,7 @@ export function ProjectPhotoPicker({
         </GhostButton>
         <span className="text-[12px] text-ink-3">
           {photos.length === 0
-            ? 'Photos are resized and uploaded after the project is created.'
+            ? waitingNote
             : `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'} selected`}
         </span>
       </div>
@@ -136,6 +146,7 @@ export function ProjectPhotoPicker({
               key={p.id}
               photo={p}
               disabled={disabled}
+              showFormat={showFormat}
               onChange={(patchValue) => patch(p.id, patchValue)}
               onRemove={() => onChange(photos.filter((x) => x.id !== p.id))}
             />

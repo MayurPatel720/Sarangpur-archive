@@ -14,6 +14,9 @@ import { focusEditableCell } from '@/components/ui/EditableTable';
 import { FormSection, StepBlocks } from '@/components/ui/FormSection';
 import { useCan, useMe } from '@/hooks/useCan';
 import { useRowAssign } from '@/hooks/useRowAssign';
+import { usePhotoUploads } from '@/hooks/usePhotoUploads';
+import { useToast } from '@/components/ui/Toast';
+import { ProjectPhotoPicker, type PickedPhoto } from '@/components/projects/ProjectPhotoPicker';
 import { RowAssignButton } from '@/components/tasks/RowAssignButton';
 import { RowAssignDialog } from '@/components/tasks/RowAssignDialog';
 
@@ -86,6 +89,12 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
     setStepsDone((prev) => (prev[index] === done ? prev : prev.map((v, k) => (k === index ? done : v))));
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Photos of the physical items: kept in state and uploaded once the lot exists.
+  const toast = useToast();
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+  const photoUploads = usePhotoUploads(undefined, 'lot');
+
   // "Assign this lot": one owner for the whole lot (+ an optional task), same dialog as the project wizard.
   const rowAssign = useRowAssign();
   const canAssignLot = useCan('project:assign');
@@ -121,14 +130,26 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
 
   const create = useMutation({
     mutationFn: (body: LotCreateBody) => lotsApi.create(body),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
+      // Photos never block registration: upload them now, report failures, open the lot either way.
+      if (photos.length > 0) {
+        setUploadingPhotos(true);
+        const failed = await photoUploads
+          .start(res.id, photos.map((p) => ({ file: p.file, caption: p.caption, format: null })))
+          .catch(() => photos.length);
+        if (failed > 0) {
+          toast.error(`${failed} ${failed === 1 ? 'photo' : 'photos'} failed — add ${failed === 1 ? 'it' : 'them'} from the lot page`);
+        }
+      }
       router.push(scopedHref(`/register/${res.id}`, initialFormat));
     },
     onError: (e) => {
       setFormError(e instanceof ApiRequestError ? e.message : 'Could not register this lot.');
     },
   });
+
+  const busy = create.isPending || uploadingPhotos;
 
   if (me.isLoading) {
     return (
@@ -272,19 +293,36 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
           <MediaStep
             ctx={ctx}
             footerNote={
-              canAssignLot ? (
-                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
-                  <span className="text-[12.5px] font-semibold text-ink-2">Assign this lot</span>
-                  <RowAssignButton
-                    format={draft.lines[0]?.format ?? ''}
-                    draft={lotAssignment}
-                    onOpen={() => rowAssign.open(LOT_ASSIGN_KEY)}
+              <>
+                {canAssignLot ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
+                    <span className="text-[12.5px] font-semibold text-ink-2">Assign this lot</span>
+                    <RowAssignButton
+                      format={draft.lines[0]?.format ?? ''}
+                      draft={lotAssignment}
+                      onOpen={() => rowAssign.open(LOT_ASSIGN_KEY)}
+                    />
+                    <span className="text-[12px] text-ink-3">
+                      One owner for the whole lot, whatever formats it holds. Optional — leave it to assign later.
+                    </span>
+                  </div>
+                ) : null}
+                <div className="mt-3 flex flex-col gap-2 border-t border-line-soft pt-3">
+                  <span className="text-[12.5px] font-semibold text-ink-2">Photos of the physical items (optional)</span>
+                  <ProjectPhotoPicker
+                    photos={photos}
+                    onChange={setPhotos}
+                    disabled={busy}
+                    showFormat={false}
+                    waitingNote="Photos are resized and uploaded after the lot is registered. You can add or remove them later from the lot page."
                   />
-                  <span className="text-[12px] text-ink-3">
-                    One owner for the whole lot, whatever formats it holds. Optional — leave it to assign later.
-                  </span>
+                  {uploadingPhotos ? (
+                    <p role="status" className="m-0 text-[12.5px] font-medium text-ink-2">
+                      Uploading photos… {photoUploads.entries.filter((e) => e.status === 'done').length} of {photoUploads.entries.length} done
+                    </p>
+                  ) : null}
                 </div>
-              ) : null
+              </>
             }
           />
         ) : null}
@@ -305,13 +343,13 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
         {/* ------------------------------------------------------- footer */}
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-line-soft">
           {step > 0 ? (
-            <GhostButton disabled={create.isPending} onClick={goBack}>
+            <GhostButton disabled={busy} onClick={goBack}>
               Back
             </GhostButton>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
             <GhostButton
-              disabled={create.isPending}
+              disabled={busy}
               onClick={() => router.push(scopedHref('/register', initialFormat))}
             >
               Cancel
@@ -319,8 +357,8 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
             {step < STEPS.length - 1 ? (
               <PrimaryButton onClick={goNext}>Next</PrimaryButton>
             ) : (
-              <PrimaryButton disabled={create.isPending} onClick={submit}>
-                {create.isPending ? 'Registering…' : 'Register lot'}
+              <PrimaryButton disabled={busy} onClick={submit}>
+                {uploadingPhotos ? 'Uploading photos…' : create.isPending ? 'Registering…' : 'Register lot'}
               </PrimaryButton>
             )}
           </div>

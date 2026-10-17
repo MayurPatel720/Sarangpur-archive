@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import { ApiRequestError, projectImagesApi } from '@/lib/api-client';
+import { ApiRequestError, lotImagesApi, projectImagesApi } from '@/lib/api-client';
 import { buildPhotoForm, preparePhoto } from '@/lib/project-photos';
 import type { Format } from '@/lib/domain';
 
@@ -24,10 +24,11 @@ const CONCURRENCY = 2;
 
 /**
  * Sequential-ish (2 at a time) photo uploads, one file per request, with per-photo
- * status and retry. Shared by the project page gallery and the new-project wizard.
+ * status and retry. Shared by the project page gallery, the new-project wizard and the lot's photos
+ * (`kind: 'lot'` — then `projectId` is the lot id).
  * `start` resolves once every given photo has finished (done or failed).
  */
-export function usePhotoUploads(onUploaded?: () => void) {
+export function usePhotoUploads(onUploaded?: () => void, kind: 'project' | 'lot' = 'project') {
   const [entries, setEntries] = useState<UploadEntry[]>([]);
   const entriesRef = useRef<UploadEntry[]>([]);
   const seq = useRef(0);
@@ -52,7 +53,7 @@ export function usePhotoUploads(onUploaded?: () => void) {
           patch(key, { status: 'uploading', error: undefined });
           try {
             const prepared = await preparePhoto(entry.file);
-            await projectImagesApi.upload(
+            await (kind === 'lot' ? lotImagesApi : projectImagesApi).upload(
               entry.projectId,
               buildPhotoForm(prepared, { caption: entry.caption.trim(), format: entry.format }),
             );
@@ -69,7 +70,7 @@ export function usePhotoUploads(onUploaded?: () => void) {
       await Promise.all(Array.from({ length: Math.min(CONCURRENCY, keys.length) }, worker));
       return keys.filter((k) => entriesRef.current.find((e) => e.key === k)?.status === 'failed').length;
     },
-    [patch, onUploaded],
+    [patch, onUploaded, kind],
   );
 
   /** Queue and upload photos to a project. Resolves to the number that failed. */

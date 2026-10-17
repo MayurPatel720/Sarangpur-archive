@@ -157,6 +157,13 @@ import {
   type ProjectImagesResponse,
 } from '@/types/project-image';
 import {
+  lotImageDeleteResponseSchema,
+  lotImageResponseSchema,
+  lotImagesResponseSchema,
+  type LotImageResponse,
+  type LotImagesResponse,
+} from '@/types/lot-image';
+import {
   triageBulkResponseSchema,
   triageItemsResponseSchema,
   type TriageBulkBody,
@@ -663,6 +670,20 @@ export const projectImagesApi = {
       'DELETE',
       {},
       projectImageDeleteResponseSchema,
+    ),
+};
+
+export const lotImagesApi = {
+  list: (lotId: string) =>
+    getJson<LotImagesResponse>(`/api/lots/${encodeURIComponent(lotId)}/images`, lotImagesResponseSchema),
+  upload: (lotId: string, form: FormData) =>
+    sendForm<LotImageResponse>(`/api/lots/${encodeURIComponent(lotId)}/images`, 'POST', form, lotImageResponseSchema),
+  remove: (lotId: string, imageId: string) =>
+    sendJson<{ ok: true }>(
+      `/api/lots/${encodeURIComponent(lotId)}/images/${encodeURIComponent(imageId)}`,
+      'DELETE',
+      {},
+      lotImageDeleteResponseSchema,
     ),
 };
 

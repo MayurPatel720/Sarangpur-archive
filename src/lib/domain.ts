@@ -186,6 +186,8 @@ export const ACTIVITY_KINDS = [
   'project_image_updated',
   'project_image_replaced',
   'project_image_deleted',
+  'lot_image_added',
+  'lot_image_deleted',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -234,6 +236,8 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   project_image_updated: 'neutral',
   project_image_replaced: 'neutral',
   project_image_deleted: 'warning',
+  lot_image_added: 'info',
+  lot_image_deleted: 'warning',
 };
 
 /**

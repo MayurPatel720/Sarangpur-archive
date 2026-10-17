@@ -45,6 +45,7 @@ import { ItemsGrid } from './ItemsGrid';
 import { ActivityPanel } from './ActivityPanel';
 import { LotProjectsSection } from './LotProjectsSection';
 import { LotAssigneeSelect, LotProjectBar } from './LotProjectBar';
+import { LotPhotosCard } from './LotPhotosCard';
 
 type LotDetail = LotDetailResponse['lot'];
 
@@ -1113,6 +1114,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <MaterialSection lot={lot} />
         <MediaLinesPanel lot={lot} />
         <ConditionSection lot={lot} />
+        <LotPhotosCard lotId={lot.id} />
         <ProgressSection lot={lot} />
         <JourneyPanel lot={lot} stageLabel={stageLabel} />
         <PeopleSection lot={lot} />

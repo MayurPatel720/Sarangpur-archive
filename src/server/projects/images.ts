@@ -198,8 +198,9 @@ async function logImageActivity(
   );
 }
 
-async function putAsset(
-  projectId: string,
+/** Uploads one image to Cloudinary under `archive-tracker/<scope>` (e.g. `projects/<id>`, `lots/<id>`). */
+export async function putAsset(
+  scope: string,
   file: File,
 ): Promise<{
   url: string;
@@ -223,7 +224,7 @@ async function putAsset(
     }>((resolve, reject) => {
       const stream = cloudinary.uploader.upload_stream(
         {
-          folder: `archive-tracker/projects/${projectId}`,
+          folder: `archive-tracker/${scope}`,
           resource_type: 'image',
           unique_filename: true,
           overwrite: false,
@@ -250,7 +251,7 @@ async function putAsset(
 }
 
 /** Best-effort asset removal: logged, never thrown (the document state is already settled). */
-async function dropAsset(publicId: string): Promise<void> {
+export async function dropAsset(publicId: string): Promise<void> {
   try {
     const cloudinary = await cloudinaryClient();
     await cloudinary.uploader.destroy(publicId, { invalidate: true, resource_type: 'image' });
@@ -282,7 +283,7 @@ export async function addProjectImage(
 ): Promise<{ image: ProjectImageDto }> {
   const project = await loadProject(projectId);
   await assertCanManage(projectId, ctx);
-  const stored = await putAsset(projectId, upload.file);
+  const stored = await putAsset(`projects/${projectId}`, upload.file);
 
   const session = await ProjectImage.startSession();
   try {
@@ -378,7 +379,7 @@ export async function replaceProjectImage(
   const project = await loadProject(projectId);
   assertImageId(imageId);
   await assertCanManage(projectId, ctx);
-  const stored = await putAsset(projectId, upload.file);
+  const stored = await putAsset(`projects/${projectId}`, upload.file);
 
   const session = await ProjectImage.startSession();
   try {
