@@ -14,14 +14,14 @@ import { focusEditableCell } from '@/components/ui/EditableTable';
 import { FormSection, StepBlocks } from '@/components/ui/FormSection';
 import { useCan, useMe } from '@/hooks/useCan';
 import { useRowAssign } from '@/hooks/useRowAssign';
+import { buildAssignPayload, formatFromTaskError } from '@/lib/row-assign';
+import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { usePhotoUploads } from '@/hooks/usePhotoUploads';
 import { useToast } from '@/components/ui/Toast';
 import { ProjectPhotoPicker, type PickedPhoto } from '@/components/projects/ProjectPhotoPicker';
 import { RowAssignButton } from '@/components/tasks/RowAssignButton';
 import { RowAssignDialog } from '@/components/tasks/RowAssignDialog';
 
-/** The single assignment of a standalone intake is stored under this key (a lot has one owner). */
-const LOT_ASSIGN_KEY = 'lot';
 import {
   ConditionStep,
   EMPTY_LINE,
@@ -95,28 +95,20 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const photoUploads = usePhotoUploads(undefined, 'lot');
 
-  // "Assign this lot": one owner for the whole lot (+ an optional task), same dialog as the project wizard.
+  // Per-row "Assign", exactly like the project wizard: rows of one format share one assignment
+  // (owner + optional task). One person for every assigned format keeps ONE lot; different people on
+  // different formats make one lot per format — a lot has a single owner.
   const rowAssign = useRowAssign();
   const canAssignLot = useCan('project:assign');
-  const lotAssignment = rowAssign.drafts[LOT_ASSIGN_KEY];
-  const assignmentBody = (): Pick<LotCreateBody, 'assigneeId' | 'task'> => {
-    const owner = lotAssignment?.assignees[0];
-    if (!canAssignLot || !lotAssignment || !owner) return {};
-    return {
-      assigneeId: owner.id,
-      ...(rowAssign.canAssignTasks
-        ? {
-            task: {
-              ...(lotAssignment.description.trim() ? { description: lotAssignment.description.trim() } : {}),
-              checklist: lotAssignment.checklist.map((c) => c.trim()).filter(Boolean),
-              priority: lotAssignment.priority,
-              ...(lotAssignment.dueDate ? { dueDate: lotAssignment.dueDate } : {}),
-              assigneeIds: [...new Set(lotAssignment.assignees.map((a) => a.id))],
-            },
-          }
-        : {}),
-    };
+  const lineFormats = [...new Set(draft.lines.map((l) => l.format).filter(Boolean))];
+  const assignmentBody = (): Pick<LotCreateBody, 'assignments' | 'tasks'> => {
+    if (!canAssignLot) return {};
+    const { assignments, tasks } = buildAssignPayload(rowAssign.drafts, lineFormats, rowAssign.canAssignTasks);
+    const owners = assignments.flatMap((a) => (a.assigneeId ? [{ format: a.format, assigneeId: a.assigneeId }] : []));
+    return { ...(owners.length ? { assignments: owners } : {}), ...(tasks.length ? { tasks } : {}) };
   };
+  const ownerIds = new Set(lineFormats.flatMap((f) => (rowAssign.drafts[f]?.assignees[0] ? [rowAssign.drafts[f]!.assignees[0]!.id] : [])));
+  const splitsIntoLots = canAssignLot && ownerIds.size > 1;
 
   const ctx: StepCtx = {
     mode: 'lot',
@@ -142,10 +134,22 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
           toast.error(`${failed} ${failed === 1 ? 'photo' : 'photos'} failed — add ${failed === 1 ? 'it' : 'them'} from the lot page`);
         }
       }
-      router.push(scopedHref(`/register/${res.id}`, initialFormat));
+      if (res.lots.length > 1) {
+        toast.success(`${res.lots.length} lots registered`, res.lots.map((l) => l.lotReference).join(', '));
+        router.push(scopedHref('/register', initialFormat));
+      } else {
+        router.push(scopedHref(`/register/${res.id}`, initialFormat));
+      }
     },
     onError: (e) => {
-      setFormError(e instanceof ApiRequestError ? e.message : 'Could not register this lot.');
+      const message = e instanceof ApiRequestError ? e.message : 'Could not register this lot.';
+      setFormError(message);
+      // A task failure names its format: flag that row and reopen its dialog.
+      const bad = formatFromTaskError(message, lineFormats);
+      if (bad) {
+        rowAssign.setFormatError(bad, message);
+        rowAssign.open(bad);
+      }
     },
   });
 
@@ -292,20 +296,25 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
         {step === STEP_MEDIA ? (
           <MediaStep
             ctx={ctx}
+            rowActions={
+              canAssignLot
+                ? (line) => (
+                    <RowAssignButton
+                      format={line.format}
+                      draft={rowAssign.drafts[line.format]}
+                      error={rowAssign.errors[line.format]}
+                      onOpen={() => rowAssign.open(line.format)}
+                    />
+                  )
+                : undefined
+            }
             footerNote={
               <>
-                {canAssignLot ? (
-                  <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
-                    <span className="text-[12.5px] font-semibold text-ink-2">Assign this lot</span>
-                    <RowAssignButton
-                      format={draft.lines[0]?.format ?? ''}
-                      draft={lotAssignment}
-                      onOpen={() => rowAssign.open(LOT_ASSIGN_KEY)}
-                    />
-                    <span className="text-[12px] text-ink-3">
-                      One owner for the whole lot, whatever formats it holds. Optional — leave it to assign later.
-                    </span>
-                  </div>
+                {splitsIntoLots ? (
+                  <p role="status" className="m-0 mt-3 rounded-[6px] border border-info-line bg-info-bg px-3 py-2 text-[12.5px] text-info">
+                    {lineFormats.map((f) => FORMAT_LABELS[f as Format] ?? f).join(' and ')} are assigned to different people, so registering
+                    creates {lineFormats.length} lots — one per format, each with its own owner. Photos you add go to the first lot.
+                  </p>
                 ) : null}
                 <div className="mt-3 flex flex-col gap-2 border-t border-line-soft pt-3">
                   <span className="text-[12.5px] font-semibold text-ink-2">Photos of the physical items (optional)</span>
@@ -366,10 +375,11 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
       </div>
       {rowAssign.editing ? (
         <RowAssignDialog
-          initial={lotAssignment ?? null}
+          initial={rowAssign.drafts[rowAssign.editing] ?? null}
           canAssignTasks={rowAssign.canAssignTasks}
-          onSave={(d) => rowAssign.save(LOT_ASSIGN_KEY, d)}
-          onClear={lotAssignment ? () => rowAssign.clear(LOT_ASSIGN_KEY) : undefined}
+          serverError={rowAssign.errors[rowAssign.editing]}
+          onSave={(d) => rowAssign.save(rowAssign.editing!, d)}
+          onClear={rowAssign.drafts[rowAssign.editing] ? () => rowAssign.clear(rowAssign.editing!) : undefined}
           onClose={rowAssign.close}
         />
       ) : null}

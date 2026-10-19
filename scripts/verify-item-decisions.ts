@@ -286,34 +286,85 @@ async function main() {
     check('imported cells saved', imported.place === 'Pune' && imported.dateRange === '01/01/1999 - 31/12/1999', imported);
 
     console.log('intake assignment');
+    const photoLine = { format: 'photo', dataType: sample.dataType, mediaSubtype: sample.mediaSubtype, quantity: 1 };
     const base = {
       dateReceived: new Date().toISOString(),
       originSource: sample.originSource!,
       owner: { name: 'Verify Owner' },
       pointsOfContact: [],
-      mediaLines: [{ format: 'photo', dataType: sample.dataType, mediaSubtype: sample.mediaSubtype, quantity: 1 }],
+      mediaLines: [photoLine],
     };
     const me = String(u._id);
-    const owned = await createIntake({ ...base, assigneeId: me }, admin);
-    created.push(owned.id);
+    const other = await User.findOne({ _id: { $ne: u._id } }).select('_id').lean();
+    const them = String(other!._id);
+    const owned = await createIntake({ ...base, assignments: [{ format: 'photo', assigneeId: me }] }, admin);
+    created.push(...owned.lots.map((l) => l.id));
     const ownedLot = await ArchiveLot.findById(owned.id).select('assignee assigneeName').lean();
-    check('intake with an owner assigns the lot', String(ownedLot?.assignee) === me && Boolean(ownedLot?.assigneeName), ownedLot);
+    check('intake with an owner assigns the lot', owned.lots.length === 1 && String(ownedLot?.assignee) === me && Boolean(ownedLot?.assigneeName), ownedLot);
     check('no task without task details', (await Task.countDocuments({ lot: owned.id })) === 0);
 
     const day = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
-    const tasked = await createIntake({ ...base, assigneeId: me, task: { checklist: ['Sort photos'], priority: 'urgent', dueDate: day, assigneeIds: [me] } }, admin);
-    created.push(tasked.id);
+    const tasked = await createIntake(
+      { ...base, assignments: [{ format: 'photo', assigneeId: me }], tasks: [{ format: 'photo', checklist: ['Sort photos'], priority: 'urgent', dueDate: day, assigneeIds: [me] }] },
+      admin,
+    );
+    created.push(...tasked.lots.map((l) => l.id));
     const t = await Task.findOne({ lot: tasked.id }).lean();
     check('intake with a task creates it linked to the lot', Boolean(t) && String(t!.lot) === tasked.id && t!.format === 'photo', t?.title);
 
+    // Rows of one format share one assignment: two photo rows, one owner, one lot.
+    const twoRows = await createIntake({ ...base, mediaLines: [photoLine, { ...photoLine, quantity: 2 }], assignments: [{ format: 'photo', assigneeId: me }] }, admin);
+    created.push(...twoRows.lots.map((l) => l.id));
+    check('two rows of one format stay one lot with one owner', twoRows.lots.length === 1 && twoRows.itemsCreated === 3, twoRows);
+
+    const sampleVideo = await ArchiveLot.findOne({ format: 'video' }).select('dataType mediaSubtype').lean();
+    if (sampleVideo) {
+      const videoLine = { format: 'video', dataType: sampleVideo.dataType, mediaSubtype: sampleVideo.mediaSubtype, quantity: 2 };
+      const mixed = { ...base, mediaLines: [photoLine, videoLine] };
+
+      const same = await createIntake({ ...mixed, assignments: [{ format: 'photo', assigneeId: me }, { format: 'video', assigneeId: me }] }, admin);
+      created.push(...same.lots.map((l) => l.id));
+      check('one person on every format keeps ONE lot', same.lots.length === 1 && same.itemsCreated === 3, same.lots);
+
+      const partial = await createIntake({ ...mixed, assignments: [{ format: 'video', assigneeId: me }] }, admin);
+      created.push(...partial.lots.map((l) => l.id));
+      const partialLot = await ArchiveLot.findById(partial.id).select('assignee').lean();
+      check('only some formats assigned: still one lot, owned by that person', partial.lots.length === 1 && String(partialLot?.assignee) === me);
+
+      const none = await createIntake(mixed, admin);
+      created.push(...none.lots.map((l) => l.id));
+      check('nobody assigned: one unassigned lot', none.lots.length === 1 && (await ArchiveLot.findById(none.id).select('assignee').lean())?.assignee == null);
+
+      const split = await createIntake(
+        {
+          ...mixed,
+          assignments: [{ format: 'photo', assigneeId: me }, { format: 'video', assigneeId: them }],
+          tasks: [
+            { format: 'photo', checklist: [], priority: 'normal', assigneeIds: [me] },
+            { format: 'video', checklist: ['Check tapes'], priority: 'normal', assigneeIds: [them] },
+          ],
+        },
+        admin,
+      );
+      created.push(...split.lots.map((l) => l.id));
+      check('different people on different formats: one lot per format', split.lots.length === 2 && split.lots[0]!.format === 'photo' && split.lots[1]!.format === 'video' && split.itemsCreated === 3, split.lots);
+      const owners = await Promise.all(split.lots.map(async (l) => String((await ArchiveLot.findById(l.id).select('assignee').lean())?.assignee)));
+      check('each lot is owned by its format person', owners[0] === me && owners[1] === them, owners);
+      const splitTasks = await Task.find({ lot: { $in: split.lots.map((l) => l.id) } }).lean();
+      check('each lot gets its own task', splitTasks.length === 2 && splitTasks.every((x) => split.lots.some((l) => l.id === String(x.lot))), splitTasks.map((x) => x.title));
+      const itemFormats = await LotItem.find({ lot: split.lots[1]!.id }).distinct('format');
+      check('items stay with their format lot', itemFormats.length === 1 && itemFormats[0] === 'video', itemFormats);
+    }
+
     const before = await ArchiveLot.countDocuments({});
-    await rejects('a past due date is refused', () => createIntake({ ...base, assigneeId: me, task: { checklist: [], priority: 'normal', dueDate: '2020-01-01', assigneeIds: [me] } }, admin), 400);
-    await rejects('a task without an owner is refused', () => createIntake({ ...base, task: { checklist: [], priority: 'normal', assigneeIds: [me] } }, admin), 400);
-    await rejects('an unknown user is refused', () => createIntake({ ...base, assigneeId: '0'.repeat(24) }, admin), 400);
+    await rejects('a past due date is refused', () => createIntake({ ...base, assignments: [{ format: 'photo', assigneeId: me }], tasks: [{ format: 'photo', checklist: [], priority: 'normal', dueDate: '2020-01-01', assigneeIds: [me] }] }, admin), 400);
+    await rejects('a task without an owner for its format is refused', () => createIntake({ ...base, tasks: [{ format: 'photo', checklist: [], priority: 'normal', assigneeIds: [me] }] }, admin), 400);
+    await rejects('an assignment for a format the table does not use is refused', () => createIntake({ ...base, assignments: [{ format: 'video', assigneeId: me }] }, admin), 400);
+    await rejects('an unknown user is refused', () => createIntake({ ...base, assignments: [{ format: 'photo', assigneeId: '0'.repeat(24) }] }, admin), 400);
     const noAssign: MutationContext = { ...admin, grants: admin.grants.filter((g) => g !== 'project:assign') };
-    await rejects('assigning needs project:assign', () => createIntake({ ...base, assigneeId: me }, noAssign), 403);
+    await rejects('assigning needs project:assign', () => createIntake({ ...base, assignments: [{ format: 'photo', assigneeId: me }] }, noAssign), 403);
     const noTask: MutationContext = { ...admin, grants: admin.grants.filter((g) => g !== 'task:assign') };
-    await rejects('a task needs task:assign', () => createIntake({ ...base, assigneeId: me, task: { checklist: [], priority: 'normal', assigneeIds: [me] } }, noTask), 403);
+    await rejects('a task needs task:assign', () => createIntake({ ...base, assignments: [{ format: 'photo', assigneeId: me }], tasks: [{ format: 'photo', checklist: [], priority: 'normal', assigneeIds: [me] }] }, noTask), 403);
     check('refused intakes create nothing', (await ArchiveLot.countDocuments({})) === before);
 
     console.log('lot photos');

@@ -351,7 +351,7 @@ export const lotsApi = {
     return getJson<LotListResponse>(`/api/lots${qs ? `?${qs}` : ''}`, lotListResponseSchema);
   },
   create: (body: LotCreateBody) =>
-    sendJson<{ id: string; lotReference: string; itemsCreated: number }>(
+    sendJson<z.output<typeof lotCreateResponseSchema>>(
       '/api/lots',
       'POST',
       body,

@@ -18,6 +18,8 @@ import { MAX_ASSIGNEES, isoDaySchema, taskPrioritySchema } from './task';
  * `'return'|'discard'`, override outcome).
  */
 
+const objectIdString = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Expected an ObjectId string.');
+
 export const contactSchema = z.object({
   name: z.string().trim().min(1, 'Name is required.').max(120),
   phone: z.string().trim().max(40).optional(),
@@ -133,19 +135,31 @@ export const lotCreateBodySchema = z
     returnDueAt: z.string().datetime({ offset: true }).optional(),
     rights: rightsSchema.optional(),
     /**
-     * Who owns the lot from the start (needs `project:assign`). Optional — an unassigned lot is
-     * admin-only until someone is assigned. With `task` (needs `task:assign`) the owner and any
-     * others also get a task linked to this lot; the title and links are filled in by the server.
+     * Per-format owners, like the project wizard (needs `project:assign`). Rows of one format share
+     * one. When every assigned format has the same person (or only one is assigned) the intake stays
+     * ONE lot owned by them; when different formats have different people it becomes one lot per
+     * format, each owned by its person. A format with no entry stays unassigned.
      */
-    assigneeId: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Expected an ObjectId string.').optional(),
-    task: z
-      .object({
-        description: z.string().trim().max(2000).optional(),
-        checklist: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
-        priority: taskPrioritySchema.default('normal'),
-        dueDate: isoDaySchema.optional(),
-        assigneeIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/)).min(1, 'Pick at least one assignee.').max(MAX_ASSIGNEES),
-      })
+    assignments: z
+      .array(z.object({ format: z.string().trim().min(1).max(40), assigneeId: objectIdString }))
+      .max(20)
+      .optional(),
+    /**
+     * Optional task per format (needs `task:assign` and an assignment for the same format): the
+     * title and links are filled in by the server.
+     */
+    tasks: z
+      .array(
+        z.object({
+          format: z.string().trim().min(1).max(40),
+          description: z.string().trim().max(2000).optional(),
+          checklist: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
+          priority: taskPrioritySchema.default('normal'),
+          dueDate: isoDaySchema.optional(),
+          assigneeIds: z.array(objectIdString).min(1, 'Pick at least one assignee.').max(MAX_ASSIGNEES),
+        }),
+      )
+      .max(20)
       .optional(),
   })
   .refine(
@@ -158,9 +172,12 @@ export const lotCreateBodySchema = z
 export type LotCreateBody = z.input<typeof lotCreateBodySchema>;
 
 export const lotCreateResponseSchema = z.object({
+  /** The (first) lot created. */
   id: z.string(),
   lotReference: z.string(),
   itemsCreated: z.number(),
+  /** Every lot created — more than one when different formats were assigned to different people. */
+  lots: z.array(z.object({ id: z.string(), lotReference: z.string(), format: z.string() })),
 });
 
 /** Query params for GET /api/lots. `sort` allows `-` prefix for desc. */

@@ -282,65 +282,119 @@ export async function insertLotInSession(
 
 const isTaskFormat = (f: string): f is Format => (FORMATS as readonly string[]).includes(f);
 
+type IntakeOwner = { id: string; name: string };
+
 /**
- * Checks the optional owner / task of a standalone intake BEFORE any write: the owner needs
- * `project:assign`, the task needs `task:assign` and an owner, the due date must be a real day
- * that is not in the past, and every person must exist. Returns the owner (or null).
+ * Checks the optional per-format owners / tasks of a standalone intake BEFORE any write: owners
+ * need `project:assign`, tasks need `task:assign` and an owner for the same format, every
+ * format must be one the media table uses, due dates must be real days not in the past, and every
+ * person must exist. Errors about a task start with "<Format> lot task:" so the form can reopen
+ * that row. Returns the owner of each assigned format.
  */
-async function resolveIntakeOwner(
+async function resolveIntakeAssignments(
   body: LotCreateBody,
   ctx: MutationContext,
-): Promise<{ id: string; name: string } | null> {
-  if (!body.assigneeId && !body.task) return null;
+): Promise<Map<string, IntakeOwner>> {
+  const owners = new Map<string, IntakeOwner>();
+  const assignments = body.assignments ?? [];
+  const tasks = body.tasks ?? [];
+  if (assignments.length === 0 && tasks.length === 0) return owners;
   if (!can(ctx.grants, 'project:assign')) throw new HttpError(403, 'Your role cannot assign a lot.');
-  if (body.task) {
+  const formats = new Set(body.mediaLines.map((l) => l.format));
+  const label = (f: string) => (isTaskFormat(f) ? FORMAT_LABELS[f] : f);
+
+  for (const a of assignments) {
+    if (!formats.has(a.format)) throw new HttpError(400, `Assignment given for "${a.format}", but no media line uses that format.`);
+  }
+  const seenTask = new Set<string>();
+  for (const t of tasks) {
+    if (!formats.has(t.format)) throw new HttpError(400, `${label(t.format)} lot task: no media line uses that format.`);
+    if (seenTask.has(t.format)) throw new HttpError(400, `${label(t.format)} lot task: given more than once.`);
+    seenTask.add(t.format);
     if (!can(ctx.grants, 'task:assign')) throw new HttpError(403, 'Your role cannot assign tasks. Choose only the lot owner.');
-    if (!body.assigneeId) throw new HttpError(400, 'Pick the lot owner before adding a task.');
-    if (body.task.dueDate) {
-      assertRealDay(body.task.dueDate);
-      assertNotPast(body.task.dueDate);
+    if (!assignments.some((a) => a.format === t.format)) {
+      throw new HttpError(400, `${label(t.format)} lot task: pick the lot owner first.`);
+    }
+    if (t.dueDate) {
+      try {
+        assertRealDay(t.dueDate);
+        assertNotPast(t.dueDate);
+      } catch (e) {
+        if (e instanceof HttpError) throw new HttpError(e.status, `${label(t.format)} lot task: ${e.message}`);
+        throw e;
+      }
     }
   }
-  const ids = [...new Set([body.assigneeId, ...(body.task?.assigneeIds ?? [])].filter((x): x is string => Boolean(x)))];
+
+  const ids = [...new Set([...assignments.map((a) => a.assigneeId), ...tasks.flatMap((t) => t.assigneeIds)])];
   const users = await User.find({ _id: { $in: ids } }).select('name').lean();
   if (users.length !== ids.length) throw new HttpError(400, 'Unknown user selected.');
-  const owner = users.find((u) => String(u._id) === body.assigneeId);
-  return owner ? { id: String(owner._id), name: owner.name as string } : null;
+  const nameOf = new Map(users.map((u) => [String(u._id), u.name as string]));
+  for (const a of assignments) owners.set(a.format, { id: a.assigneeId, name: nameOf.get(a.assigneeId)! });
+  return owners;
 }
 
-/** Standalone intake: one lot in its own transaction. */
+/**
+ * Standalone intake. Normally ONE lot (any mix of formats): owned by the assigned person, or by
+ * the first assigned format's person when only some formats are assigned. When different formats
+ * are assigned to DIFFERENT people it becomes one lot per format — a lot has a single owner, and
+ * only its owner (or an admin) may edit it — each with its own owner and tasks, exactly like a
+ * project's child lots. One transaction: a failed task rolls every lot back.
+ */
 export async function createIntake(
   body: LotCreateBody,
   ctx: MutationContext,
-): Promise<{ id: string; lotReference: string; itemsCreated: number }> {
-  const vocab = await validateLotVocab(body);
+): Promise<{ id: string; lotReference: string; itemsCreated: number; lots: { id: string; lotReference: string; format: string }[] }> {
+  const owners = await resolveIntakeAssignments(body, ctx);
+  const formats = [...new Set(body.mediaLines.map((l) => l.format))];
+  const split = new Set([...owners.values()].map((o) => o.id)).size > 1;
+  const groups = split
+    ? formats.map((f) => ({ formats: [f], lines: body.mediaLines.filter((l) => l.format === f) }))
+    : [{ formats, lines: body.mediaLines }];
+  const vocabs = await Promise.all(groups.map((g) => validateLotVocab({ ...body, mediaLines: g.lines } as LotInsertBody)));
   await connectToDatabase();
-  const owner = await resolveIntakeOwner(body, ctx);
+
   const session = await ArchiveLot.startSession();
   try {
-    let out!: { id: string; lotReference: string; itemsCreated: number };
+    const lots: { id: string; lotReference: string; format: string }[] = [];
+    let itemsCreated = 0;
     await session.withTransaction(async () => {
-      const lot = await insertLotInSession(body, vocab, ctx, session, { assignee: owner });
-      out = lot;
-      // The task (owner + others) is created in the same transaction: a failure rolls the intake back.
-      if (body.task && isTaskFormat(lot.format)) {
-        await createTaskInSession(
-          {
-            title: `${lot.lotReference} — ${FORMAT_LABELS[lot.format]} lot`.slice(0, 160),
-            description: body.task.description || undefined,
-            assigneeIds: body.task.assigneeIds,
-            priority: body.task.priority,
-            dueDate: body.task.dueDate,
-            format: lot.format,
-            lotId: lot.id,
-            checklist: body.task.checklist,
-          },
-          ctx,
-          session,
-        );
+      lots.length = 0;
+      itemsCreated = 0;
+      for (const [i, g] of groups.entries()) {
+        // The lot's owner: its format's person, else (one lot) the first assigned format's person.
+        const owner = g.formats.map((f) => owners.get(f)).find(Boolean) ?? null;
+        const lot = await insertLotInSession({ ...body, mediaLines: g.lines } as LotInsertBody, vocabs[i]!, ctx, session, { assignee: owner });
+        lots.push({ id: lot.id, lotReference: lot.lotReference, format: lot.format });
+        itemsCreated += lot.itemsCreated;
+        // Tasks (owner + others) are created in the same transaction.
+        for (const t of body.tasks ?? []) {
+          if (!g.formats.includes(t.format) || !isTaskFormat(lot.format)) continue;
+          const fmt = isTaskFormat(t.format) ? t.format : lot.format;
+          try {
+            await createTaskInSession(
+              {
+                title: `${lot.lotReference} — ${FORMAT_LABELS[fmt]} lot`.slice(0, 160),
+                description: t.description || undefined,
+                assigneeIds: t.assigneeIds,
+                priority: t.priority,
+                dueDate: t.dueDate,
+                format: lot.format,
+                lotId: lot.id,
+                checklist: t.checklist,
+              },
+              ctx,
+              session,
+            );
+          } catch (e) {
+            if (e instanceof HttpError) throw new HttpError(e.status, `${FORMAT_LABELS[fmt]} lot task: ${e.message}`);
+            throw e;
+          }
+        }
       }
     });
-    return { id: out.id, lotReference: out.lotReference, itemsCreated: out.itemsCreated };
+    const first = lots[0]!;
+    return { id: first.id, lotReference: first.lotReference, itemsCreated, lots };
   } finally {
     await session.endSession();
   }
