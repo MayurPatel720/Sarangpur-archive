@@ -29,6 +29,7 @@ import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
 import type { GridItem, ImportBody } from '../src/types/items';
 import { allColumns, appliesToFormat, isCommonColumn } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
+import { CLEAR, buildBulkSet, bulkFieldsFor } from '../src/lib/bulk-fields';
 import { buildItemsWorkbook, readItemsFromExcel } from '../src/components/lots/excel-io';
 
 let failures = 0;
@@ -117,6 +118,25 @@ async function excelRoundTrip() {
   check('overdue days', daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-10T08:00:00Z')) === 3 && daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-07T23:00:00Z')) === 0);
   check('weeks text', weeksText(1) === '1 week' && weeksText(3) === '3 weeks');
   check('prasadi auto-decides as keep physical', itemResultOf(autoDecisionFields('prasadi')!.decision) === 'physical' && autoDecisionFields('video') === null);
+  // Bulk edit bar: every field is derived from the registry per selected format.
+  const ids = (formats: string[], custom: Parameters<typeof bulkFieldsFor>[1] = []) => bulkFieldsFor(formats, custom).map((f) => f.id);
+  const photoBulk = ids(['photo']);
+  const prasadiBulk = ids(['prasadi']);
+  check('bulk: photo rows get the photo fields', ['senderCode', 'nameOnTape', 'digital', 'captured', 'taggedInMls', 'logged', 'disposition', 'physicalSource'].every((i) => photoBulk.includes(i)), photoBulk);
+  check('bulk: photo rows get no Prasadi fields', !photoBulk.some((i) => ['blessedBy', 'stickerApplied', 'recheckWeeks', 'itemName'].includes(i)), photoBulk);
+  check('bulk: Prasadi rows get the Prasadi fields', ['itemName', 'description', 'blessedBy', 'event', 'itemCondition', 'stickerApplied', 'recheckWeeks', 'phyStorageLoc', 'taggedInMls'].every((i) => prasadiBulk.includes(i)), prasadiBulk);
+  check('bulk: Prasadi rows get no tape / case / Decision / Captured fields', !prasadiBulk.some((i) => ['nameOnTape', 'nameOnCase', 'digitalSource', 'digital', 'redigital', 'discard', 'decisionRemark', 'captured'].includes(i)), prasadiBulk);
+  check('bulk: never offers the read-only columns', !['mediaType', 'code', 'duplicateCode', 'nextCheckDue', 'lastCheckedAt'].some((i) => ids(['photo', 'prasadi']).includes(i)));
+  const mixedBulk = bulkFieldsFor(['photo', 'prasadi'], []);
+  check('bulk: a mixed selection offers both sets, tagged where they do not fit all', mixedBulk.find((f) => f.id === 'blessedBy')?.onlyFor?.join() === 'prasadi' && mixedBulk.find((f) => f.id === 'nameOnTape')?.onlyFor?.join() === 'photo' && mixedBulk.find((f) => f.id === 'place')?.onlyFor === null, mixedBulk.map((f) => [f.id, f.onlyFor]));
+  const customBulk = bulkFieldsFor(['prasadi'], [{ key: 'c_9', label: 'Shelf no', type: 'number', dept: 'storage' }]);
+  check('bulk: a team-added column appears with its own type', customBulk.find((f) => f.id === 'c_9')?.input === 'number' && customBulk.find((f) => f.id === 'c_9')?.target.type === 'custom');
+  const sample = bulkFieldsFor(['prasadi'], [{ key: 'c_9', label: 'Shelf no', type: 'number', dept: 'storage' }]);
+  const built = buildBulkSet(sample, { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: 'Yes', recheckWeeks: '3', c_9: '12', place: '', description: CLEAR });
+  check('bulk: values land in the right place and blanks are left alone', built.set.description === null && built.set.recheckWeeks === 3 && built.set.attrs?.blessedBy === 'Pramukh Swami Maharaj' && built.set.attrs?.stickerApplied === true && built.set.custom?.c_9 === 12 && !('place' in built.set) && Object.keys(built.errors).length === 0, built);
+  const bad = buildBulkSet(sample, { recheckWeeks: '0', c_9: 'abc', loggedAt: '31/02/2026' });
+  check('bulk: bad values are reported per field and nothing is sent on', Object.keys(bad.errors).sort().join() === 'c_9,loggedAt,recheckWeeks', bad.errors);
+  check('bulk: Clear blanks a Yes/No answer but is refused on a flag', buildBulkSet(bulkFieldsFor(['photo'], []), { digital: CLEAR }).set.digital === null && Boolean(buildBulkSet(bulkFieldsFor(['photo'], []), { captured: CLEAR }).errors.captured));
   const prsRow = row(3, { format: 'prasadi', itemName: 'Mala', attrs: { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: true }, recheckWeeks: 3, nextCheckDue: '07/11/2026' });
   const prsWb = await buildItemsWorkbook({
     sheets: [{ name: 'Prasadi', rows: [prsRow], columns: allColumns([]).filter((c) => appliesToFormat(c, 'prasadi')) }],
@@ -399,6 +419,10 @@ async function main() {
     check('prasadi details and attrs saved', pa.itemName === 'Mala' && pa.attrs.blessedBy === 'Pramukh Swami Maharaj' && pa.attrs.stickerApplied === true, pa.attrs);
     const pl = await ArchiveLot.findById(prs.id).select('stage decision.status').lean();
     check('a Prasadi lot is decided by its first edit and moves to storage', pl?.decision?.status === 'archive' && pl.stage === 'storage', [pl?.stage, pl?.decision?.status]);
+    // A bulk edit that carries fields Prasadi does not have: they are skipped, the rest is saved.
+    await bulkUpdateItems(prs.id, { itemIds: [p1, p2], set: { nameOnTape: 'Tape 9', nameOnCase: 'Case 9', remarks: 'bulk remark' } }, admin);
+    const pb = (await grid(prs.id)).items.find((i) => i.id === p2)!;
+    check('bulk: fields that do not exist for the format are skipped, the others saved', pb.nameOnTape === null && pb.nameOnCase === null && pb.remarks === 'bulk remark', [pb.nameOnTape, pb.nameOnCase, pb.remarks]);
     await rejects('unknown attr column refused', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { nope: 'x' } } }, admin), 400);
 
     await bulkUpdateItems(prs.id, { itemIds: [p1, p2], set: { recheckWeeks: 3 } }, admin);

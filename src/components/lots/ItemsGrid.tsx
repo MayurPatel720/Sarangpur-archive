@@ -7,7 +7,7 @@ import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useReferenceList } from '@/hooks/useReferenceList';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
-import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
+import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
@@ -17,12 +17,12 @@ import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
 import { DuplicateDialog } from './DuplicateDialog';
 import { exportItemsToExcel } from './excel-io';
+import { BulkEditBar } from './BulkEditBar';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { ItemFamilyGrid } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
-import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
 
 /**
  * The lot's Items tab — the lot's Excel: one collapsible sheet per media type, columns in
@@ -153,7 +153,6 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const lotFormats = useMemo(() => [...new Set((data?.items ?? []).map((i) => i.format))], [data?.items]);
   /** Prasadi is kept physically and never digitized: a lot of only Prasadi has nothing to decide. */
   const prasadiOnly = lotFormats.length > 0 && lotFormats.every((f) => f === PRASADI_FORMAT);
-  const hasPrasadi = lotFormats.includes(PRASADI_FORMAT);
   const hiddenSpecs = useMemo(
     () => specs.filter((s) => hiddenIds.has(s.id) && (lotFormats.length === 0 || lotFormats.some((f) => appliesToFormat(s, f)))),
     [specs, hiddenIds, lotFormats],
@@ -182,6 +181,11 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     setExpanded(Object.fromEntries(sheets.map((s, i) => [s.lineIndex, s.lineIndex === line ? !isOpen(s.lineIndex, i) : isOpen(s.lineIndex, i)])));
 
   const selected = useMemo(() => Object.values(selectedBy).flat(), [selectedBy]);
+  /** The ticked rows — the bulk bar offers the fields that fit their media formats. */
+  const selectedItems = useMemo(() => {
+    const ids = new Set(selected);
+    return (data?.items ?? []).filter((i) => ids.has(i.id));
+  }, [selected, data?.items]);
   const onSelectionChange = useCallback(
     (sheet: number, ids: string[]) =>
       setSelectedBy((prev) => {
@@ -413,11 +417,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           </div>
 
           {selected.length > 0 && canDetails ? (
-            <BulkBar
-              count={selected.length}
-              canDecide={canDecide && !prasadiOnly}
-              hasPrasadi={hasPrasadi}
-              physical={physicalItems}
+            <BulkEditBar
+              items={selectedItems}
+              customColumns={data.customColumns}
+              canDecide={canDecide}
               pending={save.isPending}
               onApply={(set) =>
                 save.mutate(
@@ -556,124 +559,5 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         />
       ) : null}
     </Panel>
-  );
-}
-
-type Opt = { value: string; label: string };
-
-/** Set the same values on every ticked row. Blank = leave as is. */
-function BulkBar({
-  count,
-  canDecide,
-  hasPrasadi,
-  physical,
-  pending,
-  onApply,
-  onClear,
-}: {
-  count: number;
-  canDecide: boolean;
-  /** The lot has Prasadi sheets — offer "Re-check in (weeks)" (applies to the selected Prasadi rows). */
-  hasPrasadi: boolean;
-  physical: Opt[];
-  pending: boolean;
-  onApply: (set: ItemsBulkSet) => void;
-  onClear: () => void;
-}) {
-  const [v, setV] = useState<Record<string, string>>({});
-  const set = (k: string) => (e: { target: { value: string } }) => setV((p) => ({ ...p, [k]: e.target.value }));
-  const triSel = (k: string, label: string) => (
-    <Field label={label}>
-      <Select value={v[k] ?? ''} onChange={set(k)} aria-label={`${label} for selected items`}>
-        <option value="">No change</option>
-        <option value="Yes">Yes</option>
-        <option value="No">No</option>
-        <option value="__clear">Clear</option>
-      </Select>
-    </Field>
-  );
-  const txt = (k: string, label: string) => (
-    <Field label={label}>
-      <TextInput value={v[k] ?? ''} onChange={set(k)} placeholder="No change" />
-    </Field>
-  );
-
-  const apply = () => {
-    const out: Record<string, unknown> = {};
-    for (const [k, raw] of Object.entries(v)) {
-      if (raw === '') continue;
-      if (['digital', 'redigital', 'discard'].includes(k)) out[k] = raw === '__clear' ? null : raw === 'Yes';
-      else if (k === 'logged') out[k] = raw === 'Yes';
-      else if (k === 'recheckWeeks') {
-        const n = Number(raw);
-        if (!Number.isInteger(n) || n < 1 || n > MAX_RECHECK_WEEKS) continue;
-        out[k] = n;
-      } else out[k] = raw;
-    }
-    if (Object.keys(out).length === 0) return;
-    onApply(out as ItemsBulkSet);
-  };
-
-  return (
-    <section aria-label="Bulk edit selected items" className="rounded-[8px] border border-accent bg-accent-soft p-3 flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold text-ink">
-          Set for {count} selected {count === 1 ? 'item' : 'items'}
-        </span>
-        <span className="text-[12px] text-ink-3">Blank fields are left as they are.</span>
-        <GhostButton onClick={onClear} className="sm:ml-auto">
-          Clear selection
-        </GhostButton>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-        {canDecide ? (
-          <>
-            {triSel('digital', 'Digital')}
-            {triSel('redigital', 'Redigital')}
-            {triSel('discard', 'Discard')}
-          </>
-        ) : null}
-        {txt('physicalSource', 'Phy source')}
-        <Field label="Return / discard">
-          <Select value={v.disposition ?? ''} onChange={set('disposition')} aria-label="Return or discard for selected items">
-            <option value="">No change</option>
-            <option value="return">Return</option>
-            <option value="discard">Discard</option>
-          </Select>
-        </Field>
-        {txt('place', 'Place')}
-        {txt('senderCode', "Sender's code")}
-        {txt('digitalSource', 'Dig source')}
-        {txt('phyStorageLoc', 'Phy storage loc.')}
-        {hasPrasadi ? (
-          <Field label="Prasadi re-check in">
-            <span className="flex items-center gap-1.5">
-              <TextInput
-                type="number"
-                min={1}
-                max={MAX_RECHECK_WEEKS}
-                value={v.recheckWeeks ?? ''}
-                onChange={set('recheckWeeks')}
-                placeholder="No change"
-                aria-label="Re-check in how many weeks, for selected Prasadi items"
-              />
-              <span className="text-[12.5px] text-ink-2">weeks</span>
-            </span>
-          </Field>
-        ) : null}
-        <Field label="Logging status">
-          <Select value={v.logged ?? ''} onChange={set('logged')} aria-label="Logging status for selected items">
-            <option value="">No change</option>
-            <option value="Yes">Logged</option>
-            <option value="No">Not logged</option>
-          </Select>
-        </Field>
-      </div>
-      <div>
-        <PrimaryButton disabled={pending} onClick={apply}>
-          {pending ? 'Saving…' : `Apply to ${count}`}
-        </PrimaryButton>
-      </div>
-    </section>
   );
 }

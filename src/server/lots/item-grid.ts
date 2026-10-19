@@ -47,6 +47,9 @@ const DECISION_KEYS = ['digital', 'redigital', 'discard'] as const;
 /** The registry's format-specific columns, by id — the only keys an edit may put under `attrs`. */
 const ATTR_COLUMNS = new Map(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [c.id, c]));
 
+/** Top-level registry columns by their save key, for the per-format check above. */
+const COLUMN_BY_KEY = new Map(BUILTIN_COLUMNS.filter((c) => c.field && !c.attr).map((c) => [c.field!, c]));
+
 /** Plain text columns: grid key → LotItem field. */
 const TEXT_FIELDS: Record<string, string> = {
   senderCode: 'senderCode',
@@ -316,7 +319,14 @@ export async function applyItemEdits(
       const ops: AnyBulkWriteOperation[] = [];
       for (const edit of edits) {
         const it = byId.get(edit.id)!;
-        const set = edit.set;
+        // A field that does not exist for this item's media format (e.g. "Name on tape" on Prasadi,
+        // "Digital" on Prasadi) is skipped — a bulk edit may tick rows of several formats.
+        const set = Object.fromEntries(
+          Object.entries(edit.set).filter(([k]) => {
+            const col = COLUMN_BY_KEY.get(k);
+            return !col || appliesToFormat(col, it.format ?? null);
+          }),
+        );
         const fail = (msg: string): never => {
           throw new HttpError(400, `${it.code}: ${msg}`);
         };
