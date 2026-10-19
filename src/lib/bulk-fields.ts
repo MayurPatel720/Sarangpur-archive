@@ -37,7 +37,7 @@ export interface BulkField {
 /** The "blank this field" choice. */
 export const CLEAR = '__clear';
 
-const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info', 'photo']);
+const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info', 'photo', 'status']);
 
 const inputOf = (c: ColumnSpec & { custom?: CustomColumn }): BulkInput | null => {
   if (c.custom) return c.custom.type; // text | number | yesno | date
@@ -72,7 +72,7 @@ export function bulkFieldsFor(formats: string[], custom: CustomColumn[]): BulkFi
   // One format ticked: its own column order and labels; several: the registry's.
   const columns = formats.length === 1 ? forFormat(allColumns(custom), formats[0]!) : allColumns(custom);
   for (const c of columns) {
-    if (c.dept === 'lot' || SKIPPED_KINDS.has(c.kind)) continue;
+    if (c.dept === 'lot' || SKIPPED_KINDS.has(c.kind) || c.viaDialog) continue;
     const input = inputOf(c);
     if (!input) continue;
     const target: BulkTarget | null = c.custom

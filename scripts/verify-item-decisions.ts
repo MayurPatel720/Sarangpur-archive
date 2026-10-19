@@ -29,7 +29,9 @@ import { createItem } from '../src/server/lots/items';
 import { addItemImage, deleteItemImage, listItemImages } from '../src/server/lots/item-images';
 import { LotImage } from '../src/models/LotImage';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
-import { itemNumberBodySchema, type GridItem, type ImportBody } from '../src/types/items';
+import { columnsBodySchema, itemNumberBodySchema, itemStatusBodySchema, type GridItem, type ImportBody } from '../src/types/items';
+import { REMOVAL_COLUMNS, itemStatus, missingRequired, requiredColumns } from '../src/lib/item-status';
+import { changeItemStatus } from '../src/server/lots/item-status';
 import { cellText } from '../src/lib/item-cells';
 import { getReferenceList } from '../src/server/reference';
 import { listMasterItems } from '../src/server/lots/master-items';
@@ -114,9 +116,24 @@ async function excelRoundTrip() {
   check('prasadi gets its own columns', ['Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Received by', 'Related media', 'Condition', 'Room', 'Cabinet', 'Shelf', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
   check('prasadi: the common Date column reads Date received, other formats keep Date', labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'prasadi') === 'Date received' && labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'photo') === 'Date', null);
   const prsDetails = forFormat(allColumns([]), 'prasadi').filter((c) => c.dept === 'details').map((c) => c.label);
-  check('prasadi Details follow the requirements document, number by number', prsDetails.join(' | ') === ['Media type', 'Archive code', 'Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Date received', 'Received by', 'Room', 'Cabinet', 'Shelf', 'Related media', 'Condition', "Sender's code", 'Place', 'Phy source', 'Remark'].join(' | '), prsDetails);
+  check('prasadi Details follow the requirements document, number by number', prsDetails.join(' | ') === ['Media type', 'Archive code', 'Status', 'Title', 'Photo', 'Photo Archive', 'Category', 'Subcategory', 'Guru', 'Location used by Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Date received', 'Received From', 'Received by', 'Room', 'Cabinet', 'Shelf', 'Related media', 'Condition', "Sender's code", 'Phy source', 'Remark'].join(' | '), prsDetails);
   const photoRegistry = allColumns([]).filter((c) => appliesToFormat(c, 'photo')).map((c) => c.id).join();
   check('other formats keep the registry order', forFormat(allColumns([]), 'photo').map((c) => c.id).join() === photoRegistry);
+  // Status: Active / Inactive / Details Missing
+  check('the starred fields are Guru, Category, Title, Item details, Photo, Room and Quantity', requiredColumns('prasadi').map((c) => c.id).sort().join() === ['blessedBy', 'category', 'description', 'itemName', 'photo', 'quantity', 'room'].sort().join(), requiredColumns('prasadi').map((c) => c.id));
+  check('other formats have no starred fields', requiredColumns('photo').length === 0 && requiredColumns('video').length === 0);
+  const emptyPrs = row(40, { format: 'prasadi' });
+  check('an empty Prasadi item is Details Missing, listing every starred field', itemStatus(emptyPrs) === 'details_missing' && missingRequired(emptyPrs).length === 7, missingRequired(emptyPrs).map((c) => c.label));
+  const fullPrs = row(41, { format: 'prasadi', itemName: 'Gatariyu', description: 'Set', imageCount: 1, coverUrl: 'u', attrs: { category: 'personal_wear', blessedBy: 'pramukh_swami_maharaj', room: 'room_1', quantity: 0 } });
+  check('a complete one is Active (a Quantity of 0 still counts as filled)', itemStatus(fullPrs) === 'active' && missingRequired(fullPrs).length === 0, missingRequired(fullPrs).map((c) => c.label));
+  check('Inactive wins over everything', itemStatus({ ...fullPrs, attrs: { ...fullPrs.attrs, status: 'inactive' } }) === 'inactive' && itemStatus({ ...emptyPrs, attrs: { status: 'inactive' } }) === 'inactive');
+  check('only Prasadi has a status', itemStatus(row(42, { format: 'photo' })) === null);
+  check('the Photo starred field needs at least one photo', missingRequired({ ...fullPrs, imageCount: 0 }).map((c) => c.id).join() === 'photo');
+  check('removal columns: their own department, Prasadi only, changed only from the dialog', REMOVAL_COLUMNS.length === 8 && REMOVAL_COLUMNS.every((c) => c.dept === 'removal' && c.viaDialog && c.attr && c.formats?.join() === 'prasadi'));
+  check('the removal department is not offered to custom columns and is hidden from other formats', !columnsBodySchema.safeParse({ add: { label: 'x', type: 'text', dept: 'removal' } }).success && forFormat(allColumns([]), 'photo').every((c) => c.dept !== 'removal'));
+  check('bulk edit offers neither Status nor the removal fields', !bulkFieldsFor(['prasadi'], []).map((f) => f.id).some((i) => i === 'status' || REMOVAL_COLUMNS.some((c) => c.id === i)));
+  check('removal needs Date removed, New item location and Item sent to', !itemStatusBodySchema.safeParse({ action: 'remove', itemId: '0'.repeat(24), removal: { removedOn: '05/10/2026', sentTo: 'x' } }).success && itemStatusBodySchema.safeParse({ action: 'remove', itemId: '0'.repeat(24), removal: { removedOn: '05/10/2026', newLocation: 'Himmatnagar Mandir', sentTo: 'P. Mangalpurush Swami' } }).success);
+  check('Place reads Location used by Guru on Prasadi', labelFor(allColumns([]).find((c) => c.id === 'place')!, 'prasadi') === 'Location used by Guru' && labelFor(allColumns([]).find((c) => c.id === 'place')!, 'photo') === 'Place');
   check('prasadi: Phy storage loc. is replaced by Room / Cabinet / Shelf, but stays a common column', !prs.includes('Phy storage loc.') && allColumns([]).filter(isCommonColumn).some((c) => c.id === 'phyStorageLoc'), prs);
   check('prasadi drops video-only columns', !['Name on tape', 'Name on case', 'Dig source', 'Duplicate code'].some((l) => prs.includes(l)), prs);
   check('prasadi has no Decision columns and no Captured', !['Digital', 'Redigital', 'Discard', 'Captured'].some((l) => prs.includes(l)), prs);
@@ -549,6 +566,63 @@ async function main() {
     check('Master Excel: filter by Category finds example 1', mCat.rows.some((r) => r.code === ex1Code), mCat.total);
     const mQty = await listMasterItems(masterQuerySchema.parse({ format: 'prasadi', a_quantity: '2', pageSize: 50 }), admin);
     check('Master Excel: filter by Quantity is exact', mQty.rows.some((r) => r.code === ex1Code) && !mQty.rows.some((r) => r.id === ex2Id), mQty.total);
+
+    console.log('status and removal (the requirements PDF: removing example 1)');
+    const stOf = async (id: string) => (await grid(ex.id)).items.find((i) => i.id === id)!;
+    const starting = await stOf(e1.id);
+    check('example 1 starts as Details Missing — only the Photo is outstanding', itemStatus(starting) === 'details_missing' && missingRequired(starting).map((c) => c.label).join() === 'Photo', missingRequired(starting).map((c) => c.label));
+    check('example 2 is Details Missing too (Photo, and not the rest)', missingRequired(await stOf(e2.id)).some((c) => c.id === 'photo'));
+    await LotItem.updateOne({ _id: e1.id }, { $set: { imageCount: 1, coverUrl: 'https://example.test/p.jpg' } });
+    check('with a photo example 1 becomes Active', itemStatus(await stOf(e1.id)) === 'active');
+    const stCols = forFormat(allColumns([]), 'prasadi');
+    check('the Excel shows the status as text', cellText(await stOf(e1.id), stCols.find((c) => c.id === 'status')!, lab) === 'Active' && cellText(await stOf(e2.id), stCols.find((c) => c.id === 'status')!, lab) === 'Details Missing');
+    const mStatus = async (status: string) => (await listMasterItems(masterQuerySchema.parse({ format: 'prasadi', status, pageSize: 200 }), admin)).rows.map((r) => r.id);
+    check('Master Excel: Active finds example 1, Details Missing finds example 2', (await mStatus('active')).includes(e1.id) && !(await mStatus('active')).includes(e2.id) && (await mStatus('details_missing')).includes(e2.id) && !(await mStatus('details_missing')).includes(e1.id));
+    await bulkUpdateItems(ex.id, { itemIds: [e1.id], set: { recheckWeeks: 3 } }, admin);
+    const laterDay = new Date(Date.now() + 22 * 86_400_000);
+    check('example 1 has a check reminder before it is removed', (await listPrasadiChecks({ page: 1, pageSize: 200 }, laterDay)).rows.some((r) => r.id === e1.id));
+
+    const removal = {
+      removedOn: '05/10/2026',
+      sentBy: 'P. Vedantpriya Swami',
+      sentFrom: 'Sarangpur',
+      requestedBy: 'P. Narayancharan Swami',
+      newLocation: 'Himmatnagar Mandir',
+      sentTo: 'P. Mangalpurush Swami',
+      receivedAtNewOn: '06/10/2026',
+      requestHistory: 'P. Narayancharan Swami informed P. Vedantpriya Swami on October 1, 2026 to send this gatriyu set to Himmatngar Mandir for their Prasadi Display Cabinet.',
+    };
+    await rejects('a removal date that is not a real day is refused', () => changeItemStatus(ex.id, { action: 'remove', itemId: e1.id, removal: { ...removal, removedOn: '31/02/2026' } }, admin), 400);
+    await rejects('a removal date range is refused', () => changeItemStatus(ex.id, { action: 'remove', itemId: e1.id, removal: { ...removal, removedOn: '01/10/2026 - 05/10/2026' } }, admin), 400);
+    await rejects('a photo item has no status', () => changeItemStatus(lot.id, { action: 'reactivate', itemId: a }, admin), 400);
+    await rejects('an Active item has no removal details to edit', () => changeItemStatus(ex.id, { action: 'edit_removal', itemId: e1.id, removal }, admin), 400);
+    await rejects('an Active item cannot be made active', () => changeItemStatus(ex.id, { action: 'reactivate', itemId: e1.id }, admin), 400);
+
+    const removed = await changeItemStatus(ex.id, { action: 'remove', itemId: e1.id, removal }, admin);
+    const gone = await stOf(e1.id);
+    check('example 1 is removed: Inactive, with every removal detail from the PDF', removed.status === 'inactive' && itemStatus(gone) === 'inactive' && gone.attrs.removedOn === '05/10/2026' && gone.attrs.sentBy === 'P. Vedantpriya Swami' && gone.attrs.sentFrom === 'Sarangpur' && gone.attrs.requestedBy === 'P. Narayancharan Swami' && gone.attrs.newLocation === 'Himmatnagar Mandir' && gone.attrs.sentTo === 'P. Mangalpurush Swami' && gone.attrs.receivedAtNewOn === '06/10/2026' && String(gone.attrs.requestHistory).includes('Prasadi Display Cabinet'), gone.attrs);
+    check('the item itself is untouched (Gatariyu, Pramukh Swami Maharaj, 2 pieces)', gone.itemName === 'Gatariyu' && gone.attrs.blessedBy === 'pramukh_swami_maharaj' && gone.attrs.quantity === 2);
+    check('its check reminder stops', gone.recheckWeeks === null && gone.nextCheckDue === '' && !(await listPrasadiChecks({ page: 1, pageSize: 200 }, laterDay)).rows.some((r) => r.id === e1.id));
+    await rejects('a check cannot be recorded on a removed item', () => markPrasadiChecked({ itemIds: [e1.id], result: 'good', nextWeeks: null }, admin), 400);
+    await rejects('removing it twice is refused', () => changeItemStatus(ex.id, { action: 'remove', itemId: e1.id, removal }, admin), 400);
+    await rejects('a removed item is read-only', () => bulkUpdateItems(ex.id, { itemIds: [e1.id], set: { remarks: 'try' } }, admin), 400);
+    await rejects('...including from an Excel import', () => importItems(ex.id, { apply: true, rows: [{ code: ex1Code, cells: { 'Details|Quantity': '9' } }] }, admin), 400);
+    await rejects('...and its photos', () => addItemImage(ex.id, e1.id, { file: new File([new Uint8Array([1])], 'x.jpg', { type: 'image/jpeg' }), caption: undefined, format: undefined, width: null, height: null }, admin), 400);
+    await rejects('the removal fields cannot be set from the grid or the bulk bar', () => bulkUpdateItems(ex.id, { itemIds: [e2.id], set: { attrs: { newLocation: 'x' } } }, admin), 400);
+    check('Master Excel: Inactive finds example 1, Active no longer does', (await mStatus('inactive')).includes(e1.id) && !(await mStatus('active')).includes(e1.id) && !(await mStatus('details_missing')).includes(e1.id));
+
+    const corrected = await changeItemStatus(ex.id, { action: 'edit_removal', itemId: e1.id, removal: { ...removal, sentTo: 'P. Mangalpurush Swami (Himmatnagar)' } }, admin);
+    check('the removal details of an Inactive item can be corrected', corrected.status === 'inactive' && (await stOf(e1.id)).attrs.sentTo === 'P. Mangalpurush Swami (Himmatnagar)');
+    const back = await changeItemStatus(ex.id, { action: 'reactivate', itemId: e1.id }, admin);
+    check('made active again: editable, and the removal details are kept', back.status === 'active' && itemStatus(await stOf(e1.id)) === 'active' && (await stOf(e1.id)).attrs.newLocation === 'Himmatnagar Mandir');
+    await bulkUpdateItems(ex.id, { itemIds: [e1.id], set: { remarks: 'back in the archive' } }, admin);
+    check('...and an edit now works', (await stOf(e1.id)).remarks === 'back in the archive');
+
+    console.log('new PDF fields');
+    await bulkUpdateItems(ex.id, { itemIds: [e1.id], set: { attrs: { photoArchive: 'PSM.SPUR.1116874', receivedFrom: 'P. Narayancharan Swami' } } }, admin);
+    const nf = await stOf(e1.id);
+    check('Photo Archive and Received From are saved', nf.attrs.photoArchive === 'PSM.SPUR.1116874' && nf.attrs.receivedFrom === 'P. Narayancharan Swami', nf.attrs);
+    check('Photo Archive keeps an outside reference that is not an archive code', cellText(nf, stCols.find((c) => c.id === 'photoArchive')!, lab) === 'PSM.SPUR.1116874');
 
     console.log('last three digits');
     const cd = (await grid(digitalPhoto.id)).items;

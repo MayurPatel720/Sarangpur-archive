@@ -86,7 +86,7 @@ export async function importItems(
         ignored.add(header.split('|').pop() ?? header);
         continue;
       }
-      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info' || spec.kind === 'photo') {
+      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info' || spec.kind === 'photo' || spec.kind === 'status' || spec.viaDialog) {
         ignored.add(spec.label);
         continue;
       }

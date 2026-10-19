@@ -22,7 +22,7 @@ const endOfToday = (now: Date) =>
 
 export async function listPrasadiChecks(query: PrasadiCheckQuery, now = new Date()): Promise<PrasadiCheckList> {
   await connectToDatabase();
-  const filter = { format: PRASADI_FORMAT, nextCheckDue: { $ne: null, $lte: endOfToday(now) } };
+  const filter = { format: PRASADI_FORMAT, 'attrs.status': { $ne: 'inactive' }, nextCheckDue: { $ne: null, $lte: endOfToday(now) } };
   const [docs, total] = await Promise.all([
     LotItem.find(filter)
       .sort({ nextCheckDue: 1, lot: 1, sortOrder: 1 })
@@ -62,9 +62,11 @@ export async function markPrasadiChecked(
   await connectToDatabase();
   const ids = body.itemIds.map((id) => new Types.ObjectId(id));
   const items = (await LotItem.find({ _id: { $in: ids }, format: PRASADI_FORMAT })
-    .select('lot code')
+    .select('lot code attrs.status')
     .lean()) as ItemLean[];
   if (items.length !== ids.length) throw new HttpError(404, 'Some of these are not Prasadi items.');
+  const removed = items.find((i) => (i.attrs as { status?: string } | undefined)?.status === 'inactive');
+  if (removed) throw new HttpError(400, `${removed.code} has been removed from the archive.`);
 
   const label = CHECK_RESULTS.find((r) => r.value === body.result)!.label;
   const byLot = new Map<string, Types.ObjectId[]>();

@@ -7,6 +7,7 @@ import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useReferenceLists } from '@/hooks/useReferenceLists';
 import { refLabel as refLabelOf } from '@/lib/ref-lists';
+import { ITEM_STATUSES, ITEM_STATUS_LABELS, itemStatus, type ItemStatus } from '@/lib/item-status';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -20,6 +21,7 @@ import { DuplicateDialog } from './DuplicateDialog';
 import { exportItemsToExcel } from './excel-io';
 import { BulkEditBar } from './BulkEditBar';
 import { ItemPhotosDialog } from './ItemPhotosDialog';
+import { ItemStatusDialog } from './ItemStatusDialog';
 import { ItemPhotoViewer } from './ItemPhotoViewer';
 import { TagSheet } from './TagSheet';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
@@ -72,6 +74,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [photosFor, setPhotosFor] = useState<GridItem | null>(null);
   /** The item whose photos are open full screen. */
   const [viewing, setViewing] = useState<GridItem | null>(null);
+  /** The item whose status dialog is open (Prasadi). */
+  const [statusFor, setStatusFor] = useState<GridItem | null>(null);
+  /** Prasadi lots: which status to show. */
+  const [statusFilter, setStatusFilter] = useState<'all' | ItemStatus>('all');
   const [showTags, setShowTags] = useState(false);
   /** View only: which departments' columns are showing (not saved). */
   const [shownDepts, setShownDepts] = useState<DeptId[]>(() => DEPARTMENTS.map((d) => d.id));
@@ -158,6 +164,11 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const lotFormats = useMemo(() => [...new Set((data?.items ?? []).map((i) => i.format))], [data?.items]);
   /** Prasadi is kept physically and never digitized: a lot of only Prasadi has nothing to decide. */
   const prasadiOnly = lotFormats.length > 0 && lotFormats.every((f) => f === PRASADI_FORMAT);
+  /** Departments that have a column on at least one of this lot's sheets (Removal exists only for Prasadi). */
+  const lotDepts = useMemo(
+    () => DEPARTMENTS.filter((d) => specs.some((s) => s.dept === d.id && (lotFormats.length === 0 || lotFormats.some((f) => appliesToFormat(s, f))))),
+    [specs, lotFormats],
+  );
   const hiddenSpecs = useMemo(
     () => specs.filter((s) => hiddenIds.has(s.id) && (lotFormats.length === 0 || lotFormats.some((f) => appliesToFormat(s, f)))),
     [specs, hiddenIds, lotFormats],
@@ -175,10 +186,11 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
       let g = map.get(it.lineIndex);
       if (!g) map.set(it.lineIndex, (g = { name: it.subtypeLabel.trim() || 'Other', format: it.format, all: [], rows: [] }));
       g.all.push(it);
-      if (matchesFilter(it, filter)) g.rows.push(it);
+      const st = itemStatus(it);
+      if (matchesFilter(it, filter) && (statusFilter === 'all' || st === null || st === statusFilter)) g.rows.push(it);
     }
     return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([lineIndex, g]) => ({ lineIndex, ...g }));
-  }, [data, filter]);
+  }, [data, filter, statusFilter]);
 
   const isOpen = (line: number, index: number) => (expanded ? (expanded[line] ?? false) : index === 0);
   const setAll = (open: boolean) => setExpanded(Object.fromEntries(sheets.map((s) => [s.lineIndex, open])));
@@ -373,8 +385,29 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 </button>
               ))}
             </div>
+            {lotFormats.includes(PRASADI_FORMAT) ? (
+              <div role="group" aria-label="Status" className="flex flex-wrap gap-1.5">
+                {(['all', ...ITEM_STATUSES] as const).map((st) => {
+                  const n = st === 'all' ? null : data.items.filter((i) => itemStatus(i) === st).length;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      aria-pressed={statusFilter === st}
+                      onClick={() => setStatusFilter(st)}
+                      className={`min-h-[32px] px-2.5 rounded-[6px] border text-[12px] font-semibold cursor-pointer ${
+                        statusFilter === st ? 'bg-accent-soft border-accent text-accent' : 'bg-surface border-line text-ink-2'
+                      }`}
+                    >
+                      {st === 'all' ? 'Any status' : ITEM_STATUS_LABELS[st]}
+                      {n !== null ? ` ${n}` : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
             <div role="group" aria-label="Departments" className="flex flex-wrap gap-x-3 text-[12px] text-ink-2">
-              {DEPARTMENTS.map((d) => (
+              {lotDepts.map((d) => (
                 <label key={d.id} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer">
                   <input
                     type="checkbox"
@@ -461,6 +494,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   refLists={refLists}
                   onOpenPhotos={setPhotosFor}
                   onViewPhotos={setViewing}
+                  onOpenStatus={setStatusFor}
                   height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : ROW_PX)}
                   onOpenCode={onOpenCode}
                   onDuplicate={onDuplicate}
@@ -519,6 +553,16 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         </div>
       </div>
 
+      {statusFor ? (
+        <ItemStatusDialog
+          lotId={lotId}
+          // read the live row, so the dialog follows a refetch
+          item={data.items.find((i) => i.id === statusFor.id) ?? statusFor}
+          canManage={canDetails}
+          onClose={() => setStatusFor(null)}
+          onChanged={refresh}
+        />
+      ) : null}
       {viewing ? (
         <ItemPhotoViewer
           lotId={lotId}

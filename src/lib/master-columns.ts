@@ -44,6 +44,15 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
   projectNo: { param: 'project', type: 'text' },
   projectName: { param: 'projectName', type: 'text' },
   photo: { param: 'hasPhoto', type: 'yesno' },
+  status: {
+    param: 'status',
+    type: 'select',
+    options: [
+      { value: 'active', label: 'Active' },
+      { value: 'details_missing', label: 'Details Missing' },
+      { value: 'inactive', label: 'Inactive' },
+    ],
+  },
   lotStage: { param: 'stage', type: 'select', options: 'stage' },
   mediaType: { param: 'dataType', type: 'select', options: 'dataType' },
   code: { param: 'code', type: 'text' },

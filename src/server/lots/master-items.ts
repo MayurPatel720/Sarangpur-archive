@@ -3,7 +3,8 @@ import type { MutationContext } from '@/lib/api';
 import { connectToDatabase } from '@/lib/mongo';
 import { FORMATS, dataTypesMatching } from '@/lib/domain';
 import { parseDateRange } from '@/lib/date-range';
-import { BUILTIN_COLUMNS } from '@/lib/item-columns';
+import { BUILTIN_COLUMNS, PRASADI_FORMAT } from '@/lib/item-columns';
+import { requiredColumns } from '@/lib/item-status';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { Project } from '@/models/Project';
@@ -114,6 +115,20 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   tri(f, 'decision.discard', query.discard);
   flag(f, 'digitized', query.captured);
   flag(f, 'taggedInMls', query.taggedInMls);
+  // Prasadi status. "Details Missing" is worked out from the registry's starred columns, never stored.
+  if (query.status) {
+    const and: Filter[] = [{ format: PRASADI_FORMAT }];
+    const empty = (path: string): Filter => ({ [path]: { $in: [null, ''] } });
+    const missing: Filter[] = requiredColumns(PRASADI_FORMAT).map((c) =>
+      c.kind === 'photo' ? { imageCount: { $not: { $gt: 0 } } } : empty(c.attr ? `attrs.${c.id}` : c.field === 'itemName' ? 'name' : (c.field ?? c.id)),
+    );
+    if (query.status === 'inactive') and.push({ 'attrs.status': 'inactive' });
+    else {
+      and.push({ 'attrs.status': { $ne: 'inactive' } });
+      and.push(query.status === 'details_missing' ? { $or: missing } : { $nor: missing });
+    }
+    f.$and = [...((f.$and as Filter[] | undefined) ?? []), ...and];
+  }
   if (query.hasPhoto === 'yes') f.imageCount = { $gt: 0 };
   else if (query.hasPhoto === 'no' || query.hasPhoto === 'blank') f.imageCount = { $not: { $gt: 0 } };
   flag(f, 'logged', query.logged);

@@ -92,6 +92,9 @@ import {
 } from '@/types/ops';
 import {
   itemDispositionDoneResponseSchema,
+  itemStatusResponseSchema,
+  type ItemStatusBody,
+  type ItemStatusResponse,
   itemDispositionListSchema,
   prasadiCheckListSchema,
   prasadiCheckDoneResponseSchema,
@@ -530,6 +533,8 @@ export const itemsGridApi = {
     ),
   recodeSheet: (lotId: string, body: SheetCodeBody) =>
     sendJson<SheetCodeResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/codes`, 'PATCH', body, sheetCodeResponseSchema),
+  changeStatus: (lotId: string, body: ItemStatusBody) =>
+    sendJson<ItemStatusResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/status`, 'POST', body, itemStatusResponseSchema),
   setNumber: (lotId: string, body: ItemNumberBody) =>
     sendJson<{ code: string }>(`/api/lots/${encodeURIComponent(lotId)}/items/code`, 'PATCH', body, itemNumberResponseSchema),
   markDuplicate: (lotId: string, body: ItemDuplicateBody) =>

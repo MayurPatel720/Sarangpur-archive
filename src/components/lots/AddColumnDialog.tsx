@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
-import { CUSTOM_COLUMN_TYPES, DEPARTMENTS, type CustomColumnType, type DeptId } from '@/lib/item-columns';
+import { CUSTOM_COLUMN_TYPES, CUSTOM_DEPARTMENTS, type CustomColumnType, type CustomDeptId } from '@/lib/item-columns';
 
 /** "+" above the grid: name the column, pick its type and which department it belongs to. */
 export function AddColumnDialog({
@@ -14,12 +14,12 @@ export function AddColumnDialog({
 }: {
   pending: boolean;
   error: string | null;
-  onAdd: (col: { label: string; type: CustomColumnType; dept: DeptId }) => void;
+  onAdd: (col: { label: string; type: CustomColumnType; dept: CustomDeptId }) => void;
   onClose: () => void;
 }) {
   const [label, setLabel] = useState('');
   const [type, setType] = useState<CustomColumnType>('text');
-  const [dept, setDept] = useState<DeptId | ''>('');
+  const [dept, setDept] = useState<CustomDeptId | ''>('');
 
   return (
     <Dialog title="Add a column" subtitle="Added for this lot's Excel only, for everyone." onClose={onClose}>
@@ -34,9 +34,9 @@ export function AddColumnDialog({
           <TextInput value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} autoFocus autoComplete="off" />
         </Field>
         <Field label="Which department?" required>
-          <Select value={dept} onChange={(e) => setDept(e.target.value as DeptId)} aria-label="Department">
+          <Select value={dept} onChange={(e) => setDept(e.target.value as CustomDeptId)} aria-label="Department">
             <option value="">Choose…</option>
-            {DEPARTMENTS.map((d) => (
+            {CUSTOM_DEPARTMENTS.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.label}
               </option>

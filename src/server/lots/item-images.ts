@@ -21,7 +21,7 @@ import { ITEM_PHOTO_MAX, type ItemImage, type ItemImagesResponse } from '@/types
  */
 
 type LotHead = { _id: Types.ObjectId; lotReference: string; format: string; assignee?: unknown; assigneeName?: string | null; syncProjectId?: unknown };
-type ItemHead = { _id: Types.ObjectId; code: string; format?: string | null };
+type ItemHead = { _id: Types.ObjectId; code: string; format?: string | null; attrs?: { status?: string } };
 
 export function shapeItemImage(d: LotImageDoc & { _id: unknown; createdAt?: Date; updatedAt?: Date }): ItemImage {
   return { ...shapeLotImage(d), isCover: Boolean(d.isCover) };
@@ -32,7 +32,7 @@ async function load(lotId: string, itemId: string): Promise<{ lot: LotHead; item
   if (!Types.ObjectId.isValid(lotId) || !Types.ObjectId.isValid(itemId)) throw new HttpError(404, 'Item not found.');
   const lot = (await ArchiveLot.findById(lotId).select('lotReference format assignee assigneeName syncProjectId').lean()) as LotHead | null;
   if (!lot) throw new HttpError(404, 'Lot not found.');
-  const item = (await LotItem.findOne({ _id: itemId, lot: lot._id }).select('code format').lean()) as ItemHead | null;
+  const item = (await LotItem.findOne({ _id: itemId, lot: lot._id }).select('code format attrs.status').lean()) as ItemHead | null;
   if (!item) throw new HttpError(404, 'Item not found.');
   return { lot, item };
 }
@@ -46,6 +46,7 @@ function assertCanManage(lot: LotHead, item: ItemHead, ctx: MutationContext): vo
     throw new HttpError(403, 'Only the lot’s assignee or an admin can manage its photos.');
   }
   if (item.format !== PRASADI_FORMAT) throw new HttpError(400, 'Item photos are for Prasadi items.');
+  if (item.attrs?.status === 'inactive') throw new HttpError(400, `${item.code} has been removed from the archive. Make it active again to change its photos.`);
 }
 
 async function log(session: ClientSession, lot: LotHead, item: ItemHead, ctx: MutationContext, kind: 'lot_image_added' | 'lot_image_deleted', title: string, detail: string) {

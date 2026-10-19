@@ -153,6 +153,11 @@ export function MasterExcel() {
     },
     [shown, format],
   );
+  // Only the department tick boxes that have a column in the current view (Removal exists only for Prasadi).
+  const visibleBands = useMemo(() => {
+    const view = format ? forFormat(MASTER_COLUMNS, format) : MASTER_COLUMNS.filter(isCommonColumn);
+    return BANDS.filter((b) => b.id === 'lot' || view.some((c) => c.dept === b.id));
+  }, [format]);
   const bands = useMemo(() => {
     const out: { id: string; label: string; span: number }[] = [];
     for (const c of columns) {
@@ -242,7 +247,7 @@ export function MasterExcel() {
           {data ? `${num(data.total)} ${data.total === 1 ? 'item' : 'items'}` : ''}
         </span>
         <div role="group" aria-label="Departments" className="flex flex-wrap gap-x-3 text-[12px] text-ink-2 sm:ml-auto">
-          {BANDS.map((b) => (
+          {visibleBands.map((b) => (
             <label key={b.id} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer">
               <input
                 type="checkbox"

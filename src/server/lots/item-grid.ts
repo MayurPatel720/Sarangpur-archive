@@ -334,6 +334,10 @@ export async function applyItemEdits(
         const it = byId.get(edit.id)!;
         // A field that does not exist for this item's media format (e.g. "Name on tape" on Prasadi,
         // "Digital" on Prasadi) is skipped — a bulk edit may tick rows of several formats.
+        // A removed (Inactive) item is read-only until it is made active again.
+        if ((it.attrs as Record<string, unknown> | undefined)?.status === 'inactive') {
+          throw new HttpError(400, `${it.code}: this item has been removed from the archive. Make it active again to change it.`);
+        }
         const set = Object.fromEntries(
           Object.entries(edit.set).filter(([k]) => {
             const col = COLUMN_BY_KEY.get(k);
@@ -370,6 +374,7 @@ export async function applyItemEdits(
         for (const [ak, raw] of Object.entries(attrSet)) {
           const def = ATTR_COLUMNS.get(ak);
           if (!def) fail('Unknown column.');
+          if (def!.viaDialog) fail(`${def!.label} is changed from the Remove-from-archive form.`);
           if (!appliesToFormat(def!, it.format ?? null)) continue; // e.g. a bulk edit that also selected other formats
           const v = typeof raw === 'string' ? clean(raw) : raw;
           const key = `attrs.${ak}`;

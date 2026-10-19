@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEPT_IDS } from '@/lib/item-columns';
+import { CUSTOM_DEPT_IDS } from '@/lib/item-columns';
 
 /**
  * Items grid contracts (the lot's Items tab — the lot's Excel, AG Grid). One row per
@@ -14,7 +14,7 @@ export const customColumnSchema = z.object({
   key: z.string(),
   label: z.string(),
   type: customColumnTypeSchema,
-  dept: z.enum(DEPT_IDS),
+  dept: z.enum(CUSTOM_DEPT_IDS),
 });
 
 export const customValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -276,7 +276,7 @@ export const columnsBodySchema = z
       .object({
         label: z.string().trim().min(1).max(60),
         type: customColumnTypeSchema,
-        dept: z.enum(DEPT_IDS),
+        dept: z.enum(CUSTOM_DEPT_IDS),
       })
       .optional(),
     removeKey: z.string().max(40).optional(),
@@ -404,3 +404,33 @@ export const prasadiCheckDoneBodySchema = z.object({
 });
 export type PrasadiCheckDoneBody = z.input<typeof prasadiCheckDoneBodySchema>;
 export const prasadiCheckDoneResponseSchema = z.object({ updated: z.number() });
+
+/* ------------------------------------------- Prasadi status / removal from the archive */
+
+const removalText = (max: number) => z.string().trim().max(max).optional();
+/** The "Remove from archive" form. Date removed, New item location and Item sent to are required. */
+export const removalSchema = z.object({
+  /** `dd/mm/yyyy`. */
+  removedOn: z.string().trim().min(1, 'Date removed is required.').max(20),
+  sentBy: removalText(300),
+  sentFrom: removalText(300),
+  requestedBy: removalText(300),
+  newLocation: z.string().trim().min(1, 'New item location is required.').max(300),
+  sentTo: z.string().trim().min(1, 'Item sent to is required.').max(300),
+  receivedAtNewOn: removalText(20),
+  requestHistory: removalText(2000),
+});
+export type Removal = z.output<typeof removalSchema>;
+
+/**
+ * POST …/items/status — remove a Prasadi item from the archive (Active → Inactive), correct the
+ * removal details of an Inactive one, or make it Active again.
+ */
+export const itemStatusBodySchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('remove'), itemId: objectIdSchema, removal: removalSchema }),
+  z.object({ action: z.literal('edit_removal'), itemId: objectIdSchema, removal: removalSchema }),
+  z.object({ action: z.literal('reactivate'), itemId: objectIdSchema }),
+]);
+export type ItemStatusBody = z.input<typeof itemStatusBodySchema>;
+export const itemStatusResponseSchema = z.object({ code: z.string(), status: z.enum(['active', 'inactive']) });
+export type ItemStatusResponse = z.output<typeof itemStatusResponseSchema>;

@@ -266,7 +266,7 @@ export function formatBlocksPipeline(w: DashboardWindow): Pipeline {
 export function prasadiChecksDuePipeline(now: Date): Pipeline {
   const endOfToday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
   return [
-    { $match: { format: 'prasadi', nextCheckDue: { $ne: null, $lte: endOfToday } } },
+    { $match: { format: 'prasadi', 'attrs.status': { $ne: 'inactive' }, nextCheckDue: { $ne: null, $lte: endOfToday } } },
     { $group: { _id: null, n: { $sum: 1 }, lots: { $addToSet: '$lot' }, oldest: { $min: '$nextCheckDue' } } },
     { $project: { _id: 0, n: 1, lots: { $size: '$lots' }, oldest: 1 } },
   ];

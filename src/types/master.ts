@@ -55,6 +55,8 @@ export const masterQuerySchema = z.object({
   // Logging
   logged: yesNo,
   loggerName: text,
+  /** Prasadi status: active, inactive (removed) or details_missing (a starred field is empty). */
+  status: z.enum(['active', 'inactive', 'details_missing']).optional(),
   /** Prasadi: items that have (yes) / have no (no) photo. */
   hasPhoto: yesNo,
   // Format-specific columns (`attr` in item-columns.ts), one filter each: a_<column id>.

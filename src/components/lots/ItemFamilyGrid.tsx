@@ -18,6 +18,8 @@ import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { mediaTypeText } from '@/lib/item-cells';
 import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
 import { refLabel, refOptions, type RefLists } from '@/lib/ref-lists';
+import { ITEM_STATUS_LABELS, isInactive, itemStatus, missingRequired } from '@/lib/item-status';
+import { Badge } from '@/components/ui/primitives';
 import { photoMediumUrl } from '@/lib/project-photos';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
@@ -37,6 +39,17 @@ const TRI_VALUES = ['Yes', 'No', ''] as const;
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
 const triParse = (s: unknown): Tri => (s === 'Yes' ? true : s === 'No' ? false : null);
 
+/** Makes every editable cell of a column (or column group) read-only on an Inactive item. */
+function lockInactive(def: ColDef<GridItem> | ColGroupDef<GridItem>): ColDef<GridItem> | ColGroupDef<GridItem> {
+  if ('children' in def) return { ...def, children: def.children.map(lockInactive) };
+  const e = def.editable;
+  if (!e) return def;
+  return {
+    ...def,
+    editable: (p) => (typeof e === 'function' ? Boolean(e(p)) : true) && !(p.data && isInactive(p.data)),
+  };
+}
+
 export function ItemFamilyGrid({
   lineIndex,
   rows,
@@ -47,6 +60,7 @@ export function ItemFamilyGrid({
   refLists,
   onOpenPhotos,
   onViewPhotos,
+  onOpenStatus,
   height,
   onOpenCode,
   onDuplicate,
@@ -74,6 +88,8 @@ export function ItemFamilyGrid({
   onOpenPhotos: (item: GridItem) => void;
   /** View the item's photos full screen. */
   onViewPhotos: (item: GridItem) => void;
+  /** Open the item's status (Prasadi): what is missing, remove from archive, make active. */
+  onOpenStatus: (item: GridItem) => void;
   /** CSS height of the grid box. */
   height: string;
   onOpenCode: (item: GridItem) => void;
@@ -183,7 +199,7 @@ export function ItemFamilyGrid({
         if (spec.kind === 'flag') {
           return {
             ...base,
-            editable: canDetails,
+            editable: canDetails && !spec.viaDialog,
             valueGetter: (p) => (p.data ? (p.data.attrs[key] === true ? 'Yes' : 'No') : ''),
             valueSetter: (p: ValueSetterParams<GridItem>) => {
               if (!p.data) return false;
@@ -198,7 +214,7 @@ export function ItemFamilyGrid({
           const parent = spec.refParent?.column;
           return {
             ...base,
-            editable: canDetails && (parent ? true : true),
+            editable: canDetails && !spec.viaDialog,
             cellEditor: 'agSelectCellEditor',
             // The options follow the row: Subcategory offers only the chosen Category's.
             cellEditorParams: (p: { data?: GridItem }) => ({
@@ -217,7 +233,7 @@ export function ItemFamilyGrid({
         if (spec.kind === 'number') {
           return {
             ...base,
-            editable: canDetails,
+            editable: canDetails && !spec.viaDialog,
             cellEditor: 'agNumberCellEditor',
             cellEditorParams: { min: 0, precision: 0 },
             valueGetter: (p) => (p.data && typeof p.data.attrs[key] === 'number' ? (p.data.attrs[key] as number) : null),
@@ -237,7 +253,7 @@ export function ItemFamilyGrid({
         const isDate = spec.kind === 'date' || spec.kind === 'dateRange';
         return {
           ...base,
-          editable: canDetails,
+          editable: canDetails && !spec.viaDialog,
           cellEditor: spec.kind === 'longtext' ? 'agLargeTextCellEditor' : 'agTextCellEditor',
           valueGetter: (p) => (p.data ? String(p.data.attrs[key] ?? '') : ''),
           valueSetter: (p: ValueSetterParams<GridItem>) => {
@@ -254,6 +270,23 @@ export function ItemFamilyGrid({
       }
 
       switch (spec.kind) {
+        case 'status':
+          return {
+            ...base,
+            editable: false,
+            cellClass: 'cursor-pointer',
+            onCellClicked: (p) => p.data && onOpenStatus(p.data),
+            valueGetter: (p) => (p.data ? (itemStatus(p.data) ?? '') : ''),
+            tooltipValueGetter: (p) => {
+              if (!p.data) return undefined;
+              const miss = missingRequired(p.data);
+              return itemStatus(p.data) === 'details_missing' ? `Still needed: ${miss.map((c) => c.label).join(', ')}. Click for details.` : 'Click to see the status or remove the item';
+            },
+            cellRenderer: (p: ICellRendererParams<GridItem>) => {
+              const st = p.data ? itemStatus(p.data) : null;
+              return st ? <Badge severity={st === 'active' ? 'good' : st === 'details_missing' ? 'warning' : 'neutral'}>{ITEM_STATUS_LABELS[st]}</Badge> : null;
+            },
+          };
         case 'photo':
           return {
             ...base,
@@ -427,7 +460,7 @@ export function ItemFamilyGrid({
       children: columns.filter((c) => c.dept === d.id && c.kind !== 'code').map(build),
     })).filter((g) => g.children.length > 0);
 
-    return [
+    const all: (ColDef<GridItem> | ColGroupDef<GridItem>)[] = [
       {
         colId: 'rowNo',
         headerName: '#',
@@ -444,7 +477,8 @@ export function ItemFamilyGrid({
       ...(codeCol ? [build(codeCol)] : []),
       ...groups,
     ];
-  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+    return all.map(lockInactive);
+  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;
@@ -486,6 +520,7 @@ export function ItemFamilyGrid({
         columnDefs={columnDefs}
         defaultColDef={{ sortable: false, suppressMovable: true, resizable: true }}
         getRowId={(p) => p.data.id}
+        getRowClass={(p) => (p.data && isInactive(p.data) ? 'opacity-60' : undefined)}
         rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
         selectionColumnDef={{ pinned: 'left', width: 44 }}
         rowDragManaged={canReorder}

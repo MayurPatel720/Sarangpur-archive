@@ -1,6 +1,7 @@
 import { DATA_TYPE_LABELS, FORMAT_LABELS, STAGE_LABELS, type DataType, type Format, type Stage } from '@/lib/domain';
 import { isoDayToDmy } from '@/lib/date-range';
 import { weeksText } from '@/lib/recheck';
+import { ITEM_STATUS_LABELS, itemStatus } from '@/lib/item-status';
 import type { ColumnSpec, CustomColumn } from '@/lib/item-columns';
 import type { GridItem } from '@/types/items';
 import type { MasterRow } from '@/types/master';
@@ -32,6 +33,10 @@ export function cellText(
     if (spec.custom.type === 'yesno') return typeof v === 'boolean' ? yn(v) : '';
     if (spec.custom.type === 'date') return isoDayToDmy(String(v));
     return String(v);
+  }
+  if (spec.kind === 'status') {
+    const st = itemStatus(row);
+    return st ? ITEM_STATUS_LABELS[st] : '';
   }
   // Format-specific columns live in the item's `attrs` map (registry columns with `attr: true`).
   if (spec.attr) {

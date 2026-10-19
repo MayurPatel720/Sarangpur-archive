@@ -239,9 +239,10 @@ const ITEMS = [
   { _id: 'i4', lot: 'L2', format: 'prasadi', nextCheckDue: ahead(3) }, // not yet
   { _id: 'i5', lot: 'L3', format: 'video', nextCheckDue: ago(5) }, // other format
   { _id: 'i6', lot: 'L3', format: 'prasadi', nextCheckDue: null }, // no check planned
+  { _id: 'i7', lot: 'L4', format: 'prasadi', nextCheckDue: ago(20), attrs: { status: 'inactive' } }, // removed from the archive
 ];
 const due = run<{ n: number; lots: number; oldest: Date }>(prasadiChecksDuePipeline(NOW), ITEMS);
-check('3 items due across 2 lots (today counts, future / other format / unplanned do not)', [due[0]?.n, due[0]?.lots], [3, 2]);
+check('3 items due across 2 lots (today counts, future / other format / unplanned / removed do not)', [due[0]?.n, due[0]?.lots], [3, 2]);
 check('oldest due date', new Date(due[0]!.oldest).toISOString(), ago(10).toISOString());
 check('nothing due → no row', run(prasadiChecksDuePipeline(new Date('2026-09-01T00:00:00.000Z')), ITEMS).length, 0);
 const prasadiAlerts = shapeAlerts(facet, w, due[0]);
