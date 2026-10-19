@@ -46,6 +46,7 @@ const DECISION_KEYS = ['digital', 'redigital', 'discard'] as const;
 
 /** The registry's format-specific columns, by id — the only keys an edit may put under `attrs`. */
 const ATTR_COLUMNS = new Map(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [c.id, c]));
+const ATTR_BY_ID = ATTR_COLUMNS;
 
 /** Top-level registry columns by their save key, for the per-format check above. */
 const COLUMN_BY_KEY = new Map(BUILTIN_COLUMNS.filter((c) => c.field && !c.attr).map((c) => [c.field!, c]));
@@ -170,6 +171,8 @@ export function toGridRow(it: ItemLean, lot: RowLotInfo): GridItem {
       event: it.event ?? null,
       itemCondition: it.itemCondition ?? null,
       attrs: (it.attrs ?? {}) as GridItem['attrs'],
+      imageCount: it.imageCount ?? 0,
+      coverUrl: it.coverUrl ?? null,
       recheckWeeks: it.recheckWeeks ?? null,
       nextCheckDue: isoDayToDmy(isoDay(it.nextCheckDue)),
       lastCheckedAt: isoDayToDmy(isoDay(it.lastCheckedAt)),
@@ -299,6 +302,16 @@ export async function applyItemEdits(
   const ids = edits.map((e) => new Types.ObjectId(e.id));
   const n = ids.length;
 
+  // Dropdown columns (Guru, Category, Subcategory, Room …): the lists the saved values must come from.
+  const refKeys = new Set<string>();
+  for (const e of edits) {
+    for (const ak of Object.keys((e.set.attrs ?? {}) as Record<string, unknown>)) {
+      const list = ATTR_COLUMNS.get(ak)?.refList;
+      if (list) refKeys.add(list);
+    }
+  }
+  const refLists = new Map(await Promise.all([...refKeys].map(async (k) => [k, await getReferenceList(k)] as const)));
+
   await withAudit({
     lotId,
     actor: auditActor(ctx),
@@ -351,15 +364,71 @@ export async function applyItemEdits(
         if ('captured' in set) $set.digitized = Boolean(set.captured);
         if ('taggedInMls' in set) $set.taggedInMls = Boolean(set.taggedInMls);
 
-        // Format-specific columns (the registry's `attr` columns): text or Yes / No.
-        for (const [ak, raw] of Object.entries((set.attrs ?? {}) as Record<string, unknown>)) {
+        // Format-specific columns (the registry's `attr` columns): text, number, Yes / No, date, dropdown.
+        const attrSet = (set.attrs ?? {}) as Record<string, unknown>;
+        const attrNow = (it.attrs ?? {}) as Record<string, unknown>;
+        for (const [ak, raw] of Object.entries(attrSet)) {
           const def = ATTR_COLUMNS.get(ak);
           if (!def) fail('Unknown column.');
           if (!appliesToFormat(def!, it.format ?? null)) continue; // e.g. a bulk edit that also selected other formats
           const v = typeof raw === 'string' ? clean(raw) : raw;
-          if (def!.kind === 'flag') $set[`attrs.${ak}`] = v === true;
-          else if (v === null || v === undefined) $unset[`attrs.${ak}`] = '';
-          else $set[`attrs.${ak}`] = String(v).slice(0, 2000);
+          const key = `attrs.${ak}`;
+          if (def!.kind === 'flag') {
+            $set[key] = v === true;
+            continue;
+          }
+          if (v === null || v === undefined) {
+            $unset[key] = '';
+            continue;
+          }
+          switch (def!.kind) {
+            case 'number': {
+              const num = typeof v === 'number' ? v : Number(v);
+              if (!Number.isInteger(num) || num < 0 || num > 1_000_000) fail(`${def!.label} must be a whole number.`);
+              $set[key] = num;
+              break;
+            }
+            case 'ref': {
+              const item = (refLists.get(def!.refList ?? '') ?? []).find((i) => i.value === String(v));
+              if (!item) fail(`${def!.label}: "${String(v)}" is not in the list.`);
+              else if (!item.active && attrNow[ak] !== item.value) fail(`${def!.label}: "${item.label}" has been retired from the list.`);
+              $set[key] = String(v);
+              break;
+            }
+            case 'date':
+            case 'dateRange': {
+              const r = parseDateRange(String(v));
+              if (!r.ok) fail(`${def!.label}: ${r.error}`);
+              $set[key] = String(v).trim();
+              break;
+            }
+            default: {
+              const text = String(v).slice(0, 2000);
+              if (def!.check === 'itemCodes') {
+                const codes = [...new Set(text.split(/[\s,;]+/).filter(Boolean))];
+                if (codes.includes(it.code)) fail(`${def!.label}: an item cannot be related to itself.`);
+                const found = new Set((await LotItem.find({ code: { $in: codes } }).select('code').session(session).lean()).map((x) => x.code));
+                const missing = codes.filter((c) => !found.has(c));
+                if (missing.length > 0) fail(`${def!.label}: unknown archive code${missing.length === 1 ? '' : 's'} ${missing.join(', ')}.`);
+                $set[key] = codes.join(', ');
+              } else {
+                $set[key] = text;
+              }
+            }
+          }
+        }
+        // A dependent dropdown: Subcategory must belong to the item's Category, and changing the
+        // Category clears a Subcategory that was not sent with it.
+        for (const [ak] of Object.entries(attrSet)) {
+          const def = ATTR_COLUMNS.get(ak);
+          if (!def || !appliesToFormat(def, it.format ?? null)) continue;
+          for (const r of def.resets ?? []) if (!(r in attrSet)) $unset[`attrs.${r}`] = '';
+          if (def.refParent && attrSet[ak] !== null && attrSet[ak] !== undefined && attrSet[ak] !== '') {
+            const parent = def.refParent.column in attrSet ? attrSet[def.refParent.column] : attrNow[def.refParent.column];
+            const item = (refLists.get(def.refList ?? '') ?? []).find((i) => i.value === String(attrSet[ak]));
+            if (!parent) fail(`${def.label}: pick the ${ATTR_BY_ID.get(def.refParent.column)?.label ?? def.refParent.column} first.`);
+            else if (item && item.meta?.[def.refParent.metaKey] !== parent) fail(`${def.label}: "${item.label}" does not belong to the chosen ${ATTR_BY_ID.get(def.refParent.column)?.label ?? def.refParent.column}.`);
+          }
         }
 
         // Prasadi quality check: N weeks from today; clearing it stops the reminder.

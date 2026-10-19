@@ -5,19 +5,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GridApi } from 'ag-grid-community';
 import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { useReferenceList } from '@/hooks/useReferenceList';
+import { useReferenceLists } from '@/hooks/useReferenceLists';
+import { refLabel as refLabelOf } from '@/lib/ref-lists';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, appliesToFormat, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, appliesToFormat, labelFor, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
 import { DuplicateDialog } from './DuplicateDialog';
 import { exportItemsToExcel } from './excel-io';
 import { BulkEditBar } from './BulkEditBar';
+import { ItemPhotosDialog } from './ItemPhotosDialog';
+import { TagSheet } from './TagSheet';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
@@ -64,6 +67,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [duplicateFor, setDuplicateFor] = useState<{ item: GridItem; code: string } | null>(null);
   const [deleteColumn, setDeleteColumn] = useState<CustomColumn | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  /** The item whose photos are open (Prasadi). */
+  const [photosFor, setPhotosFor] = useState<GridItem | null>(null);
+  const [showTags, setShowTags] = useState(false);
   /** View only: which departments' columns are showing (not saved). */
   const [shownDepts, setShownDepts] = useState<DeptId[]>(() => DEPARTMENTS.map((d) => d.id));
   const onlyDept: DeptId | null = shownDepts.length === 1 ? shownDepts[0]! : null;
@@ -73,12 +79,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
 
   const gridKey = queryKeys.lots.itemsGrid(lotId);
   const grid = useQuery({ queryKey: gridKey, queryFn: () => itemsGridApi.get(lotId) });
-  const physical = useReferenceList('physicalSource');
-  const physicalItems = useMemo(() => physical.data?.items ?? [], [physical.data]);
-  const refLabel = useCallback(
-    (_list: string, v: string | null) => (v ? (physicalItems.find((i) => i.value === v)?.label ?? v) : ''),
-    [physicalItems],
-  );
+  const { lists: refLists } = useReferenceLists();
+  const refLabel = useCallback((list: string, v: string | null) => refLabelOf(refLists, list, v), [refLists]);
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: gridKey });
 
@@ -159,7 +161,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   );
   /** Visible columns per media format: a Prasadi sheet gets Prasadi columns, a video sheet its tape / case columns. */
   const columnsByFormat = useMemo(
-    () => new Map(lotFormats.map((f) => [f, visibleSpecs.filter((s) => appliesToFormat(s, f))])),
+    () => new Map(lotFormats.map((f) => [f, visibleSpecs.filter((s) => appliesToFormat(s, f)).map((s) => ({ ...s, label: labelFor(s, f) }))])),
     [lotFormats, visibleSpecs],
   );
 
@@ -398,6 +400,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               <GhostButton onClick={() => void exportExcel()} disabled={s.total === 0}>
                 Export
               </GhostButton>
+              <GhostButton onClick={() => setShowTags(true)} disabled={selectedItems.length === 0} title="Tick rows first, then print their tags">
+                Print tags{selectedItems.length > 0 ? ` (${selectedItems.length})` : ''}
+              </GhostButton>
               {canDetails ? (
                 <button
                   type="button"
@@ -420,6 +425,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
             <BulkEditBar
               items={selectedItems}
               customColumns={data.customColumns}
+              lists={refLists}
               canDecide={canDecide}
               pending={save.isPending}
               onApply={(set) =>
@@ -449,7 +455,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   canDetails={canDetails}
                   canDecide={canDecide}
                   canReorder={canReorder}
-                  physical={physicalItems}
+                  refLists={refLists}
+                  onOpenPhotos={setPhotosFor}
                   height={gridHeight(sh.rows.length)}
                   onOpenCode={onOpenCode}
                   onDuplicate={onDuplicate}
@@ -508,6 +515,15 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         </div>
       </div>
 
+      {photosFor ? (
+        <ItemPhotosDialog
+          lotId={lotId}
+          item={photosFor}
+          onClose={() => setPhotosFor(null)}
+          onChanged={refresh}
+        />
+      ) : null}
+      {showTags ? <TagSheet items={selectedItems} lots={refLists} onClose={() => setShowTags(false)} /> : null}
       {showAdd ? (
         <AddItemDialog
           lotId={lotId}

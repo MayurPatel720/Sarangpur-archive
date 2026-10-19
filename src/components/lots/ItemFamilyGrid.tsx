@@ -17,6 +17,8 @@ import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, type ColumnSpec, type CustomCol
 import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { mediaTypeText } from '@/lib/item-cells';
 import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
+import { refLabel, refOptions, type RefLists } from '@/lib/ref-lists';
+import { photoThumbUrl } from '@/lib/project-photos';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
 
@@ -28,7 +30,6 @@ import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } 
 
 type Spec = ColumnSpec & { custom?: CustomColumn };
 type Tri = boolean | null;
-type Opt = { value: string; label: string };
 const TRI_VALUES = ['Yes', 'No', ''] as const;
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
 const triParse = (s: unknown): Tri => (s === 'Yes' ? true : s === 'No' ? false : null);
@@ -40,7 +41,8 @@ export function ItemFamilyGrid({
   canDetails,
   canDecide,
   canReorder,
-  physical,
+  refLists,
+  onOpenPhotos,
   height,
   onOpenCode,
   onDuplicate,
@@ -62,7 +64,10 @@ export function ItemFamilyGrid({
   canDetails: boolean;
   canDecide: boolean;
   canReorder: boolean;
-  physical: Opt[];
+  /** Every admin-managed list the dropdown columns read (Guru, Category, …). */
+  refLists: RefLists;
+  /** Open the item's photos (Prasadi). */
+  onOpenPhotos: (item: GridItem) => void;
   /** CSS height of the grid box. */
   height: string;
   onOpenCode: (item: GridItem) => void;
@@ -82,8 +87,6 @@ export function ItemFamilyGrid({
   const specById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
   const columnDefs = useMemo<(ColDef<GridItem> | ColGroupDef<GridItem>)[]>(() => {
-    const refLabel = (list: Opt[], v: string | null) => (v ? (list.find((i) => i.value === v)?.label ?? v) : '');
-
     const header = (spec: Spec): Partial<ColDef<GridItem>> => ({
       headerName: spec.label,
       headerComponent: GridHeader,
@@ -160,6 +163,12 @@ export function ItemFamilyGrid({
       // Format-specific columns (registry `attr`): kept in the row's `attrs` map.
       if (spec.attr) {
         const key = spec.id;
+        const setAttr = (d: GridItem, value: unknown) => {
+          const next: Record<string, unknown> = { ...d.attrs, [key]: value };
+          // A dependent dropdown: changing Category clears the Subcategory that belonged to the old one.
+          if (d.attrs[key] !== value) for (const r of spec.resets ?? []) next[r] = null;
+          d.attrs = next as GridItem['attrs'];
+        };
         if (spec.kind === 'flag') {
           return {
             ...base,
@@ -167,28 +176,93 @@ export function ItemFamilyGrid({
             valueGetter: (p) => (p.data ? (p.data.attrs[key] === true ? 'Yes' : 'No') : ''),
             valueSetter: (p: ValueSetterParams<GridItem>) => {
               if (!p.data) return false;
-              p.data.attrs = { ...p.data.attrs, [key]: p.newValue === 'Yes' };
+              setAttr(p.data, p.newValue === 'Yes');
               return true;
             },
             cellEditor: 'agSelectCellEditor',
             cellEditorParams: { values: ['Yes', 'No'] },
           };
         }
+        if (spec.kind === 'ref') {
+          const parent = spec.refParent?.column;
+          return {
+            ...base,
+            editable: canDetails && (parent ? true : true),
+            cellEditor: 'agSelectCellEditor',
+            // The options follow the row: Subcategory offers only the chosen Category's.
+            cellEditorParams: (p: { data?: GridItem }) => ({
+              values: ['', ...refOptions(spec, refLists, parent ? p.data?.attrs[parent] : undefined).map((o) => o.value)],
+            }),
+            valueGetter: (p) => (p.data ? String(p.data.attrs[key] ?? '') : ''),
+            valueFormatter: (p) => refLabel(refLists, spec.refList ?? '', p.value as string | null),
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              const text = String(p.newValue ?? '').trim();
+              setAttr(p.data, text === '' ? null : text);
+              return true;
+            },
+          };
+        }
+        if (spec.kind === 'number') {
+          return {
+            ...base,
+            editable: canDetails,
+            cellEditor: 'agNumberCellEditor',
+            cellEditorParams: { min: 0, precision: 0 },
+            valueGetter: (p) => (p.data && typeof p.data.attrs[key] === 'number' ? (p.data.attrs[key] as number) : null),
+            valueSetter: (p: ValueSetterParams<GridItem>) => {
+              if (!p.data) return false;
+              const raw = String(p.newValue ?? '').trim();
+              const n = raw === '' ? null : Number(raw);
+              if (n !== null && (!Number.isInteger(n) || n < 0)) {
+                onInvalid(`${spec.label} must be a whole number.`);
+                return false;
+              }
+              setAttr(p.data, n);
+              return true;
+            },
+          };
+        }
+        const isDate = spec.kind === 'date' || spec.kind === 'dateRange';
         return {
           ...base,
           editable: canDetails,
-          cellEditor: 'agTextCellEditor',
+          cellEditor: spec.kind === 'longtext' ? 'agLargeTextCellEditor' : 'agTextCellEditor',
           valueGetter: (p) => (p.data ? String(p.data.attrs[key] ?? '') : ''),
           valueSetter: (p: ValueSetterParams<GridItem>) => {
             if (!p.data) return false;
             const text = String(p.newValue ?? '').trim();
-            p.data.attrs = { ...p.data.attrs, [key]: text === '' ? null : text };
+            if (isDate && text && !parseDateRange(text).ok) {
+              onInvalid('Use dd/mm/yyyy, a range, or just a year.');
+              return false;
+            }
+            setAttr(p.data, text === '' ? null : text);
             return true;
           },
         };
       }
 
       switch (spec.kind) {
+        case 'photo':
+          return {
+            ...base,
+            editable: false,
+            sortable: false,
+            cellClass: 'cursor-pointer',
+            tooltipValueGetter: () => 'Click to see or add photos',
+            onCellClicked: (p) => p.data && onOpenPhotos(p.data),
+            valueGetter: (p) => p.data?.imageCount ?? 0,
+            cellRenderer: (p: ICellRendererParams<GridItem>) =>
+              p.data?.coverUrl ? (
+                <span className="flex h-full items-center gap-1.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoThumbUrl(p.data.coverUrl)} alt="" width={32} height={32} className="h-8 w-8 rounded-[4px] object-cover" />
+                  <span className="text-[11.5px] text-ink-3">{p.data.imageCount}</span>
+                </span>
+              ) : (
+                <span className="text-[12px] font-medium text-accent">+ Add photo</span>
+              ),
+          };
         case 'weeks':
           // Only a number is typed; "weeks" is always written beside it.
           return {
@@ -248,14 +322,6 @@ export function ItemFamilyGrid({
               (p.data as Record<string, unknown>)[spec.field!] = text;
               return true;
             },
-          };
-        case 'ref':
-          return {
-            ...textEdit(),
-            cellEditor: 'agSelectCellEditor',
-            cellEditorParams: { values: ['', ...physical.map((i) => i.value)] },
-            valueFormatter: (p) => refLabel(physical, p.value as string | null),
-            refData: Object.fromEntries(physical.map((i) => [i.value, i.label])),
           };
         case 'yesno': {
           const f = spec.field as 'digital' | 'redigital' | 'discard';
@@ -354,7 +420,7 @@ export function ItemFamilyGrid({
       ...(codeCol ? [build(codeCol)] : []),
       ...groups,
     ];
-  }, [columns, canDetails, canDecide, canReorder, physical, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;
@@ -367,7 +433,10 @@ export function ItemFamilyGrid({
     }
     if (spec.attr) {
       const v = e.data.attrs[spec.id];
-      onSave([id], { attrs: { [spec.id]: spec.kind === 'flag' ? v === true : (v ?? null) } });
+      const patch: Record<string, string | number | boolean | null> = { [spec.id]: spec.kind === 'flag' ? v === true : (v ?? null) };
+      // Changing a dropdown also saves what it cleared (Category → Subcategory).
+      for (const r of spec.resets ?? []) patch[r] = e.data.attrs[r] ?? null;
+      onSave([id], { attrs: patch });
       return;
     }
     const field = spec.field as keyof ItemsBulkSet | undefined;

@@ -67,6 +67,9 @@ export const gridItemSchema = z.object({
   digitalSource: z.string().nullable(),
   fileName: z.string().nullable(),
   phyStorageLoc: z.string().nullable(),
+  /** Prasadi item photos: how many (max 5) and the cover image's URL (null = none). */
+  imageCount: z.number(),
+  coverUrl: z.string().nullable(),
   /** Prasadi quality check: weeks until the next one (null = none planned) and its dates (`dd/mm/yyyy` or ''). */
   recheckWeeks: z.number().nullable(),
   nextCheckDue: z.string(),

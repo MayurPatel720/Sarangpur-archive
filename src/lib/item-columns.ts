@@ -45,7 +45,9 @@ export type ColumnKind =
   | 'code' //      the item code (own popup)
   | 'duplicate' // duplicate code (own flow)
   | 'weeks' //     whole number of weeks, always shown as "3 weeks"
-  | 'info'; //     computed text, shown but never edited here
+  | 'info' //      computed text, shown but never edited here
+  | 'number' //    whole number
+  | 'photo'; //    the item's photos: a thumbnail, click to open them (see item images)
 
 export interface ColumnSpec {
   id: string;
@@ -69,6 +71,16 @@ export interface ColumnSpec {
    * model, type or API change — only a line here). Without it the value has its own item field.
    */
   attr?: boolean;
+  /** Label to show instead of `label` on sheets of a given media format (e.g. Date → "Date received" for Prasadi). */
+  labels?: Record<string, string>;
+  /** Columns cleared when this one changes (a dependent dropdown: changing Category clears Subcategory). */
+  resets?: string[];
+  /** For a dependent `ref` column: the list items carry `meta[metaKey]` = the parent column's value. */
+  refParent?: { column: string; metaKey: string };
+  /** Extra check the server runs on the saved value. */
+  check?: 'itemCodes';
+  /** Keep this column in the Master Excel's "All formats" view even though some formats leave it out. */
+  common?: boolean;
 }
 
 type FormatRule = Pick<ColumnSpec, 'formats' | 'notFormats'>;
@@ -78,14 +90,22 @@ export const appliesToFormat = (c: FormatRule, format: string | null): boolean =
   format === null || ((!c.formats || c.formats.includes(format)) && !c.notFormats?.includes(format));
 
 /** A column every media format has — what the Master Excel shows when no single format is chosen. */
-export const isCommonColumn = (c: FormatRule): boolean => !c.formats && !c.notFormats;
+export const isCommonColumn = (c: FormatRule & { common?: boolean }): boolean => c.common === true || (!c.formats && !c.notFormats);
+
+/** The column's label on a sheet of the given format (a few columns read differently, e.g. Prasadi's "Date received"). */
+export const labelFor = (c: Pick<ColumnSpec, 'label' | 'labels'>, format: string | null): string =>
+  (format !== null && c.labels?.[format]) || c.label;
+
+/** Every name a column answers to — its base label and each per-format one — for matching an imported header. */
+export const allLabels = (c: Pick<ColumnSpec, 'label' | 'labels'>): string[] => [c.label, ...Object.values(c.labels ?? {})];
 
 
 /*
  * Prasadi = a physical holy item blessed by a Guru (Mahant Swami, Pramukh Swami, Yogiji, Shastriji
  * Maharaj …). It is stored, stickered with its archive code and tracked here. A lot's intake form
- * already records who it came from, so these columns describe the ITEM: what it is, who blessed it,
- * when / where / on what occasion, its condition, whether the sticker is on, and where it is kept.
+ * already records who it came from, so these columns describe the ITEM: title, category, Guru,
+ * when / where it was used, details, quantity, history, occasion, who received it, related media,
+ * its photos, condition, whether the sticker is on, and where it is kept (room / cabinet / shelf).
  * Tape / case names, the digital-copy source and duplicate links only make sense for media, so
  * Prasadi sheets leave them out.
  */
@@ -97,12 +117,22 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'mediaType', label: 'Media type', dept: 'details', kind: 'readonly', width: 190 },
   { id: 'code', label: 'Archive code', dept: 'details', kind: 'code', width: 200, hint: 'Click a code to change its abbreviations or number.' },
   { id: 'senderCode', label: "Sender's code", dept: 'details', kind: 'text', field: 'senderCode', width: 140 },
-  { id: 'dateRange', label: 'Date', dept: 'details', kind: 'dateRange', field: 'dateRange', width: 210, hint: 'dd/mm/yyyy or a range: dd/mm/yyyy - dd/mm/yyyy' },
+  { id: 'dateRange', label: 'Date', dept: 'details', kind: 'dateRange', field: 'dateRange', width: 210, labels: { prasadi: 'Date received' }, hint: 'dd/mm/yyyy or a range: dd/mm/yyyy - dd/mm/yyyy' },
   { id: 'place', label: 'Place', dept: 'details', kind: 'text', field: 'place', width: 160, hint: 'More than one place: separate with commas.' },
-  { id: 'itemName', label: 'Prasadi item', dept: 'details', kind: 'text', field: 'itemName', width: 190, formats: PRASADI, hint: 'What it is, e.g. Mala, Vastra, Charnarvind, Walking stick.' },
-  { id: 'description', label: 'Description', dept: 'details', kind: 'text', field: 'description', width: 260, formats: PRASADI, hint: 'Colour, size, material, markings — enough to recognise it.' },
-  { id: 'blessedBy', label: 'Blessed by', dept: 'details', kind: 'text', field: 'blessedBy', attr: true, width: 190, formats: PRASADI, hint: 'The Guru it came from, e.g. Pramukh Swami Maharaj.' },
-  { id: 'event', label: 'Occasion', dept: 'details', kind: 'text', field: 'event', width: 200, formats: PRASADI, hint: 'When / how it was given, e.g. Diksha day, home visit, festival.' },
+  // Prasadi — what the item is, who used it and where it came from (see docs: "Prasadi Item Requirements").
+  { id: 'itemName', label: 'Title', dept: 'details', kind: 'text', field: 'itemName', width: 200, formats: PRASADI, hint: 'What it is, e.g. Mala, Vastra, Charnarvind, Walking stick.' },
+  { id: 'photo', label: 'Photo', dept: 'details', kind: 'photo', width: 120, formats: PRASADI, hint: 'Click to see, take or add photos of this item (up to 5; the first is the cover).' },
+  { id: 'category', label: 'Category', dept: 'details', kind: 'ref', field: 'category', attr: true, refList: 'prasadiCategory', resets: ['subcategory'], width: 170, formats: PRASADI },
+  { id: 'subcategory', label: 'Subcategory', dept: 'details', kind: 'ref', field: 'subcategory', attr: true, refList: 'prasadiSubcategory', refParent: { column: 'category', metaKey: 'category' }, width: 190, formats: PRASADI, hint: 'Pick the Category first — only its subcategories are offered.' },
+  { id: 'blessedBy', label: 'Guru', dept: 'details', kind: 'ref', field: 'blessedBy', attr: true, refList: 'guru', width: 200, formats: PRASADI, hint: 'The Guru who used / blessed it.' },
+  { id: 'usedOn', label: 'Date used by Guru', dept: 'details', kind: 'dateRange', field: 'usedOn', attr: true, width: 200, formats: PRASADI, hint: 'dd/mm/yyyy, a range, or just a year.' },
+  { id: 'usedArea', label: 'Area used by Guru', dept: 'details', kind: 'text', field: 'usedArea', attr: true, width: 190, formats: PRASADI },
+  { id: 'description', label: 'Item details', dept: 'details', kind: 'text', field: 'description', width: 260, formats: PRASADI, hint: 'Brand / model, colour, size, material, markings — enough to recognise it (e.g. RayBan).' },
+  { id: 'quantity', label: 'Quantity', dept: 'details', kind: 'number', field: 'quantity', attr: true, width: 110, formats: PRASADI, hint: 'How many of this item (a whole number).' },
+  { id: 'history', label: 'Item history', dept: 'details', kind: 'longtext', field: 'history', attr: true, width: 280, formats: PRASADI, hint: 'Where it came from and how it was used.' },
+  { id: 'event', label: 'Occasion', dept: 'details', kind: 'text', field: 'event', width: 200, formats: PRASADI, hint: 'The prasang: when / how it was given, e.g. Diksha day, home visit, festival.' },
+  { id: 'receivedBy', label: 'Received by', dept: 'details', kind: 'text', field: 'receivedBy', attr: true, width: 170, formats: PRASADI, hint: 'The point of contact who received it.' },
+  { id: 'relatedMedia', label: 'Related media', dept: 'details', kind: 'text', field: 'relatedMedia', attr: true, check: 'itemCodes', width: 220, formats: PRASADI, hint: 'Archive codes of related photos / videos, separated by commas.' },
   { id: 'itemCondition', label: 'Condition', dept: 'details', kind: 'text', field: 'itemCondition', width: 150, formats: PRASADI, hint: 'e.g. Good, Fragile, Needs care.' },
   { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170, notFormats: PRASADI },
   { id: 'nameOnCase', label: 'Name on case', dept: 'details', kind: 'text', field: 'nameOnCase', width: 170, notFormats: PRASADI },
@@ -119,7 +149,10 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'captured', label: 'Captured', dept: 'storage', kind: 'flag', field: 'captured', width: 110, notFormats: PRASADI },
   { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, notFormats: PRASADI, hint: 'Where the digital copy came from, e.g. Mumbai.' },
   { id: 'fileName', label: 'File path', dept: 'storage', kind: 'text', field: 'fileName', width: 240 },
-  { id: 'phyStorageLoc', label: 'Phy storage loc.', dept: 'storage', kind: 'text', field: 'phyStorageLoc', width: 170 },
+  { id: 'phyStorageLoc', label: 'Phy storage loc.', dept: 'storage', kind: 'text', field: 'phyStorageLoc', width: 170, notFormats: PRASADI, common: true },
+  { id: 'room', label: 'Room', dept: 'storage', kind: 'ref', field: 'room', attr: true, refList: 'prasadiRoom', width: 220, formats: PRASADI },
+  { id: 'cabinet', label: 'Cabinet', dept: 'storage', kind: 'text', field: 'cabinet', attr: true, width: 110, formats: PRASADI, hint: 'Cabinet number.' },
+  { id: 'shelf', label: 'Shelf', dept: 'storage', kind: 'text', field: 'shelf', attr: true, width: 100, formats: PRASADI, hint: 'Shelf number.' },
   { id: 'stickerApplied', label: 'Sticker applied', dept: 'storage', kind: 'flag', field: 'stickerApplied', attr: true, width: 130, formats: PRASADI, hint: 'Yes = the archive-code sticker is on the item.' },
   { id: 'recheckWeeks', label: 'Re-check in', dept: 'storage', kind: 'weeks', field: 'recheckWeeks', width: 130, formats: PRASADI, hint: 'Type a number of weeks. When they pass, the item shows on the Alerts page to be checked again.' },
   { id: 'nextCheckDue', label: 'Next check due', dept: 'storage', kind: 'info', width: 140, formats: PRASADI },

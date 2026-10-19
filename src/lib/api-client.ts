@@ -167,6 +167,10 @@ import {
   type TodoResponse,
 } from '@/types/todo';
 import {
+  itemImageResponseSchema,
+  itemImagesResponseSchema,
+  type ItemImageResponse,
+  type ItemImagesResponse,
   lotImageDeleteResponseSchema,
   lotImageResponseSchema,
   lotImagesResponseSchema,
@@ -691,6 +695,27 @@ export const lotImagesApi = {
   remove: (lotId: string, imageId: string) =>
     sendJson<{ ok: true }>(
       `/api/lots/${encodeURIComponent(lotId)}/images/${encodeURIComponent(imageId)}`,
+      'DELETE',
+      {},
+      lotImageDeleteResponseSchema,
+    ),
+};
+
+export const itemImagesApi = {
+  list: (lotId: string, itemId: string) =>
+    getJson<ItemImagesResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/${encodeURIComponent(itemId)}/images`, itemImagesResponseSchema),
+  upload: (lotId: string, itemId: string, form: FormData) =>
+    sendForm<ItemImageResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/${encodeURIComponent(itemId)}/images`, 'POST', form, itemImageResponseSchema),
+  makeCover: (lotId: string, itemId: string, imageId: string) =>
+    sendJson<ItemImageResponse>(
+      `/api/lots/${encodeURIComponent(lotId)}/items/${encodeURIComponent(itemId)}/images/${encodeURIComponent(imageId)}`,
+      'PATCH',
+      { cover: true },
+      itemImageResponseSchema,
+    ),
+  remove: (lotId: string, itemId: string, imageId: string) =>
+    sendJson<{ ok: true }>(
+      `/api/lots/${encodeURIComponent(lotId)}/items/${encodeURIComponent(itemId)}/images/${encodeURIComponent(imageId)}`,
       'DELETE',
       {},
       lotImageDeleteResponseSchema,

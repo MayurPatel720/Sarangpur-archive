@@ -18,3 +18,17 @@ export const lotImageResponseSchema = z.object({ image: lotImageSchema });
 export type LotImageResponse = z.infer<typeof lotImageResponseSchema>;
 
 export const lotImageDeleteResponseSchema = z.object({ ok: z.literal(true) });
+
+/** Photos of ONE item (Prasadi): up to ITEM_PHOTO_MAX, the first is the cover. */
+export const ITEM_PHOTO_MAX = 5;
+export const itemImageSchema = lotImageSchema.extend({ isCover: z.boolean() });
+export type ItemImage = z.infer<typeof itemImageSchema>;
+export const itemImagesResponseSchema = z.object({
+  images: z.array(itemImageSchema),
+  can: z.object({ manage: z.boolean() }),
+});
+export type ItemImagesResponse = z.infer<typeof itemImagesResponseSchema>;
+export const itemImageResponseSchema = z.object({ image: itemImageSchema });
+export type ItemImageResponse = z.infer<typeof itemImageResponseSchema>;
+/** PATCH …/images/[imageId] — make it the item's cover. */
+export const itemImagePatchBodySchema = z.object({ cover: z.literal(true) });

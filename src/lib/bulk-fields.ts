@@ -1,6 +1,6 @@
 import { parseDateRange } from '@/lib/date-range';
 import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
-import { allColumns, appliesToFormat, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, appliesToFormat, labelFor, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ItemsBulkSet } from '@/types/items';
 
 /**
@@ -10,7 +10,7 @@ import type { ItemsBulkSet } from '@/types/items';
  * Pure — shared by the bar and the verify script.
  */
 
-export type BulkInput = 'text' | 'date' | 'yesno' | 'flag' | 'disposition' | 'weeks' | 'number';
+export type BulkInput = 'text' | 'date' | 'yesno' | 'flag' | 'disposition' | 'weeks' | 'number' | 'select';
 
 /** Where the value goes in `ItemsBulkSet`. */
 export type BulkTarget =
@@ -27,6 +27,9 @@ export interface BulkField {
   target: BulkTarget;
   /** A Decision column — only offered while decisions are still open. */
   decision: boolean;
+  /** For a dropdown: the admin-managed list, and (dependent dropdown) the column whose value narrows it. */
+  refList?: string;
+  refParent?: { column: string; metaKey: string };
   /** Formats (of the selected rows) this field applies to when it does not apply to all of them; else null. */
   onlyFor: string[] | null;
 }
@@ -34,7 +37,7 @@ export interface BulkField {
 /** The "blank this field" choice. */
 export const CLEAR = '__clear';
 
-const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info']);
+const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info', 'photo']);
 
 const inputOf = (c: ColumnSpec & { custom?: CustomColumn }): BulkInput | null => {
   if (c.custom) return c.custom.type; // text | number | yesno | date
@@ -54,6 +57,10 @@ const inputOf = (c: ColumnSpec & { custom?: CustomColumn }): BulkInput | null =>
       return 'disposition';
     case 'weeks':
       return 'weeks';
+    case 'number':
+      return 'number';
+    case 'ref':
+      return 'select';
     default:
       return null;
   }
@@ -79,12 +86,15 @@ export function bulkFieldsFor(formats: string[], custom: CustomColumn[]): BulkFi
     if (formats.length > 0 && applies.length === 0) continue;
     out.push({
       id: c.id,
-      label: c.label,
+      // A column that reads differently for one format (Prasadi: Date → Date received) uses that name when only that format is ticked.
+      label: formats.length === 1 ? labelFor(c, formats[0]!) : c.label,
       dept: c.dept as DeptId,
       input,
       hint: c.hint,
       target,
       decision: c.dept === 'decision',
+      refList: c.refList,
+      refParent: c.refParent,
       onlyFor: formats.length > 0 && applies.length < formats.length ? applies : null,
     });
   }
@@ -105,6 +115,7 @@ export function parseBulkValue(f: BulkField, raw: string): BulkParse {
   }
   switch (f.input) {
     case 'text':
+    case 'select':
       return { ok: true, value: text };
     case 'date': {
       const r = parseDateRange(text);

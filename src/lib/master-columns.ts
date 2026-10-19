@@ -24,7 +24,7 @@ export const MASTER_COLUMNS: ColumnSpec[] = [
 export type MasterFilter =
   | { param: string; type: 'text' }
   | { param: string; type: 'yesno' }
-  | { param: string; type: 'select'; options: { value: string; label: string }[] | 'stage' | 'dataType' | 'physicalSource' };
+  | { param: string; type: 'select'; options: { value: string; label: string }[] | 'stage' | 'dataType' | 'physicalSource' | { list: string } };
 
 /** Query parameter of a format-specific (`attr`) column filter — generated from the registry. */
 export const attrParam = (columnId: string) => `a_${columnId}`;
@@ -34,12 +34,16 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
   ...Object.fromEntries(
     BUILTIN_COLUMNS.filter((c) => c.attr).map((c): [string, MasterFilter] => [
       c.id,
-      { param: attrParam(c.id), type: c.kind === 'flag' ? 'yesno' : 'text' },
+      {
+        param: attrParam(c.id),
+        ...(c.kind === 'flag' ? { type: 'yesno' as const } : c.kind === 'ref' ? { type: 'select' as const, options: { list: c.refList ?? '' } } : { type: 'text' as const }),
+      } as MasterFilter,
     ]),
   ),
   lotNo: { param: 'lot', type: 'text' },
   projectNo: { param: 'project', type: 'text' },
   projectName: { param: 'projectName', type: 'text' },
+  photo: { param: 'hasPhoto', type: 'yesno' },
   lotStage: { param: 'stage', type: 'select', options: 'stage' },
   mediaType: { param: 'dataType', type: 'select', options: 'dataType' },
   code: { param: 'code', type: 'text' },

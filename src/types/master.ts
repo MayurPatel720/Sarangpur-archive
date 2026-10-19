@@ -55,6 +55,8 @@ export const masterQuerySchema = z.object({
   // Logging
   logged: yesNo,
   loggerName: text,
+  /** Prasadi: items that have (yes) / have no (no) photo. */
+  hasPhoto: yesNo,
   // Format-specific columns (`attr` in item-columns.ts), one filter each: a_<column id>.
   ...Object.fromEntries(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [`a_${c.id}`, c.kind === 'flag' ? yesNo : text])),
 });

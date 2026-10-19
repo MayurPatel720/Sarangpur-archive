@@ -93,6 +93,9 @@ const lotItemSchema = new Schema(
      * Prasadi quality check: "look at this again in N weeks". `nextCheckDue` (a calendar day at UTC
      * midnight) is what the Alerts page watches; marking the item checked stamps `lastChecked*`.
      */
+    /** Item photos (Prasadi): count and cover URL, kept in step with the LotImage rows (no lookup on read). */
+    imageCount: { type: Number, default: 0, min: 0, max: 5 },
+    coverUrl: { type: String, default: null },
     recheckWeeks: { type: Number, default: null, min: 1, max: 260 },
     nextCheckDue: { type: Date, default: null },
     lastCheckedAt: { type: Date, default: null },

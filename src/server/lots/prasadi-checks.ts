@@ -6,6 +6,7 @@ import { PRASADI_FORMAT } from '@/lib/item-columns';
 import { CHECK_RESULTS, daysOverdue, nextCheckDate, weeksText } from '@/lib/recheck';
 import { LotItem } from '@/models/LotItem';
 import { withAudit, auditActor } from '@/server/audit';
+import { getReferenceList } from '@/server/reference';
 import type { ItemLean } from '@/server/lots/item-grid';
 import type { PrasadiCheckDoneBody, PrasadiCheckList, PrasadiCheckQuery } from '@/types/items';
 
@@ -30,12 +31,14 @@ export async function listPrasadiChecks(query: PrasadiCheckQuery, now = new Date
       .lean(),
     LotItem.countDocuments(filter),
   ]);
+  const gurus = await getReferenceList('guru'); // the stored value is the list's code; show the Guru's name
+  const guruName = (v: unknown) => (v ? (gurus.find((g) => g.value === String(v))?.label ?? String(v)) : null);
   return {
     rows: (docs as ItemLean[]).map((d) => ({
       id: String(d._id),
       code: d.code,
       itemName: d.name ?? null,
-      blessedBy: ((d.attrs ?? {}) as Record<string, unknown>).blessedBy ? String((d.attrs as Record<string, unknown>).blessedBy) : null,
+      blessedBy: guruName(((d.attrs ?? {}) as Record<string, unknown>).blessedBy),
       condition: d.itemCondition ?? null,
       lotId: String(d.lot),
       lotReference: d.lotReference ?? '',

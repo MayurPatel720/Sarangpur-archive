@@ -26,9 +26,11 @@ import { listPrasadiChecks, markPrasadiChecked } from '../src/server/lots/prasad
 import { parseDateRange, formatDateRange, isoDayToDmy } from '../src/lib/date-range';
 import { autoDecisionFields, bornDigitalFields, itemResultOf } from '../src/lib/item-decision';
 import { createItem } from '../src/server/lots/items';
+import { addItemImage, deleteItemImage, listItemImages } from '../src/server/lots/item-images';
+import { LotImage } from '../src/models/LotImage';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
 import type { GridItem, ImportBody } from '../src/types/items';
-import { allColumns, appliesToFormat, isCommonColumn } from '../src/lib/item-columns';
+import { allColumns, appliesToFormat, isCommonColumn, labelFor } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
 import { CLEAR, buildBulkSet, bulkFieldsFor } from '../src/lib/bulk-fields';
 import { buildItemsWorkbook, readItemsFromExcel } from '../src/components/lots/excel-io';
@@ -83,7 +85,7 @@ async function excelRoundTrip() {
     decisionRemark: null, result: null, captured: false, digitalSource: null, fileName: null, phyStorageLoc: null,
     disposition: null, dispositionStatus: null, taggedInMls: false, storageRemark: null, logged: false, loggedAt: '',
     loggerName: null, custom: {}, itemName: null, description: null, event: null, itemCondition: null, attrs: {},
-    recheckWeeks: null, nextCheckDue: '', lastCheckedAt: '', ...over,
+    recheckWeeks: null, nextCheckDue: '', lastCheckedAt: '', imageCount: 0, coverUrl: null, ...over,
   });
   const custom = [{ key: 'c_1', label: 'Reel', type: 'number' as const, dept: 'storage' as const }];
   const wb = await buildItemsWorkbook({
@@ -105,16 +107,18 @@ async function excelRoundTrip() {
   const labelsFor = (format: string) => allColumns([]).filter((c) => appliesToFormat(c, format)).map((c) => c.label);
   const prs = labelsFor('prasadi');
   const vid = labelsFor('video');
-  check('prasadi gets its own columns', ['Prasadi item', 'Description', 'Blessed by', 'Occasion', 'Condition', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
-  check('prasadi has no quantity column', !prs.includes('Quantity'), prs);
+  check('prasadi gets its own columns', ['Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Received by', 'Related media', 'Condition', 'Room', 'Cabinet', 'Shelf', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
+  check('prasadi: the common Date column reads Date received, other formats keep Date', labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'prasadi') === 'Date received' && labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'photo') === 'Date', null);
+  check('prasadi: Phy storage loc. is replaced by Room / Cabinet / Shelf, but stays a common column', !prs.includes('Phy storage loc.') && allColumns([]).filter(isCommonColumn).some((c) => c.id === 'phyStorageLoc'), prs);
   check('prasadi drops video-only columns', !['Name on tape', 'Name on case', 'Dig source', 'Duplicate code'].some((l) => prs.includes(l)), prs);
   check('prasadi has no Decision columns and no Captured', !['Digital', 'Redigital', 'Discard', 'Captured'].some((l) => prs.includes(l)), prs);
-  check('prasadi keeps path / storage / MLS / remark', ['File path', 'Phy storage loc.', 'MLS tagged', 'Return / discard', 'Remark', 'Date', 'Place'].every((l) => prs.includes(l)), prs);
+  check('prasadi keeps path / storage / MLS / remark', ['File path', 'MLS tagged', 'Return / discard', 'Remark', 'Place'].every((l) => prs.includes(l)), prs);
   check('video has no prasadi columns but keeps tape / case / decision', !vid.includes('Blessed by') && !vid.includes('Sticker applied') && !vid.includes('Re-check in') && vid.includes('Name on tape') && vid.includes('Name on case') && vid.includes('Digital') && vid.includes('Captured'), vid);
   check('no format known = every column', allColumns([]).every((c) => appliesToFormat(c, null)));
   const common = allColumns([]).filter(isCommonColumn).map((c) => c.label);
   check('common columns carry no format-specific column', !['Blessed by', 'Name on tape', 'Digital', 'Re-check in'].some((l) => common.includes(l)) && common.includes('Place') && common.includes('Logging date'), common);
-  check('every attr column is prasadi-only and text / flag', allColumns([]).filter((c) => c.attr).every((c) => c.formats?.includes('prasadi') && (c.kind === 'text' || c.kind === 'flag')));
+  check('every attr column is prasadi-only and has a storable kind', allColumns([]).filter((c) => c.attr).every((c) => c.formats?.includes('prasadi') && ['text', 'longtext', 'flag', 'ref', 'number', 'date', 'dateRange'].includes(c.kind)));
+  check('every dropdown column names its list; a dependent one names its parent', allColumns([]).filter((c) => c.kind === 'ref').every((c) => Boolean(c.refList) && (!c.refParent || allColumns([]).some((p2) => p2.id === c.refParent!.column))));
   check('weeks → due date', nextCheckDate(new Date('2026-10-17T15:00:00Z'), 3).toISOString().slice(0, 10) === '2026-11-07');
   check('overdue days', daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-10T08:00:00Z')) === 3 && daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-07T23:00:00Z')) === 0);
   check('weeks text', weeksText(1) === '1 week' && weeksText(3) === '3 weeks');
@@ -126,7 +130,7 @@ async function excelRoundTrip() {
   const prasadiBulk = ids(['prasadi']);
   check('bulk: photo rows get the photo fields', ['senderCode', 'nameOnTape', 'digital', 'captured', 'taggedInMls', 'logged', 'disposition', 'physicalSource'].every((i) => photoBulk.includes(i)), photoBulk);
   check('bulk: photo rows get no Prasadi fields', !photoBulk.some((i) => ['blessedBy', 'stickerApplied', 'recheckWeeks', 'itemName'].includes(i)), photoBulk);
-  check('bulk: Prasadi rows get the Prasadi fields', ['itemName', 'description', 'blessedBy', 'event', 'itemCondition', 'stickerApplied', 'recheckWeeks', 'phyStorageLoc', 'taggedInMls'].every((i) => prasadiBulk.includes(i)), prasadiBulk);
+  check('bulk: Prasadi rows get the Prasadi fields', ['itemName', 'category', 'subcategory', 'blessedBy', 'usedOn', 'usedArea', 'description', 'quantity', 'history', 'event', 'receivedBy', 'relatedMedia', 'itemCondition', 'room', 'cabinet', 'shelf', 'stickerApplied', 'recheckWeeks', 'taggedInMls'].every((i) => prasadiBulk.includes(i)) && !prasadiBulk.includes('phyStorageLoc') && !prasadiBulk.includes('photo'), prasadiBulk);
   check('bulk: Prasadi rows get no tape / case / Decision / Captured fields', !prasadiBulk.some((i) => ['nameOnTape', 'nameOnCase', 'digitalSource', 'digital', 'redigital', 'discard', 'decisionRemark', 'captured'].includes(i)), prasadiBulk);
   check('bulk: never offers the read-only columns', !['mediaType', 'code', 'duplicateCode', 'nextCheckDue', 'lastCheckedAt'].some((i) => ids(['photo', 'prasadi']).includes(i)));
   const mixedBulk = bulkFieldsFor(['photo', 'prasadi'], []);
@@ -134,20 +138,21 @@ async function excelRoundTrip() {
   const customBulk = bulkFieldsFor(['prasadi'], [{ key: 'c_9', label: 'Shelf no', type: 'number', dept: 'storage' }]);
   check('bulk: a team-added column appears with its own type', customBulk.find((f) => f.id === 'c_9')?.input === 'number' && customBulk.find((f) => f.id === 'c_9')?.target.type === 'custom');
   const sample = bulkFieldsFor(['prasadi'], [{ key: 'c_9', label: 'Shelf no', type: 'number', dept: 'storage' }]);
-  const built = buildBulkSet(sample, { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: 'Yes', recheckWeeks: '3', c_9: '12', place: '', description: CLEAR });
-  check('bulk: values land in the right place and blanks are left alone', built.set.description === null && built.set.recheckWeeks === 3 && built.set.attrs?.blessedBy === 'Pramukh Swami Maharaj' && built.set.attrs?.stickerApplied === true && built.set.custom?.c_9 === 12 && !('place' in built.set) && Object.keys(built.errors).length === 0, built);
+  const built = buildBulkSet(sample, { blessedBy: 'pramukh_swami_maharaj', stickerApplied: 'Yes', recheckWeeks: '3', c_9: '12', place: '', description: CLEAR });
+  check('bulk: values land in the right place and blanks are left alone', built.set.description === null && built.set.recheckWeeks === 3 && built.set.attrs?.blessedBy === 'pramukh_swami_maharaj' && built.set.attrs?.stickerApplied === true && built.set.custom?.c_9 === 12 && !('place' in built.set) && Object.keys(built.errors).length === 0, built);
   const bad = buildBulkSet(sample, { recheckWeeks: '0', c_9: 'abc', loggedAt: '31/02/2026' });
   check('bulk: bad values are reported per field and nothing is sent on', Object.keys(bad.errors).sort().join() === 'c_9,loggedAt,recheckWeeks', bad.errors);
   check('bulk: Clear blanks a Yes/No answer but is refused on a flag', buildBulkSet(bulkFieldsFor(['photo'], []), { digital: CLEAR }).set.digital === null && Boolean(buildBulkSet(bulkFieldsFor(['photo'], []), { captured: CLEAR }).errors.captured));
-  const prsRow = row(3, { format: 'prasadi', itemName: 'Mala', attrs: { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: true }, recheckWeeks: 3, nextCheckDue: '07/11/2026' });
+  const prsRow = row(3, { format: 'prasadi', itemName: 'Mala', attrs: { blessedBy: 'pramukh_swami_maharaj', stickerApplied: true, category: 'bedroom', quantity: 2 }, dateRange: '12/03/1998', recheckWeeks: 3, nextCheckDue: '07/11/2026' });
+  const lookup = (l: string, v: string | null) => (l === 'guru' && v === 'pramukh_swami_maharaj' ? 'Pramukh Swami Maharaj' : l === 'prasadiCategory' && v === 'bedroom' ? 'Bedroom' : (v ?? ''));
   const prsWb = await buildItemsWorkbook({
-    sheets: [{ name: 'Prasadi', rows: [prsRow], columns: allColumns([]).filter((c) => appliesToFormat(c, 'prasadi')) }],
+    sheets: [{ name: 'Prasadi', rows: [prsRow], columns: allColumns([]).filter((c) => appliesToFormat(c, 'prasadi')).map((c) => ({ ...c, label: labelFor(c, 'prasadi') })) }],
     columns: allColumns([]),
-    refLabel: (_l, v) => v ?? '',
+    refLabel: lookup,
   });
   const prsParsed = await readItemsFromExcel(new File([await prsWb.xlsx.writeBuffer()], 'p.xlsx'));
   const pc = prsParsed.rows[0]?.cells ?? {};
-  check('prasadi sheet exports Prasadi cells and no tape column', pc['Details|Prasadi item'] === 'Mala' && pc['Details|Blessed by'] === 'Pramukh Swami Maharaj' && pc['Digitalization & Storage|Sticker applied'] === 'Yes' && pc['Digitalization & Storage|Re-check in'] === '3 weeks' && pc['Digitalization & Storage|Next check due'] === '07/11/2026' && !('Details|Name on tape' in pc), pc);
+  check('prasadi sheet exports Prasadi cells and no tape column', pc['Details|Title'] === 'Mala' && pc['Details|Guru'] === 'Pramukh Swami Maharaj' && pc['Details|Category'] === 'Bedroom' && pc['Details|Quantity'] === '2' && pc['Details|Date received'] === '12/03/1998' && pc['Digitalization & Storage|Sticker applied'] === 'Yes' && pc['Digitalization & Storage|Re-check in'] === '3 weeks' && pc['Digitalization & Storage|Next check due'] === '07/11/2026' && !('Details|Name on tape' in pc), pc);
 }
 
 async function main() {
@@ -446,15 +451,57 @@ async function main() {
     check('prasadi items start decided as keep physical', pg.items.length === 2 && pg.items.every((i) => i.result === 'physical' && i.format === 'prasadi'), pg.items.map((i) => i.result));
     check('prasadi summary: all decided, none to digitize', pg.summary.decided === 2 && pg.summary.archive === 0 && pg.summary.physical === 2, pg.summary);
 
-    await bulkUpdateItems(prs.id, { itemIds: [p1], set: { itemName: 'Mala', attrs: { blessedBy: 'Pramukh Swami Maharaj', stickerApplied: true }, remarks: 'wooden beads' } }, admin);
+    await bulkUpdateItems(prs.id, { itemIds: [p1], set: { itemName: 'Mala', attrs: { blessedBy: 'pramukh_swami_maharaj', stickerApplied: true }, remarks: 'wooden beads' } }, admin);
     const pa = (await grid(prs.id)).items.find((i) => i.id === p1)!;
-    check('prasadi details and attrs saved', pa.itemName === 'Mala' && pa.attrs.blessedBy === 'Pramukh Swami Maharaj' && pa.attrs.stickerApplied === true, pa.attrs);
+    check('prasadi details and attrs saved', pa.itemName === 'Mala' && pa.attrs.blessedBy === 'pramukh_swami_maharaj' && pa.attrs.stickerApplied === true, pa.attrs);
     const pl = await ArchiveLot.findById(prs.id).select('stage decision.status').lean();
     check('a Prasadi lot is decided by its first edit and moves to storage', pl?.decision?.status === 'archive' && pl.stage === 'storage', [pl?.stage, pl?.decision?.status]);
     // A bulk edit that carries fields Prasadi does not have: they are skipped, the rest is saved.
     await bulkUpdateItems(prs.id, { itemIds: [p1, p2], set: { nameOnTape: 'Tape 9', nameOnCase: 'Case 9', remarks: 'bulk remark' } }, admin);
     const pb = (await grid(prs.id)).items.find((i) => i.id === p2)!;
     check('bulk: fields that do not exist for the format are skipped, the others saved', pb.nameOnTape === null && pb.nameOnCase === null && pb.remarks === 'bulk remark', [pb.nameOnTape, pb.nameOnCase, pb.remarks]);
+    // Dropdowns and the new Prasadi fields
+    await bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { category: 'bedroom', subcategory: 'bedroom.bed', room: 'room_8', cabinet: '3', shelf: '2', quantity: 2, usedOn: '1998', usedArea: 'Gadhada', history: 'Used daily.', receivedBy: 'Ramesh' } } }, admin);
+    const pd = (await grid(prs.id)).items.find((i) => i.id === p1)!;
+    check('prasadi: dropdown, number, date, text fields saved', pd.attrs.category === 'bedroom' && pd.attrs.subcategory === 'bedroom.bed' && pd.attrs.room === 'room_8' && pd.attrs.quantity === 2 && pd.attrs.usedOn === '1998' && pd.attrs.cabinet === '3', pd.attrs);
+    await rejects('a value outside the Guru list is refused', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { blessedBy: 'Some Guru' } } }, admin), 400);
+    await rejects('a Subcategory of another Category is refused', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { subcategory: 'travel.luggage_bags' } } }, admin), 400);
+    await rejects('a Subcategory without a Category is refused', () => bulkUpdateItems(prs.id, { itemIds: [p2], set: { attrs: { subcategory: 'bedroom.bed' } } }, admin), 400);
+    await bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { category: 'travel' } } }, admin);
+    check('changing the Category clears the Subcategory that belonged to the old one', (await grid(prs.id)).items.find((i) => i.id === p1)!.attrs.subcategory === undefined);
+    await rejects('Quantity must be a whole number', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { quantity: 1.5 } } }, admin), 400);
+    await rejects('Quantity cannot be negative', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { quantity: -1 } } }, admin), 400);
+    await rejects('a bad Date used by Guru is refused', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { usedOn: '31/02/1998' } } }, admin), 400);
+    await rejects('Related media must be real archive codes', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { relatedMedia: 'NOPE-0000-0001-R-000' } } }, admin), 400);
+    await bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { relatedMedia: `${ga.code}, ${g0.items[1]!.code}` } } }, admin);
+    check('Related media accepts existing codes', ((await grid(prs.id)).items.find((i) => i.id === p1)!.attrs.relatedMedia as string).split(', ').length === 2);
+    const selfCode = pg.items.find((i) => i.id === p1)!.code;
+    await rejects('an item cannot be related to itself', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { relatedMedia: selfCode } } }, admin), 400);
+
+    // Excel import of a Prasadi sheet: headers by their per-format names, dropdown cells by label
+    const prsCodes = (await grid(prs.id)).items.map((i) => i.code);
+    const imp = await importItems(prs.id, { apply: false, rows: [{ code: prsCodes[1]!, cells: { 'Details|Date received': '12/03/1998', 'Details|Guru': 'Yogiji Maharaj', 'Details|Category': 'Bedroom', 'Details|Subcategory': 'Bed', 'Details|Quantity': '4' } }] }, admin);
+    check('import: Date received, dropdown labels and Quantity are understood', imp.errors.length === 0 && imp.changes.some((c) => c.column.endsWith('Guru') && c.to === 'Yogiji Maharaj') && imp.changes.some((c) => c.column.endsWith('Date') && c.to === '12/03/1998') && imp.changes.some((c) => c.column.endsWith('Quantity')), imp);
+    const impApplied = await importItems(prs.id, { apply: true, rows: [{ code: prsCodes[1]!, cells: { 'Details|Date received': '12/03/1998', 'Details|Guru': 'Yogiji Maharaj', 'Details|Category': 'Bedroom', 'Details|Subcategory': 'Bed', 'Details|Quantity': '4' } }] }, admin);
+    const pi = (await grid(prs.id)).items.find((i) => i.id === p2)!;
+    check('import: saved as list values, with the right date', impApplied.applied && pi.attrs.blessedBy === 'yogiji_maharaj' && pi.attrs.category === 'bedroom' && pi.attrs.subcategory === 'bedroom.bed' && pi.attrs.quantity === 4 && pi.dateRange === '12/03/1998', pi);
+    const impBad = await importItems(prs.id, { apply: false, rows: [{ code: prsCodes[1]!, cells: { 'Details|Guru': 'Nobody', 'Details|Subcategory': 'Luggage Bags' } }] }, admin);
+    check('import: an unknown dropdown label and a Subcategory of another Category are reported', impBad.errors.length >= 1 && impBad.errors.some((e) => e.column.endsWith('Guru')), impBad.errors);
+
+    // Item photos (no Cloudinary here): permissions, the Prasadi-only rule and the 5 photo cap
+    const li = await listItemImages(prs.id, p1, admin);
+    check('item photos: an item starts with none and the admin may manage them', li.images.length === 0 && li.can.manage === true, li);
+    check('item photos: the grid carries the count and cover', (await grid(prs.id)).items.every((i) => i.imageCount === 0 && i.coverUrl === null));
+    const dummy = { file: new File([new Uint8Array([1])], 'x.jpg', { type: 'image/jpeg' }), caption: undefined, format: undefined, width: null, height: null };
+    await rejects('item photos are for Prasadi items only', () => addItemImage(lot.id, a, dummy, admin), 400);
+    await LotImage.insertMany(Array.from({ length: 5 }, (_, i) => ({ lot: prs.id, item: p2, isCover: i === 0, url: `https://example.test/${i}.jpg`, publicId: `t${i}`, fileName: `t${i}.jpg`, contentType: 'image/jpeg', sizeBytes: 1, uploadedBy: u._id, uploadedByName: 'x' })));
+    await rejects('item photos: a sixth photo is refused', () => addItemImage(prs.id, p2, dummy, admin), 400);
+    check('item photos: lot-level photos do not include item photos', (await listLotImages(prs.id, admin)).images.length === 0);
+    check('item photos: the item list holds its five, in upload order', (await listItemImages(prs.id, p2, admin)).images.length === 5);
+    const viewerNoEdit: MutationContext = { ...admin, grants: ['lot:view'] };
+    check('item photos: someone without lot:edit cannot manage', (await listItemImages(prs.id, p2, viewerNoEdit)).can.manage === false);
+    await rejects('item photos: deleting needs lot:edit', () => deleteItemImage(prs.id, p2, '0'.repeat(24), viewerNoEdit), 403);
+
     await rejects('unknown attr column refused', () => bulkUpdateItems(prs.id, { itemIds: [p1], set: { attrs: { nope: 'x' } } }, admin), 400);
 
     await bulkUpdateItems(prs.id, { itemIds: [p1, p2], set: { recheckWeeks: 3 } }, admin);
@@ -480,6 +527,7 @@ async function main() {
     await bulkUpdateItems(lot.id, { itemIds: [a], set: { recheckWeeks: 4 } }, admin);
     check('recheck weeks never lands on a non-Prasadi item', (await grid(lot.id)).items.find((i) => i.id === a)!.recheckWeeks === null);
   } finally {
+    await LotImage.deleteMany({ lot: { $in: created } });
     await Task.deleteMany({ lot: { $in: created } });
     await LotItem.deleteMany({ lot: { $in: created } });
     await ActivityLog.deleteMany({ lot: { $in: created } });

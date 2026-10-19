@@ -1,9 +1,10 @@
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { parseDateRange } from '@/lib/date-range';
-import { allColumns, appliesToFormat, deptLabel, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
+import { allColumns, allLabels, appliesToFormat, deptLabel, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
 import { cellText } from '@/lib/item-cells';
 import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
+import { REF_LIST_KEYS, findRefItem, refLabel as refLabelOf, type RefLists } from '@/lib/ref-lists';
 import { getReferenceList } from '@/server/reference';
 import { applyItemEdits, getItemsGrid, type ItemEdit } from '@/server/lots/item-grid';
 import type { ImportBody, ImportResponse } from '@/types/items';
@@ -28,11 +29,12 @@ function resolveColumn(header: string, specs: Spec[]): Spec | null {
   const [d, ...rest] = header.split('|');
   const label = norm(rest.join('|'));
   const dept = norm(d ?? '');
-  const inDept = specs.filter((s) => norm(s.label) === label && (dept === '' || norm(deptLabel(s.dept)) === dept));
+  const named = (s: Spec) => allLabels(s).some((l) => norm(l) === label);
+  const inDept = specs.filter((s) => named(s) && (dept === '' || norm(deptLabel(s.dept)) === dept));
   if (inDept.length === 1) return inDept[0]!;
   if (inDept.length === 0 && dept !== '') {
     // The department cell may be missing / reworded — fall back to the label alone when it is unique.
-    const byLabel = specs.filter((s) => norm(s.label) === label);
+    const byLabel = specs.filter(named);
     return byLabel.length === 1 ? byLabel[0]! : null;
   }
   return null;
@@ -56,8 +58,10 @@ export async function importItems(
   }
   const specs = allColumns(grid.customColumns) as Spec[];
   const byCode = new Map(grid.items.map((r) => [r.code, r]));
-  const sources = await getReferenceList('physicalSource');
-  const refLabel = (_list: string, v: string | null) => (v ? (sources.find((s) => s.value === v)?.label ?? v) : '');
+  const lists: RefLists = Object.fromEntries(
+    await Promise.all(REF_LIST_KEYS.map(async (k) => [k, (await getReferenceList(k)).map((i) => ({ value: i.value, label: i.label, meta: i.meta }))] as const)),
+  );
+  const refLabel = (list: string, v: string | null) => refLabelOf(lists, list, v);
 
   const unknownCodes: string[] = [];
   const ignored = new Set<string>();
@@ -82,7 +86,7 @@ export async function importItems(
         ignored.add(header.split('|').pop() ?? header);
         continue;
       }
-      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info') {
+      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info' || spec.kind === 'photo') {
         ignored.add(spec.label);
         continue;
       }
@@ -140,6 +144,10 @@ export async function importItems(
             bad('Must be a number.');
             continue;
           }
+          if (!spec.custom && (!Number.isInteger(n) || n < 0)) {
+            bad('Must be a whole number.');
+            continue;
+          }
           value = n;
           break;
         }
@@ -154,9 +162,9 @@ export async function importItems(
           break;
         }
         case 'ref': {
-          const hit = sources.find((s) => norm(s.label) === norm(text) || norm(s.value) === norm(text));
+          const hit = findRefItem(lists[spec.refList ?? ''] ?? [], text);
           if (!hit) {
-            bad('Not in the Phy source list.');
+            bad(`Not in the ${spec.label} list.`);
             continue;
           }
           value = hit.value;
@@ -192,6 +200,19 @@ export async function importItems(
         edit.set[spec.field] = value;
       }
       edits.set(item.id, edit);
+    }
+  }
+
+  for (const edit of edits.values()) {
+    const at = edit.set.attrs as Record<string, unknown> | undefined;
+    const subValue = at?.subcategory;
+    if (typeof subValue !== 'string') continue;
+    const item = grid.items.find((r) => r.id === edit.id)!;
+    const category = 'category' in at! ? at!.category : item.attrs.category;
+    const sub = (lists.prasadiSubcategory ?? []).find((i) => i.value === subValue);
+    if (!category) errors.push({ code: item.code, column: 'Details › Subcategory', message: 'Pick the Category first.' });
+    else if (sub && sub.meta?.category !== category) {
+      errors.push({ code: item.code, column: 'Details › Subcategory', message: `"${sub.label}" does not belong to the chosen Category.` });
     }
   }
 

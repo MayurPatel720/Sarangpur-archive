@@ -9,6 +9,10 @@ import { Schema, model, models, type InferSchemaType, type Model } from 'mongoos
 const lotImageSchema = new Schema(
   {
     lot: { type: Schema.Types.ObjectId, ref: 'ArchiveLot', required: true },
+    /** Set for a photo of ONE item (Prasadi); null / missing for the lot's own photos. */
+    item: { type: Schema.Types.ObjectId, ref: 'LotItem', default: null },
+    /** The item's cover photo (shown as the thumbnail) — at most one per item. */
+    isCover: { type: Boolean, default: false },
     url: { type: String, required: true, trim: true },
     /** Cloudinary public_id: what destroy() needs to remove the asset. */
     publicId: { type: String, required: true, trim: true },
@@ -25,6 +29,7 @@ const lotImageSchema = new Schema(
 );
 
 lotImageSchema.index({ lot: 1, createdAt: -1 });
+lotImageSchema.index({ item: 1, createdAt: 1 }); // an item's photos, oldest first
 
 export type LotImageDoc = InferSchemaType<typeof lotImageSchema>;
 

@@ -86,6 +86,8 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
     const v = (query as unknown as Record<string, string | undefined>)[`a_${col.id}`];
     if (!v) continue;
     if (col.kind === 'flag') flag(f, `attrs.${col.id}`, v);
+    else if (col.kind === 'ref') f[`attrs.${col.id}`] = v; //             a dropdown value: exact
+    else if (col.kind === 'number') f[`attrs.${col.id}`] = Number.isFinite(Number(v)) ? Number(v) : -1; // exact number
     else f[`attrs.${col.id}`] = contains(v);
   }
   if (query.nameOnTape) f.nameOnTape = contains(query.nameOnTape);
@@ -112,6 +114,8 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   tri(f, 'decision.discard', query.discard);
   flag(f, 'digitized', query.captured);
   flag(f, 'taggedInMls', query.taggedInMls);
+  if (query.hasPhoto === 'yes') f.imageCount = { $gt: 0 };
+  else if (query.hasPhoto === 'no' || query.hasPhoto === 'blank') f.imageCount = { $not: { $gt: 0 } };
   flag(f, 'logged', query.logged);
   if (query.disposition === 'blank') f['decision.disposition'] = null;
   else if (query.disposition) f['decision.disposition'] = query.disposition;

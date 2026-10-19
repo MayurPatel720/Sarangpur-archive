@@ -83,7 +83,7 @@ async function logActivity(
 
 export async function listLotImages(lotId: string, ctx: MutationContext): Promise<LotImagesResponse> {
   const lot = await loadLot(lotId);
-  const docs = await LotImage.find({ lot: lot._id }).sort({ createdAt: -1 }).lean();
+  const docs = await LotImage.find({ lot: lot._id, item: null }).sort({ createdAt: -1 }).lean();
   return { images: docs.map(shapeLotImage), can: { manage: canManage(lot, ctx) } };
 }
 

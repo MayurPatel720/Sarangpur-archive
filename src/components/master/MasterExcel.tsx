@@ -7,12 +7,15 @@ import { ApiRequestError, masterApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useFormatContext } from '@/hooks/useFormatParam';
 import { useReferenceList } from '@/hooks/useReferenceList';
+import { useReferenceLists } from '@/hooks/useReferenceLists';
+import { refLabel as refLabelOf } from '@/lib/ref-lists';
+import { photoThumbUrl } from '@/lib/project-photos';
 import { useToast } from '@/components/ui/Toast';
 import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { cellText } from '@/lib/item-cells';
-import { appliesToFormat, isCommonColumn, DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
+import { appliesToFormat, isCommonColumn, labelFor, DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
 import { MASTER_COLUMNS, MASTER_FILTERS, type MasterFilter } from '@/lib/master-columns';
 import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { num } from '@/lib/format';
@@ -48,6 +51,9 @@ function FilterCell({
   label: string;
 }) {
   if (!filter) return null;
+  if (filter.type === 'select' && !Array.isArray(filter.options) && typeof filter.options === 'object') {
+    return <ListFilterSelect list={filter.options.list} value={value} onChange={onChange} label={label} />;
+  }
   if (filter.type === 'text') {
     return (
       <input
@@ -79,12 +85,26 @@ function FilterCell({
   );
 }
 
+/** A filter whose options are an admin-managed list (Guru, Category, Room …). */
+function ListFilterSelect({ list, value, onChange, label }: { list: string; value: string; onChange: (v: string) => void; label: string }) {
+  const q = useReferenceList(list);
+  return (
+    <select className={inputCls} value={value} onChange={(e) => onChange(e.target.value)} aria-label={`Filter ${label}`}>
+      <option value="">All</option>
+      {(q.data?.items ?? []).map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export function MasterExcel() {
   const toast = useToast();
   const format = useFormatContext();
   const stages = useReferenceList('stage');
   const dataTypes = useReferenceList('dataType');
-  const sources = useReferenceList('physicalSource');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [applied, setApplied] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
@@ -106,13 +126,12 @@ export function MasterExcel() {
     if (f.type !== 'select') return [];
     if (f.options === 'stage') return (stages.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
     if (f.options === 'dataType') return (dataTypes.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
-    if (f.options === 'physicalSource') return (sources.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
+    if (f.options === 'physicalSource') return [];
+    if (!Array.isArray(f.options)) return []; // a { list } filter loads its own options
     return f.options;
   };
-  const refLabel = useCallback(
-    (_list: string, v: string | null) => (v ? (sources.data?.items.find((i) => i.value === v)?.label ?? v) : ''),
-    [sources.data],
-  );
+  const { lists: refLists } = useReferenceLists();
+  const refLabel = useCallback((list: string, v: string | null) => refLabelOf(refLists, list, v), [refLists]);
 
   const params = useMemo(() => {
     const p: Record<string, string | number | undefined> = { ...applied, format, page, pageSize };
@@ -128,7 +147,10 @@ export function MasterExcel() {
   // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
   // every format has — a format's own columns need that format picked (and Export writes a sheet each).
   const columns = useMemo(
-    () => MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId) && (format ? appliesToFormat(c, format) : isCommonColumn(c))),
+    () =>
+      MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId) && (format ? appliesToFormat(c, format) : isCommonColumn(c))).map((c) =>
+        format ? { ...c, label: labelFor(c, format) } : c,
+      ),
     [shown, format],
   );
   const bands = useMemo(() => {
@@ -165,7 +187,7 @@ export function MasterExcel() {
         : [...byFormat.entries()].map(([f, fr]) => ({
             name: FORMAT_LABELS[f as Format] ?? f,
             rows: fr,
-            columns: shownCols.filter((c) => appliesToFormat(c, f)),
+            columns: shownCols.filter((c) => appliesToFormat(c, f)).map((c) => ({ ...c, label: labelFor(c, f) })),
           }));
       const wb = await buildItemsWorkbook({ sheets, columns, refLabel });
       const buf = await wb.xlsx.writeBuffer();
@@ -194,6 +216,17 @@ export function MasterExcel() {
         <Link href={`/register/${row.lotId}?tab=items`} className={`no-underline hover:underline text-accent ${c.id === 'code' ? 'font-mono' : ''}`}>
           {text}
         </Link>
+      );
+    }
+    if (c.kind === 'photo') {
+      return row.coverUrl ? (
+        <Link href={`/register/${row.lotId}?tab=items`} className="inline-flex items-center gap-1.5 no-underline">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photoThumbUrl(row.coverUrl)} alt="" width={28} height={28} className="h-7 w-7 rounded-[4px] object-cover" />
+          <span className="text-[11.5px] text-ink-3">{row.imageCount}</span>
+        </Link>
+      ) : (
+        <span className="text-ink-4">—</span>
       );
     }
     return text || <span className="text-ink-4">—</span>;

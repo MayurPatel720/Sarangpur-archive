@@ -339,3 +339,31 @@ textarea {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* Print tags: only the tag sheet is printed — everything else is hidden, on white with black text. */
+@media print {
+  body > * {
+    visibility: hidden;
+  }
+  .tag-overlay,
+  .tag-overlay * {
+    visibility: visible;
+  }
+  .tag-overlay {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    height: auto !important;
+    background: white !important;
+    color: black !important;
+  }
+  .tag-noprint {
+    display: none !important;
+  }
+  .tag-print {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  .tag-card {
+    break-inside: avoid;
+    border-color: black !important;
+  }
+}

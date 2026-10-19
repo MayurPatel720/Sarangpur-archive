@@ -37,6 +37,7 @@ export function cellText(
   if (spec.attr) {
     const v = row.attrs[spec.id];
     if (spec.kind === 'flag') return v === true ? 'Yes' : 'No';
+    if (spec.kind === 'ref') return v === null || v === undefined || v === '' ? '' : refLabel(spec.refList ?? '', String(v));
     return v === null || v === undefined ? '' : String(v);
   }
   // Master Excel only — present on its rows, absent on a lot's own Excel.
@@ -102,8 +103,18 @@ export function cellText(
       return row.digitalSource ?? '';
     case 'fileName':
       return row.fileName ?? '';
-    case 'phyStorageLoc':
+    case 'phyStorageLoc': {
+      // A Prasadi item keeps its place as Room / Cabinet / Shelf — shown here as one line (Master Excel "All formats").
+      if (row.format === 'prasadi') {
+        const a = row.attrs;
+        return [a.room ? refLabel('prasadiRoom', String(a.room)) : '', a.cabinet ? `Cabinet ${a.cabinet}` : '', a.shelf ? `Shelf ${a.shelf}` : '']
+          .filter(Boolean)
+          .join(' · ');
+      }
       return row.phyStorageLoc ?? '';
+    }
+    case 'photo':
+      return row.coverUrl ?? '';
     case 'disposition':
       return row.disposition === 'return' ? 'Return' : row.disposition === 'discard' ? 'Discard' : '';
     case 'taggedInMls':

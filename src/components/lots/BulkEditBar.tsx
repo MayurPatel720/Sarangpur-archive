@@ -5,6 +5,7 @@ import { CLEAR, buildBulkSet, bulkFieldsFor, type BulkField } from '@/lib/bulk-f
 import { DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
+import { refOptions, type RefLists } from '@/lib/ref-lists';
 import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 
@@ -19,6 +20,7 @@ const SEARCH_FROM = 12;
 export function BulkEditBar({
   items,
   customColumns,
+  lists,
   canDecide,
   pending,
   onApply,
@@ -26,6 +28,8 @@ export function BulkEditBar({
 }: {
   items: GridItem[];
   customColumns: CustomColumn[];
+  /** The admin-managed lists behind the dropdown fields. */
+  lists: RefLists;
   canDecide: boolean;
   pending: boolean;
   onApply: (set: ItemsBulkSet) => void;
@@ -74,6 +78,27 @@ export function BulkEditBar({
     const v = values[f.id] ?? '';
     const label = `${f.label} for selected items`;
     switch (f.input) {
+      case 'select': {
+        // Subcategory offers the chosen Category's items; with no Category chosen here it offers all of them
+        // (each as "Category › Subcategory") and the server checks every row's own Category.
+        const parentValue = f.refParent ? values[f.refParent.column] : undefined;
+        const narrowed = f.refParent && parentValue ? refOptions(f, lists, parentValue) : null;
+        const options = narrowed ?? (lists[f.refList ?? ''] ?? []).map((o) => {
+          const parentList = f.refParent ? lists['prasadiCategory'] : undefined;
+          const cat = f.refParent ? parentList?.find((c) => c.value === o.meta?.[f.refParent!.metaKey])?.label : undefined;
+          return { ...o, label: cat ? `${cat} › ${o.label}` : o.label };
+        });
+        return (
+          <Select value={v === CLEAR ? '' : v} onChange={(e) => setValue(f.id, e.target.value)} aria-label={label}>
+            <option value="">No change</option>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        );
+      }
       case 'yesno':
         return (
           <Select value={v} onChange={(e) => setValue(f.id, e.target.value)} aria-label={label}>
@@ -137,7 +162,7 @@ export function BulkEditBar({
     }
   };
 
-  const clearable = (f: BulkField) => f.input === 'text' || f.input === 'date' || f.input === 'number' || f.input === 'weeks';
+  const clearable = (f: BulkField) => f.input === 'text' || f.input === 'date' || f.input === 'number' || f.input === 'weeks' || f.input === 'select';
 
   return (
     <section aria-label="Bulk edit selected items" className="rounded-[8px] border border-accent bg-accent-soft p-3 flex flex-col gap-3">
