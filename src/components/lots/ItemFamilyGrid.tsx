@@ -92,6 +92,9 @@ export function ItemFamilyGrid({
 }) {
   // A sheet that shows photos gets rows about four times as tall, so the picture is big enough to see.
   const hasPhotoColumn = columns.some((c) => c.kind === 'photo');
+  // The row height goes into the theme (not the rowHeight prop) so the grid also sizes the text line to it —
+  // that is what keeps every cell's text centred up and down in the taller rows.
+  const gridTheme = useMemo(() => (hasPhotoColumn ? agGridTheme.withParams({ rowHeight: PHOTO_ROW_PX }) : agGridTheme), [hasPhotoColumn]);
   const specById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
   const columnDefs = useMemo<(ColDef<GridItem> | ColGroupDef<GridItem>)[]>(() => {
@@ -478,12 +481,11 @@ export function ItemFamilyGrid({
   return (
     <div className="w-full min-h-[160px]" style={{ height }}>
       <AgGridReact<GridItem>
-        theme={agGridTheme}
+        theme={gridTheme}
         rowData={rows}
         columnDefs={columnDefs}
         defaultColDef={{ sortable: false, suppressMovable: true, resizable: true }}
         getRowId={(p) => p.data.id}
-        rowHeight={hasPhotoColumn ? PHOTO_ROW_PX : undefined}
         rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
         selectionColumnDef={{ pinned: 'left', width: 44 }}
         rowDragManaged={canReorder}

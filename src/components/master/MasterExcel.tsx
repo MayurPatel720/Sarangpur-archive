@@ -328,7 +328,7 @@ export function MasterExcel() {
                   : (data?.rows ?? []).map((row) => (
                       <tr key={row.id} className="hover:bg-accent-soft">
                         {columns.map((c) => (
-                          <td key={c.id} className="border-b border-line-soft px-2 py-1.5 whitespace-nowrap max-w-[320px] truncate">
+                          <td key={c.id} className="border-b border-line-soft px-2 py-1.5 align-middle whitespace-nowrap max-w-[320px] truncate">
                             {cell(row, c)}
                           </td>
                         ))}
