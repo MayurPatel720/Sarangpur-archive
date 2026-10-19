@@ -703,9 +703,7 @@ export function MediaStep({
         description={
           initialFormat
             ? `This intake was opened from the ${cap(initialFormat)} block — every line in this lot is ${cap(initialFormat)}.`
-            : ctx.mode === 'project'
-              ? undefined
-              : 'One row per format / sub-type combination — a mixed lot of prints and cassettes gets two rows. Selection for digitization happens at a later stage.'
+            : undefined
         }
       >
         <EditableTable
