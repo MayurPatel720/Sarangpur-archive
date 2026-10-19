@@ -33,6 +33,8 @@ export function TodoDialog({
   onClose: () => void;
 }) {
   const start = todo ? { urgent: todo.urgent, important: todo.important } : flagsOf(defaultQuadrant ?? 'do');
+  // Autofocus the title only with a mouse / trackpad: on a phone it would pop the keyboard over the form.
+  const finePointer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches === true;
   const [title, setTitle] = useState(todo?.title ?? '');
   const [note, setNote] = useState(todo?.note ?? '');
   const [urgent, setUrgent] = useState(start.urgent);
@@ -53,20 +55,29 @@ export function TodoDialog({
         }}
       >
         <Field label="Title" required>
-          <TextInput value={title} onChange={(e) => setTitle(e.target.value)} maxLength={160} autoFocus aria-label="To-do title" />
+          <TextInput
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={160}
+            name="title"
+            autoComplete="off"
+            autoFocus={finePointer}
+            placeholder="What needs doing…"
+            aria-label="To-do title"
+          />
         </Field>
         <Field label="Note">
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={3} aria-label="To-do note" />
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} rows={3} name="note" autoComplete="off" placeholder="Details, links, who to ask…" aria-label="To-do note" />
         </Field>
 
         <fieldset className="m-0 flex flex-col gap-2 rounded-[8px] border border-line p-3">
           <legend className="px-1 text-[12px] font-semibold text-ink-2">How does it rank?</legend>
           <label className="flex min-h-[32px] cursor-pointer items-center gap-2 text-[13px] text-ink">
-            <input type="checkbox" className="h-4 w-4 accent-accent" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
+            <input type="checkbox" name="urgent" className="h-4 w-4 accent-accent" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
             Urgent <span className="text-[12px] text-ink-3">— has a deadline that is close</span>
           </label>
           <label className="flex min-h-[32px] cursor-pointer items-center gap-2 text-[13px] text-ink">
-            <input type="checkbox" className="h-4 w-4 accent-accent" checked={important} onChange={(e) => setImportant(e.target.checked)} />
+            <input type="checkbox" name="important" className="h-4 w-4 accent-accent" checked={important} onChange={(e) => setImportant(e.target.checked)} />
             Important <span className="text-[12px] text-ink-3">— matters for your real goals</span>
           </label>
           <p className="m-0 text-[12.5px] text-ink-2" aria-live="polite">

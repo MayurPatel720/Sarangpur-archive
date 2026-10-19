@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, todosApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
@@ -31,14 +32,20 @@ export function TodoManager() {
   const toast = useToast();
   const canDelegate = useCan('task:assign');
 
-  const [view, setViewState] = useState<View>('matrix');
+  // The view, the status tabs and the quadrant filter are kept in the URL (?view=table&status=done&quadrant=do),
+  // so a reload or a shared link opens the same screen.
+  const search = useSearchParams();
+  const urlView = search.get('view');
+  const [view, setViewState] = useState<View>(urlView === 'table' || urlView === 'matrix' ? urlView : 'matrix');
   useEffect(() => {
+    if (urlView === 'table' || urlView === 'matrix') return; // the link wins over the remembered choice
     try {
       const saved = localStorage.getItem(VIEW_KEY);
       if (saved === 'matrix' || saved === 'table') setViewState(saved);
     } catch {
       /* storage blocked — the default view is fine */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const setView = (v: View) => {
     setViewState(v);
@@ -50,8 +57,19 @@ export function TodoManager() {
   };
 
   // Table-only controls.
-  const [status, setStatus] = useState<TodoListQuery['status']>('open');
-  const [quadrant, setQuadrant] = useState<QuadrantId | ''>('');
+  const urlStatus = search.get('status');
+  const urlQuadrant = search.get('quadrant');
+  const [status, setStatus] = useState<TodoListQuery['status']>(urlStatus === 'done' || urlStatus === 'all' ? urlStatus : 'open');
+  const [quadrant, setQuadrant] = useState<QuadrantId | ''>(QUADRANTS.some((q) => q.id === urlQuadrant) ? (urlQuadrant as QuadrantId) : '');
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const put = (k: string, v: string | null) => (v ? q.set(k, v) : q.delete(k));
+    put('view', view === 'matrix' ? null : view);
+    put('status', view === 'table' && status !== 'open' ? status : null);
+    put('quadrant', view === 'table' && quadrant ? quadrant : null);
+    const next = q.toString();
+    if (next !== window.location.search.replace(/^\?/, '')) window.history.replaceState(null, '', next ? `?${next}` : window.location.pathname);
+  }, [view, status, quadrant]);
   const [sort, setSort] = useState<TodoListQuery['sort']>('created');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(1);
@@ -158,7 +176,7 @@ export function TodoManager() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0">
-          <h1 className="m-0 text-[20px] font-semibold tracking-[-0.022em] text-ink sm:text-[24px]">My to-do</h1>
+          <h1 className="m-0 text-balance text-[20px] font-semibold tracking-[-0.022em] text-ink sm:text-[24px]">My to-do</h1>
           <p className="m-0 mt-0.5 text-[13px] text-ink-3">
             Private to you.{data ? <> <span className="font-semibold tabular-nums text-ink-2">{data.openTotal}</span> open</> : null}
           </p>

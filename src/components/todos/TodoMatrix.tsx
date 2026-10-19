@@ -93,7 +93,7 @@ export function TodoMatrix({ rows, counts, actions }: { rows: Todo[]; counts: Re
       >
         <header className={`flex flex-col gap-0.5 border-b px-3.5 py-2.5 ${t.band}`}>
           <div className="flex items-center gap-2">
-            <h2 className={`m-0 text-[17px] font-semibold tracking-[-0.015em] ${t.title}`}>{q.label}</h2>
+            <h2 className={`m-0 text-balance text-[17px] font-semibold tracking-[-0.015em] ${t.title}`}>{q.label}</h2>
             <span className={`inline-flex min-w-[22px] items-center justify-center rounded-full border px-1.5 text-[11.5px] font-semibold tabular-nums ${t.pill}`}>
               {counts[id]}
             </span>
@@ -111,7 +111,7 @@ export function TodoMatrix({ rows, counts, actions }: { rows: Todo[]; counts: Re
                 setDragId(null);
                 setOver(null);
               }}
-              className="group flex cursor-grab flex-col gap-1.5 rounded-[8px] border border-line bg-surface-subtle px-3 py-2.5 transition-colors hover:border-line-strong active:cursor-grabbing"
+              className={`group flex cursor-grab select-none flex-col gap-1.5 rounded-[8px] border border-line bg-surface-subtle px-3 py-2.5 transition-colors hover:border-line-strong active:cursor-grabbing ${dragId === todo.id ? 'opacity-50' : ''}`}
             >
               <div className="flex items-start gap-2.5">
                 <input
@@ -150,7 +150,7 @@ export function TodoMatrix({ rows, counts, actions }: { rows: Todo[]; counts: Re
                 </div>
               ) : null}
               {/* The move menu stays out of the way until the card is hovered or focused (always visible on touch screens). */}
-              <label className="flex items-center gap-1.5 pl-[28px] md:h-0 md:overflow-hidden md:opacity-0 md:transition-all md:group-focus-within:h-7 md:group-focus-within:opacity-100 md:group-hover:h-7 md:group-hover:opacity-100">
+              <label className="flex items-center gap-1.5 pl-[28px] md:hidden md:group-focus-within:flex md:group-hover:flex">
                 <span className="text-[11px] font-medium text-ink-3">Move to</span>
                 <Select
                   value={todo.quadrant}
@@ -226,7 +226,9 @@ function QuickAdd({ quadrant, disabled, onAdd }: { quadrant: QuadrantId; disable
           value={text}
           onChange={(e) => setText(e.target.value)}
           maxLength={160}
-          placeholder={`Add to ${label}`}
+          placeholder={`Add to ${label}…`}
+          name={`quick-add-${quadrant}`}
+          autoComplete="off"
           disabled={disabled}
           aria-label={`Quick add to ${label}`}
           className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-4"
