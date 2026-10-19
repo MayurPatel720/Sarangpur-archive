@@ -2,7 +2,8 @@
  * Item-code shape, shared by the server and the Items grid (pure — no imports).
  *
  *   ALB-surat-0001-R-000
- *   │   │     │    │ └ copy number (R is always 000; each duplicate of the same original counts up)
+ *   │   │     │    │ └ last three digits: the copy number. 000 unless the user sets another free value on an
+ *   │   │     │    │   original (R); each duplicate (D) of the same original counts up from 000
  *   │   │     │    └── kind: R = raw / original, D = duplicate of another item
  *   │   │     └─────── running number, shared by every lot that uses the same two abbreviations
  *   │   └───────────── second abbreviation (a place such as "surat")

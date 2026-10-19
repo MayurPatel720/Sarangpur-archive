@@ -29,7 +29,7 @@ import { createItem } from '../src/server/lots/items';
 import { addItemImage, deleteItemImage, listItemImages } from '../src/server/lots/item-images';
 import { LotImage } from '../src/models/LotImage';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
-import type { GridItem, ImportBody } from '../src/types/items';
+import { itemNumberBodySchema, type GridItem, type ImportBody } from '../src/types/items';
 import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
 import { CLEAR, buildBulkSet, bulkFieldsFor } from '../src/lib/bulk-fields';
@@ -437,6 +437,27 @@ async function main() {
     check('Add item on a physical photo lot stays blank', (await grid(physPhoto.id)).items.find((i) => i.id === addedPhys.id)?.digital === null);
     await bulkUpdateItems(digitalPhoto.id, { itemIds: [dpItems[0]!.id], set: { digital: false } }, admin);
     check('the answer can still be changed', (await grid(digitalPhoto.id)).items.find((i) => i.id === dpItems[0]!.id)?.digital === false);
+
+    console.log('last three digits');
+    const cd = (await grid(digitalPhoto.id)).items;
+    const c0 = parseItemCodeParts(cd[0]!.code)!;
+    check('an original starts with copy 000', c0.copy === 0 && c0.kind === 'R');
+    const changedCopy = await setItemNumber(digitalPhoto.id, { itemId: cd[0]!.id, copy: 7 }, admin);
+    check('the last three digits of one item can be set', changedCopy.code === buildItemCode({ ...c0, copy: 7 }) && changedCopy.code.endsWith('-R-007'), changedCopy.code);
+    check('the other items keep theirs', (await grid(digitalPhoto.id)).items.find((i) => i.id === cd[1]!.id)!.code === cd[1]!.code);
+    const noChange = await setItemNumber(digitalPhoto.id, { itemId: cd[0]!.id, copy: 7 }, admin);
+    check('setting the same value changes nothing', noChange.code === changedCopy.code);
+    const both = await setItemNumber(digitalPhoto.id, { itemId: cd[0]!.id, no: c0.no + 500, copy: 12 }, admin);
+    check('number and last digits change together', both.code === buildItemCode({ ...c0, no: c0.no + 500, copy: 12 }), both.code);
+    await setItemNumber(digitalPhoto.id, { itemId: cd[0]!.id, no: c0.no, copy: 7 }, admin);
+    await rejects('a number already used by another item is refused', () => setItemNumber(digitalPhoto.id, { itemId: cd[1]!.id, no: c0.no }, admin), 409);
+    await rejects('nothing to change is refused at the schema', async () => { const r = itemNumberBodySchema.safeParse({ itemId: cd[0]!.id }); if (!r.success) throw Object.assign(new Error('bad'), { status: 400 }); }, 400);
+    check('the last digits are limited to 0-999', !itemNumberBodySchema.safeParse({ itemId: cd[0]!.id, copy: 1000 }).success && !itemNumberBodySchema.safeParse({ itemId: cd[0]!.id, copy: -1 }).success && itemNumberBodySchema.safeParse({ itemId: cd[0]!.id, copy: 999 }).success);
+    const recoded = await recodeSheet(digitalPhoto.id, { lineIndex: 0, abbr1: 'ZZ', abbr2: 'cpytst', startNo: 9100 }, admin);
+    const afterRecode = (await grid(digitalPhoto.id)).items;
+    check('a sheet recode keeps each item own last three digits', afterRecode.length === 3 && afterRecode.map((i) => parseItemCodeParts(i.code)!.copy).sort().join() === '0,0,7' && afterRecode.every((i) => i.code.startsWith('ZZ-cpytst-')), [recoded.firstCode, afterRecode.map((i) => i.code)]);
+    await bulkUpdateItems(digitalPhoto.id, { itemIds: [afterRecode[1]!.id], set: { taggedInMls: true } }, admin);
+    await rejects('an item tagged in MLS keeps its code', () => setItemNumber(digitalPhoto.id, { itemId: afterRecode[1]!.id, copy: 3 }, admin), 409);
 
     console.log('prasadi');
     const prs = await createIntake(

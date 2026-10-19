@@ -209,11 +209,17 @@ export const sheetCodeResponseSchema = z.object({
 });
 export type SheetCodeResponse = z.output<typeof sheetCodeResponseSchema>;
 
-/** PATCH …/items/code — change ONE item's number to a free one (abbreviations stay). */
-export const itemNumberBodySchema = z.object({
-  itemId: objectIdSchema,
-  no: z.number().int().min(1).max(9_999_999),
-});
+/**
+ * PATCH …/items/code — change ONE item's number and / or its last three digits (the copy number,
+ * 0–999) to free ones; the abbreviations stay. Send only what changes.
+ */
+export const itemNumberBodySchema = z
+  .object({
+    itemId: objectIdSchema,
+    no: z.number().int().min(1).max(9_999_999).optional(),
+    copy: z.number().int().min(0).max(999).optional(),
+  })
+  .refine((b) => b.no !== undefined || b.copy !== undefined, { message: 'Nothing to change.' });
 export type ItemNumberBody = z.input<typeof itemNumberBodySchema>;
 export const itemNumberResponseSchema = z.object({ code: z.string() });
 

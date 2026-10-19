@@ -14,7 +14,7 @@ import type { GridItem } from '@/types/items';
  *  - the whole sheet's code: both abbreviations and the first number — the rest simply
  *    continue (and a start number higher than the next free one leaves the numbers in
  *    between free for later);
- *  - this one item's number (to a free one).
+ *  - this one item's number and its last three digits (to free ones).
  * Duplicates (…-D-…) follow their original and are not edited here.
  */
 export function ItemCodeDialog({
@@ -44,6 +44,7 @@ export function ItemCodeDialog({
   const [startTouched, setStartTouched] = useState(false);
   const [highest, setHighest] = useState<number | null>(null);
   const [number, setNumber] = useState(parts ? String(parts.no) : '');
+  const [copy, setCopy] = useState(parts ? String(parts.copy).padStart(3, '0') : '000');
   const [error, setError] = useState<string | null>(null);
 
   const samePair = parts?.abbr1 === abbr1.trim() && parts?.abbr2 === abbr2.trim();
@@ -81,6 +82,9 @@ export function ItemCodeDialog({
   const jump = !samePair && highest !== null && startOk && startNo > highest + 1;
   const captured = recodable.filter((i) => i.captured).length;
 
+  const itemOk = /^\d+$/.test(number) && Number(number) >= 1 && /^\d{1,3}$/.test(copy);
+  const itemChanged = Number(number) !== parts?.no || Number(copy) !== parts?.copy;
+
   const fail = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : 'Could not change the code.');
   const done = (title: string, detail: string) => {
     toast.success(title, detail);
@@ -95,7 +99,12 @@ export function ItemCodeDialog({
     onError: fail,
   });
   const single = useMutation({
-    mutationFn: () => itemsGridApi.setNumber(lotId, { itemId: item.id, no: Number(number) }),
+    mutationFn: () =>
+      itemsGridApi.setNumber(lotId, {
+        itemId: item.id,
+        ...(Number(number) !== parts?.no ? { no: Number(number) } : {}),
+        ...(Number(copy) !== parts?.copy ? { copy: Number(copy) } : {}),
+      }),
     onSuccess: (r) => done('Code updated', r.code),
     onError: fail,
   });
@@ -187,21 +196,26 @@ export function ItemCodeDialog({
 
         <section className="flex flex-col gap-3 border-t border-line-soft pt-4" aria-label="Number of this item">
           <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">Only this item</h3>
-          <div className="flex items-end gap-3">
+          <div className="flex flex-wrap items-end gap-3">
             <Field label="Number">
               <TextInput value={number} inputMode="numeric" onChange={(e) => setNumber(e.target.value)} />
             </Field>
-            <GhostButton
-              disabled={!/^\d+$/.test(number) || Number(number) === parts.no || single.isPending}
-              onClick={() => {
-                setError(null);
-                single.mutate();
-              }}
-            >
-              {single.isPending ? 'Saving…' : 'Change number'}
+            <Field label="Last 3 digits">
+              <TextInput value={copy} inputMode="numeric" maxLength={3} onChange={(e) => setCopy(e.target.value.replace(/\D/g, ''))} />
+            </Field>
+            <GhostButton disabled={!itemChanged || !itemOk || single.isPending} onClick={() => { setError(null); single.mutate(); }}>
+              {single.isPending ? 'Saving…' : 'Change code'}
             </GhostButton>
           </div>
-          <p className="m-0 text-[12px] text-ink-3">Any number not used by another item of {parts.abbr1}-{parts.abbr2}.</p>
+          <p className="m-0 text-[12px] text-ink-3" aria-live="polite">
+            {itemOk ? (
+              <>
+                <span className="font-mono text-ink-2">{buildItemCode({ ...parts, no: Number(number), copy: Number(copy) })}</span> — any combination not used by another item.
+              </>
+            ) : (
+              'The number needs digits, and the last 3 digits can be 000 to 999.'
+            )}
+          </p>
         </section>
 
         <FormError message={error} />

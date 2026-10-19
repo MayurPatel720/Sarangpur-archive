@@ -104,7 +104,8 @@ export async function recodeSheet(lotId: string, body: SheetCodeBody, ctx: Mutat
         const first = [...used].sort((a, b) => a - b)[0]!;
         throw new HttpError(409, `${abbr1}-${abbr2}-${String(first).padStart(4, '0')} is already used by another item. Pick a different start number.`);
       }
-      const codes = own.map((_, idx) => buildItemCode({ abbr1, abbr2, no: start + idx, kind: 'R', copy: 0 }));
+      // Each item keeps its own last three digits (a custom copy number is not reset to 000).
+      const codes = own.map((row, idx) => buildItemCode({ abbr1, abbr2, no: start + idx, kind: 'R', copy: parseItemCodeParts(row.code)?.copy ?? 0 }));
       await LotItem.bulkWrite(
         own.map((i, idx) => ({ updateOne: { filter: { _id: i._id }, update: { $set: { code: codes[idx]! } } } })),
         { session },
@@ -114,7 +115,10 @@ export async function recodeSheet(lotId: string, body: SheetCodeBody, ctx: Mutat
   });
 }
 
-/** Change ONE item's number to a free one (the abbreviations stay). */
+/**
+ * Change ONE item's number and / or its last three digits (copy number) to free ones — the
+ * abbreviations stay. The finished code must not belong to any other item in the archive.
+ */
 export async function setItemNumber(lotId: string, body: ItemNumberBody, ctx: MutationContext): Promise<{ code: string }> {
   return withAudit({
     lotId,
@@ -134,13 +138,19 @@ export async function setItemNumber(lotId: string, body: ItemNumberBody, ctx: Mu
       if ((await referencedBy([it.code], session)).length > 0) {
         throw new HttpError(409, 'This item is the original of a duplicate, so its code can no longer change.');
       }
-      if (parts.no !== body.no) {
-        const used = await usedItemNumbers(parts.abbr1, parts.abbr2, body.no, body.no, session);
-        if (used.has(body.no)) {
-          throw new HttpError(409, `${parts.abbr1}-${parts.abbr2}-${String(body.no).padStart(4, '0')} is already used.`);
+      const no = body.no ?? parts.no;
+      const copy = body.copy ?? parts.copy;
+      if (no === parts.no && copy === parts.copy) return { code: it.code };
+      if (parts.no !== no) {
+        const used = await usedItemNumbers(parts.abbr1, parts.abbr2, no, no, session);
+        if (used.has(no)) {
+          throw new HttpError(409, `${parts.abbr1}-${parts.abbr2}-${String(no).padStart(4, '0')} is already used.`);
         }
       }
-      const code = buildItemCode({ ...parts, no: body.no });
+      const code = buildItemCode({ ...parts, no, copy });
+      if (await LotItem.exists({ code, _id: { $ne: it._id } }).session(session)) {
+        throw new HttpError(409, `${code} is already used by another item.`);
+      }
       await LotItem.updateOne({ _id: it._id }, { $set: { code } }, { session });
       return { code };
     },
