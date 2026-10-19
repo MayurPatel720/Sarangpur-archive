@@ -6,6 +6,7 @@ import { ApiRequestError, todosApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { MAX_OPEN_TODOS, QUADRANTS, flagsOf, type QuadrantId } from '@/lib/todo';
 import { useCan } from '@/hooks/useCan';
+import { IconPlus } from '@/components/ui/icons';
 import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
 import { GhostButton, PrimaryButton, Select } from '@/components/ui/Form';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
@@ -145,8 +146,8 @@ export function TodoManager() {
       type="button"
       aria-pressed={view === v}
       onClick={() => setView(v)}
-      className={`min-h-[34px] px-3 rounded-[6px] border text-[12.5px] font-semibold cursor-pointer ${
-        view === v ? 'bg-accent-soft border-accent text-accent' : 'bg-surface border-line text-ink-2'
+      className={`min-h-[30px] cursor-pointer rounded-[6px] border-0 px-3.5 text-[12.5px] font-semibold transition-colors ${
+        view === v ? 'bg-surface text-ink shadow-control' : 'bg-transparent text-ink-3 hover:text-ink'
       }`}
     >
       {label}
@@ -157,12 +158,12 @@ export function TodoManager() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0">
-          <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">My to-do</h1>
-          <p className="m-0 text-[12.5px] text-ink-3">
-            Only you can see this list. {data ? `${data.openTotal} open` : ''}
+          <h1 className="m-0 text-[20px] font-semibold tracking-[-0.022em] text-ink sm:text-[24px]">My to-do</h1>
+          <p className="m-0 mt-0.5 text-[13px] text-ink-3">
+            Private to you.{data ? <> <span className="font-semibold tabular-nums text-ink-2">{data.openTotal}</span> open</> : null}
           </p>
         </div>
-        <div role="group" aria-label="View" className="flex gap-1.5 sm:ml-auto">
+        <div role="group" aria-label="View" className="inline-flex gap-0.5 rounded-[8px] border border-line bg-surface-sunken p-0.5 sm:ml-auto">
           {viewButton('matrix', 'Matrix')}
           {viewButton('table', 'Table')}
         </div>
@@ -172,13 +173,16 @@ export function TodoManager() {
             setDialog({});
           }}
         >
-          Add to-do
+          <span className="inline-flex items-center gap-1.5">
+            <IconPlus size={15} />
+            Add to-do
+          </span>
         </PrimaryButton>
       </div>
 
       {view === 'table' ? (
         <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Show" className="flex gap-1.5">
+          <div role="group" aria-label="Show" className="inline-flex gap-0.5 rounded-[8px] border border-line bg-surface-sunken p-0.5">
             {(['open', 'done', 'all'] as const).map((s) => (
               <button
                 key={s}
@@ -188,8 +192,8 @@ export function TodoManager() {
                   setStatus(s);
                   setPage(1);
                 }}
-                className={`min-h-[32px] px-2.5 rounded-[6px] border text-[12px] font-semibold cursor-pointer ${
-                  status === s ? 'bg-accent-soft border-accent text-accent' : 'bg-surface border-line text-ink-2'
+                className={`min-h-[28px] cursor-pointer rounded-[6px] border-0 px-3 text-[12px] font-semibold transition-colors ${
+                  status === s ? 'bg-surface text-ink shadow-control' : 'bg-transparent text-ink-3 hover:text-ink'
                 }`}
               >
                 {s === 'open' ? 'Open' : s === 'done' ? 'Done' : 'All'}
