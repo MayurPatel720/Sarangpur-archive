@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   // Vercel builds its own output and warns about this setting, so it is switched off
   // there. VERCEL=1 is set automatically during a Vercel build.
   output: process.env.VERCEL ? undefined : 'standalone',
+
+  // The old My to-do page was replaced by the matrix at /todos; keep old links working.
+  async redirects() {
+    return [{ source: '/todo', destination: '/todos', permanent: false }];
+  },
 };
 
 export default nextConfig;
