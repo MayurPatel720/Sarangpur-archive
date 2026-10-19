@@ -28,7 +28,6 @@ import {
   MediaStep,
   OriginContactsStep,
   ReviewSummary,
-  RightsSection,
   buildMediaLines,
   buildSharedFields,
   emptyDraft,
@@ -47,7 +46,6 @@ const STEPS = [
   { label: 'Origin & contacts' },
   { label: 'Condition & notes' },
   { label: 'Media & quantities' },
-  { label: 'Rights & review' },
 ] as const;
 const STEP_ORIGIN = 0;
 const STEP_CONDITION = 1;
@@ -58,7 +56,6 @@ const STEP_INTROS: readonly (string | null)[] = [
   'Where the media came from and who to contact about it.',
   'Condition on arrival, why it was sent, and any return request.',
   null,
-  'Rights paperwork, then a final review before registering.',
 ];
 
 export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
@@ -88,6 +85,8 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   const markDone = (index: number, done: boolean) =>
     setStepsDone((prev) => (prev[index] === done ? prev : prev.map((v, k) => (k === index ? done : v))));
   const [formError, setFormError] = useState<string | null>(null);
+  /** The review summary stays hidden until asked for ("View review"), like the project wizard. */
+  const [showReview, setShowReview] = useState(false);
 
   // Photos of the physical items: kept in state and uploaded once the lot exists.
   const toast = useToast();
@@ -335,9 +334,8 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
             }
           />
         ) : null}
-        {step === 3 ? (
+        {step === STEP_MEDIA && showReview ? (
           <StepBlocks>
-            <RightsSection ctx={ctx} />
             <FormSection legend="Review">
               <ReviewSummary
                 mode="lot"
@@ -366,9 +364,14 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
             {step < STEPS.length - 1 ? (
               <PrimaryButton onClick={goNext}>Next</PrimaryButton>
             ) : (
-              <PrimaryButton disabled={busy} onClick={submit}>
-                {uploadingPhotos ? 'Uploading photos…' : create.isPending ? 'Registering…' : 'Register lot'}
-              </PrimaryButton>
+              <>
+                <GhostButton disabled={busy} onClick={() => setShowReview((v) => !v)}>
+                  {showReview ? 'Hide review' : 'View review'}
+                </GhostButton>
+                <PrimaryButton disabled={busy} onClick={submit}>
+                  {uploadingPhotos ? 'Uploading photos…' : create.isPending ? 'Registering…' : 'Register lot'}
+                </PrimaryButton>
+              </>
             )}
           </div>
         </div>
