@@ -18,7 +18,7 @@ import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { mediaTypeText } from '@/lib/item-cells';
 import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
 import { refLabel, refOptions, type RefLists } from '@/lib/ref-lists';
-import { photoThumbUrl } from '@/lib/project-photos';
+import { photoMediumUrl } from '@/lib/project-photos';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
 
@@ -29,6 +29,9 @@ import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } 
  */
 
 type Spec = ColumnSpec & { custom?: CustomColumn };
+
+/** Row height of a sheet with a photo column (a normal row is 42px: this is about four of them). */
+export const PHOTO_ROW_PX = 168;
 type Tri = boolean | null;
 const TRI_VALUES = ['Yes', 'No', ''] as const;
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
@@ -43,6 +46,7 @@ export function ItemFamilyGrid({
   canReorder,
   refLists,
   onOpenPhotos,
+  onViewPhotos,
   height,
   onOpenCode,
   onDuplicate,
@@ -66,8 +70,10 @@ export function ItemFamilyGrid({
   canReorder: boolean;
   /** Every admin-managed list the dropdown columns read (Guru, Category, …). */
   refLists: RefLists;
-  /** Open the item's photos (Prasadi). */
+  /** Open the item's photos to add / delete (Prasadi). */
   onOpenPhotos: (item: GridItem) => void;
+  /** View the item's photos full screen. */
+  onViewPhotos: (item: GridItem) => void;
   /** CSS height of the grid box. */
   height: string;
   onOpenCode: (item: GridItem) => void;
@@ -84,6 +90,8 @@ export function ItemFamilyGrid({
   onSelectionChange: (sheet: number, ids: string[]) => void;
   onApi: (sheet: number, api: GridApi<GridItem> | null) => void;
 }) {
+  // A sheet that shows photos gets rows about four times as tall, so the picture is big enough to see.
+  const hasPhotoColumn = columns.some((c) => c.kind === 'photo');
   const specById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
   const columnDefs = useMemo<(ColDef<GridItem> | ColGroupDef<GridItem>)[]>(() => {
@@ -248,19 +256,32 @@ export function ItemFamilyGrid({
             ...base,
             editable: false,
             sortable: false,
-            cellClass: 'cursor-pointer',
-            tooltipValueGetter: () => 'Click to see or add photos',
-            onCellClicked: (p) => p.data && onOpenPhotos(p.data),
+            cellClass: 'cursor-pointer !p-1',
+            tooltipValueGetter: (p) => (p.data?.coverUrl ? 'Click to see the photos full screen' : 'Click to add photos'),
+            // Click the picture → full screen. Click "Manage" (or an empty cell) → add / delete photos.
+            onCellClicked: (p) => {
+              if (!p.data) return;
+              const manage = (p.event?.target as HTMLElement | null)?.closest('[data-manage]');
+              if (manage || !p.data.coverUrl) onOpenPhotos(p.data);
+              else onViewPhotos(p.data);
+            },
             valueGetter: (p) => p.data?.imageCount ?? 0,
             cellRenderer: (p: ICellRendererParams<GridItem>) =>
               p.data?.coverUrl ? (
-                <span className="flex h-full items-center gap-1.5">
+                <span className="relative block h-full w-full overflow-hidden rounded-[6px]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoThumbUrl(p.data.coverUrl)} alt="" width={32} height={32} className="h-8 w-8 rounded-[4px] object-cover" />
-                  <span className="text-[11.5px] text-ink-3">{p.data.imageCount}</span>
+                  <img src={photoMediumUrl(p.data.coverUrl)} alt="" className="h-full w-full object-cover" />
+                  <span className="absolute bottom-1 left-1 rounded-[4px] bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                    {p.data.imageCount} {p.data.imageCount === 1 ? 'photo' : 'photos'}
+                  </span>
+                  <span data-manage className="absolute right-1 top-1 rounded-[4px] bg-surface px-1.5 py-0.5 text-[11px] font-semibold text-accent shadow-control">
+                    Manage
+                  </span>
                 </span>
               ) : (
-                <span className="text-[12px] font-medium text-accent">+ Add photo</span>
+                <span className="flex h-full w-full items-center justify-center rounded-[6px] border border-dashed border-line-strong text-[12px] font-medium text-accent">
+                  + Add photo
+                </span>
               ),
           };
         case 'weeks':
@@ -420,7 +441,7 @@ export function ItemFamilyGrid({
       ...(codeCol ? [build(codeCol)] : []),
       ...groups,
     ];
-  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;
@@ -462,6 +483,7 @@ export function ItemFamilyGrid({
         columnDefs={columnDefs}
         defaultColDef={{ sortable: false, suppressMovable: true, resizable: true }}
         getRowId={(p) => p.data.id}
+        rowHeight={hasPhotoColumn ? PHOTO_ROW_PX : undefined}
         rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
         selectionColumnDef={{ pinned: 'left', width: 44 }}
         rowDragManaged={canReorder}

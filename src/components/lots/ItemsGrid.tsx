@@ -20,11 +20,12 @@ import { DuplicateDialog } from './DuplicateDialog';
 import { exportItemsToExcel } from './excel-io';
 import { BulkEditBar } from './BulkEditBar';
 import { ItemPhotosDialog } from './ItemPhotosDialog';
+import { ItemPhotoViewer } from './ItemPhotoViewer';
 import { TagSheet } from './TagSheet';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
-import { ItemFamilyGrid } from './ItemFamilyGrid';
+import { ItemFamilyGrid, PHOTO_ROW_PX } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
 
 /**
@@ -69,6 +70,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [fullscreen, setFullscreen] = useState(false);
   /** The item whose photos are open (Prasadi). */
   const [photosFor, setPhotosFor] = useState<GridItem | null>(null);
+  /** The item whose photos are open full screen. */
+  const [viewing, setViewing] = useState<GridItem | null>(null);
   const [showTags, setShowTags] = useState(false);
   /** View only: which departments' columns are showing (not saved). */
   const [shownDepts, setShownDepts] = useState<DeptId[]>(() => DEPARTMENTS.map((d) => d.id));
@@ -279,10 +282,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const single = sheets.length <= 1;
   const canReorder = canDetails && filter === 'all';
 
-  const gridHeight = (rowCount: number) => {
+  const gridHeight = (rowCount: number, rowPx = ROW_PX) => {
     if (single) return fullscreen ? '100%' : 'max(420px, calc(100dvh - 320px))';
-    const natural = 100 + rowCount * ROW_PX;
-    return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, 560)}px`;
+    const natural = 100 + rowCount * rowPx;
+    return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, rowPx > ROW_PX ? 780 : 560)}px`;
   };
 
   const iconBtn =
@@ -457,7 +460,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   canReorder={canReorder}
                   refLists={refLists}
                   onOpenPhotos={setPhotosFor}
-                  height={gridHeight(sh.rows.length)}
+                  onViewPhotos={setViewing}
+                  height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : ROW_PX)}
                   onOpenCode={onOpenCode}
                   onDuplicate={onDuplicate}
                   onHide={hideColumn}
@@ -515,6 +519,17 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         </div>
       </div>
 
+      {viewing ? (
+        <ItemPhotoViewer
+          lotId={lotId}
+          item={viewing}
+          onClose={() => setViewing(null)}
+          onManage={() => {
+            setPhotosFor(viewing);
+            setViewing(null);
+          }}
+        />
+      ) : null}
       {photosFor ? (
         <ItemPhotosDialog
           lotId={lotId}

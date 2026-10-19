@@ -160,7 +160,7 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'place', label: 'Place', dept: 'details', kind: 'text', field: 'place', width: 160, hint: 'More than one place: separate with commas.' },
   // Prasadi — what the item is, who used it and where it came from (see docs: "Prasadi Item Requirements").
   { id: 'itemName', label: 'Title', dept: 'details', kind: 'text', field: 'itemName', width: 200, formats: PRASADI, hint: 'What it is, e.g. Mala, Vastra, Charnarvind, Walking stick.' },
-  { id: 'photo', label: 'Photo', dept: 'details', kind: 'photo', width: 120, formats: PRASADI, hint: 'Click to see, take or add photos of this item (up to 5; the first is the cover).' },
+  { id: 'photo', label: 'Photo', dept: 'details', kind: 'photo', width: 180, formats: PRASADI, hint: 'Click to see, take or add photos of this item (up to 5; the first is the cover).' },
   { id: 'category', label: 'Category', dept: 'details', kind: 'ref', field: 'category', attr: true, refList: 'prasadiCategory', resets: ['subcategory'], width: 170, formats: PRASADI },
   { id: 'subcategory', label: 'Subcategory', dept: 'details', kind: 'ref', field: 'subcategory', attr: true, refList: 'prasadiSubcategory', refParent: { column: 'category', metaKey: 'category' }, width: 190, formats: PRASADI, hint: 'Pick the Category first — only its subcategories are offered.' },
   { id: 'blessedBy', label: 'Guru', dept: 'details', kind: 'ref', field: 'blessedBy', attr: true, refList: 'guru', width: 200, formats: PRASADI, hint: 'The Guru who used / blessed it.' },
