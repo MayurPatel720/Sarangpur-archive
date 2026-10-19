@@ -63,6 +63,8 @@ type Props<T> = {
   minRows?: number;
   maxRows?: number;
   addLabel?: string;
+  /** Show only a "+" button (the label stays as its tooltip / accessible name). */
+  addIconOnly?: boolean;
   rowName?: (index: number) => string;
   /** Tooltip when delete is disabled at minRows. */
   minRowsHint?: string;
@@ -86,6 +88,7 @@ export function EditableTable<T>({
   minRows = 0,
   maxRows = Number.POSITIVE_INFINITY,
   addLabel = 'Add row',
+  addIconOnly = false,
   rowName = (i) => `Row ${i + 1}`,
   minRowsHint,
   emptyMessage,
@@ -287,12 +290,24 @@ export function EditableTable<T>({
 
       <div className="flex items-center gap-x-3 gap-y-2 flex-wrap">
         {canAdd ? (
-          <GhostButton onClick={handleAdd}>
-            <span className="inline-flex items-center gap-1.5">
-              <IconPlus size={15} />
-              {addLabel}
-            </span>
-          </GhostButton>
+          addIconOnly ? (
+            <button
+              type="button"
+              onClick={handleAdd}
+              aria-label={addLabel}
+              title={addLabel}
+              className="inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[6px] border border-line bg-surface text-ink-2 hover:bg-accent-soft"
+            >
+              <IconPlus size={16} />
+            </button>
+          ) : (
+            <GhostButton onClick={handleAdd}>
+              <span className="inline-flex items-center gap-1.5">
+                <IconPlus size={15} />
+                {addLabel}
+              </span>
+            </GhostButton>
+          )
         ) : null}
         {Number.isFinite(maxRows) && maxRows > 1 ? (
           <span className="text-[12px] text-ink-3 tabular-nums">

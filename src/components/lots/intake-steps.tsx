@@ -701,6 +701,7 @@ export function MediaStep({
           minRows={1}
           maxRows={20}
           addLabel="Add row"
+          addIconOnly
           rowName={(i) => `Line ${i + 1}`}
           minRowsHint="At least one media line is required"
           rowActions={rowActions ? ({ row }) => rowActions(row) : undefined}
