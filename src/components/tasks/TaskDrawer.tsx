@@ -78,7 +78,22 @@ export function TaskDrawer({ taskId, onClose }: { taskId: string; onClose: () =>
           canEdit={canEdit}
           canCancel={data?.can.cancel ?? false}
           pending={run.isPending}
-          onRename={(title) => task && run.mutate(() => tasksApi.update(task.id, { title }))}
+          onRename={(title) =>
+            task && run.mutate(() => (task.personal ? tasksApi.updateMine(task.id, { title }) : tasksApi.update(task.id, { title })))
+          }
+          onDelete={
+            task?.personal && canEdit
+              ? () => {
+                  void tasksApi
+                    .deleteMine(task.id)
+                    .then(() => {
+                      void queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+                      onClose();
+                    })
+                    .catch((e) => toast.error('Could not delete the to-do', e instanceof ApiRequestError ? e.message : undefined));
+                }
+              : undefined
+          }
           onCancelTask={() => task && run.mutate(() => tasksApi.setStatus(task.id, { status: 'cancelled' }))}
           onClose={onClose}
         />
@@ -130,7 +145,11 @@ export function TaskDrawer({ taskId, onClose }: { taskId: string; onClose: () =>
                         maxLength={2000}
                         placeholder="Add a description…"
                         ariaLabel="Task description"
-                        onSave={(description) => run.mutate(() => tasksApi.update(task.id, { description }))}
+                        onSave={(description) =>
+                          run.mutate(() =>
+                            task.personal ? tasksApi.updateMine(task.id, { description }) : tasksApi.update(task.id, { description }),
+                          )
+                        }
                       />
                     </div>
                   </Section>
@@ -147,11 +166,12 @@ export function TaskDrawer({ taskId, onClose }: { taskId: string; onClose: () =>
 
                 <Section title="Activity">
                   <TaskActivity
+                    taskId={task.id}
                     comments={task.comments}
                     history={data.history}
                     canComment={data.can.changeStatus || data.can.edit}
                     pending={run.isPending}
-                    onPost={(text, reset) => run.mutate(() => tasksApi.comment(task.id, { text }), { onSuccess: reset })}
+                    onPost={(body, reset) => run.mutate(() => tasksApi.comment(task.id, body), { onSuccess: reset })}
                   />
                 </Section>
               </div>
@@ -161,7 +181,13 @@ export function TaskDrawer({ taskId, onClose }: { taskId: string; onClose: () =>
                   task={task}
                   canEdit={canEdit}
                   pending={run.isPending}
-                  onUpdate={(body) => run.mutate(() => tasksApi.update(task.id, body))}
+                  onUpdate={(body) =>
+                    run.mutate(() =>
+                      task.personal
+                        ? tasksApi.updateMine(task.id, { priority: body.priority, dueDate: body.dueDate })
+                        : tasksApi.update(task.id, body),
+                    )
+                  }
                 />
               </aside>
             </div>

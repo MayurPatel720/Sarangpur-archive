@@ -125,7 +125,7 @@ async function buildItemDocs(
         notDigitizedReason: selected ? null : line.notDigitizedReason,
         // Prasadi is never digitized: it starts already decided as "keep physical".
         ...autoDecisionFields(line.format),
-        // A digital photo / video line already has its files: Decision "Digital" starts as Yes.
+        // A digital copy already exists (a digital photo / video line, or Physical + Digital): "Digital" starts as Yes.
         ...bornDigitalFields(line.format, line.dataType),
       });
       n += 1;

@@ -16,6 +16,7 @@ export function TaskDrawerHeader({
   pending,
   onRename,
   onCancelTask,
+  onDelete,
   onClose,
 }: {
   task: TaskRow | undefined;
@@ -24,6 +25,8 @@ export function TaskDrawerHeader({
   pending: boolean;
   onRename: (title: string) => void;
   onCancelTask: () => void;
+  /** Set for a personal to-do owned by the viewer: shows a Delete button. */
+  onDelete?: () => void;
   onClose: () => void;
 }) {
   return (
@@ -44,12 +47,24 @@ export function TaskDrawerHeader({
               <TaskStatusBadge status={task.status} />
               <TaskPriorityBadge priority={task.priority} />
               {task.overdue ? <Badge severity="critical">Overdue</Badge> : null}
+              {task.personal ? <Badge severity="neutral">Personal</Badge> : null}
             </div>
           </>
         ) : (
           <Skeleton className="h-5 w-56" />
         )}
       </div>
+      {onDelete ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('Delete this to-do? This cannot be undone.')) onDelete();
+          }}
+          className="h-9 px-3 text-[12.5px] font-semibold bg-transparent border border-line-strong rounded-[6px] text-danger cursor-pointer"
+        >
+          Delete
+        </button>
+      ) : null}
       {canCancel && task && task.status !== 'cancelled' ? (
         <TaskMoreMenu pending={pending} onCancelTask={onCancelTask} />
       ) : null}

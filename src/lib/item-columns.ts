@@ -6,10 +6,10 @@
  * row 2 the column names):
  *
  *   Details                 Media type · Archive code · Sender's code · Date · Place · Name on tape ·
- *                           Name on case · Phy source · Remark · Duplicate code
- *   Decision                digital · redigital · discard · Remark
- *   Digitalization & Storage  Captured · Dig source · File path · Phy storage loc. · Return / discard ·
- *                           MLS tagged · Remark
+ *                           Name on case · Phy source · Details remark · Duplicate code
+ *   Decision                digital · redigital · discard · Decision remark
+ *   Digitalization & Storage  Digitalized · Dig source · File path · Phy storage loc. · Return / discard ·
+ *                           MLS tagged · Storage remark
  *   Logging                 Status · Logging date · Logger's name
  *
  * Users can add their own columns to a lot's Excel (`lot.customColumns`) — each one belongs
@@ -91,6 +91,8 @@ export interface ColumnSpec {
   viaDialog?: boolean;
   /** Keep this column in the Master Excel's "All formats" view even though some formats leave it out. */
   common?: boolean;
+  /** Older header names, so sheets exported before a rename still import. */
+  aliases?: string[];
 }
 
 type FormatRule = Pick<ColumnSpec, 'formats' | 'notFormats'>;
@@ -147,7 +149,7 @@ export function forFormat<T extends Pick<ColumnSpec, 'id' | 'label' | 'labels' |
 }
 
 /** Every name a column answers to — its base label and each per-format one — for matching an imported header. */
-export const allLabels = (c: Pick<ColumnSpec, 'label' | 'labels'>): string[] => [c.label, ...Object.values(c.labels ?? {})];
+export const allLabels = (c: Pick<ColumnSpec, 'label' | 'labels' | 'aliases'>): string[] => [c.label, ...Object.values(c.labels ?? {}), ...(c.aliases ?? [])];
 
 
 /*
@@ -190,16 +192,16 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170, notFormats: PRASADI },
   { id: 'nameOnCase', label: 'Name on case', dept: 'details', kind: 'text', field: 'nameOnCase', width: 170, notFormats: PRASADI },
   { id: 'physicalSource', label: 'Phy source', dept: 'details', kind: 'text', field: 'physicalSource', width: 160 },
-  { id: 'remarks', label: 'Remark', dept: 'details', kind: 'text', field: 'remarks', width: 180 },
+  { id: 'remarks', label: 'Details remark', aliases: ['Remark'], dept: 'details', kind: 'text', field: 'remarks', width: 190 },
   { id: 'duplicateCode', label: 'Duplicate code', dept: 'details', kind: 'duplicate', width: 210, notFormats: PRASADI, hint: 'Type the code of the item this one duplicates (any lot).' },
   // Decision
   // (Prasadi cannot be digitized: it is kept physically, so it has no Decision columns.)
   { id: 'digital', label: 'Digital', dept: 'decision', kind: 'yesno', field: 'digital', width: 100, notFormats: PRASADI },
   { id: 'redigital', label: 'Redigital', dept: 'decision', kind: 'yesno', field: 'redigital', width: 110, notFormats: PRASADI },
   { id: 'discard', label: 'Discard', dept: 'decision', kind: 'yesno', field: 'discard', width: 100, notFormats: PRASADI },
-  { id: 'decisionRemark', label: 'Remark', dept: 'decision', kind: 'text', field: 'decisionRemark', width: 180, notFormats: PRASADI },
+  { id: 'decisionRemark', label: 'Decision remark', aliases: ['Remark'], dept: 'decision', kind: 'text', field: 'decisionRemark', width: 190, notFormats: PRASADI },
   // Digitalization & Storage
-  { id: 'captured', label: 'Captured', dept: 'storage', kind: 'flag', field: 'captured', width: 110, notFormats: PRASADI },
+  { id: 'captured', label: 'Digitalized', aliases: ['Captured'], dept: 'storage', kind: 'flag', field: 'captured', width: 120, notFormats: PRASADI, hint: 'Yes = the digital file exists.' },
   { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, notFormats: PRASADI, hint: 'Where the digital copy came from, e.g. Mumbai.' },
   { id: 'fileName', label: 'File path', dept: 'storage', kind: 'text', field: 'fileName', width: 240 },
   { id: 'phyStorageLoc', label: 'Phy storage loc.', dept: 'storage', kind: 'text', field: 'phyStorageLoc', width: 170, notFormats: PRASADI, common: true },
@@ -212,7 +214,7 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'lastCheckedAt', label: 'Last checked', dept: 'storage', kind: 'info', width: 130, formats: PRASADI },
   { id: 'disposition', label: 'Return / discard', dept: 'storage', kind: 'disposition', field: 'disposition', width: 150 },
   { id: 'taggedInMls', label: 'MLS tagged', dept: 'storage', kind: 'flag', field: 'taggedInMls', width: 120 },
-  { id: 'storageRemark', label: 'Remark', dept: 'storage', kind: 'text', field: 'storageRemark', width: 180 },
+  { id: 'storageRemark', label: 'Storage remark', aliases: ['Remark'], dept: 'storage', kind: 'text', field: 'storageRemark', width: 190 },
   // Logging
   { id: 'logged', label: 'Status', dept: 'logging', kind: 'flag', field: 'logged', width: 100, hint: 'Yes = this row has been logged.' },
   { id: 'loggedAt', label: 'Logging date', dept: 'logging', kind: 'date', field: 'loggedAt', width: 140 },

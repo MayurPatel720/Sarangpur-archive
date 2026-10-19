@@ -9,7 +9,8 @@ import { LotImage, type LotImageDoc } from '@/models/LotImage';
 import { LotItem } from '@/models/LotItem';
 import { canWorkLot } from '@/server/lots/access';
 import { can } from '@/server/permissions';
-import { dropAsset, putAsset, type ParsedUpload } from '@/server/projects/images';
+import { destroyImage, uploadImage } from '@/server/cloudinary';
+import type { ParsedUpload } from '@/server/projects/images';
 import { shapeLotImage } from '@/server/lots/images';
 import { ITEM_PHOTO_MAX, type ItemImage, type ItemImagesResponse } from '@/types/lot-image';
 
@@ -80,7 +81,7 @@ export async function addItemImage(lotId: string, itemId: string, upload: Parsed
   if ((await LotImage.countDocuments({ item: item._id })) >= ITEM_PHOTO_MAX) {
     throw new HttpError(400, `An item can have at most ${ITEM_PHOTO_MAX} photos. Delete one first.`);
   }
-  const stored = await putAsset(`lots/${lotId}/items/${itemId}`, upload.file);
+  const stored = await uploadImage(`archive-tracker/lots/${lotId}/items/${itemId}`, upload.file);
 
   const session = await LotImage.startSession();
   try {
@@ -106,7 +107,7 @@ export async function addItemImage(lotId: string, itemId: string, upload: Parsed
     if (!created) throw new HttpError(500, 'Could not save the photo.');
     return { image: created };
   } catch (error) {
-    await dropAsset(stored.publicId);
+    await destroyImage(stored.publicId);
     throw error;
   } finally {
     await session.endSession();
@@ -150,7 +151,7 @@ export async function deleteItemImage(lotId: string, itemId: string, imageId: st
       await syncItem(session, item._id); // the next oldest photo becomes the cover when the cover was deleted
       await log(session, lot, item, ctx, 'lot_image_deleted', `Photo deleted from ${item.code}`, doc.caption || doc.fileName);
     });
-    if (publicId) await dropAsset(publicId);
+    if (publicId) await destroyImage(publicId);
     return { ok: true };
   } finally {
     await session.endSession();

@@ -105,7 +105,7 @@ async function excelRoundTrip() {
   check('sheet name made Excel-safe and read back', parsed.sheets === 1 && wb.worksheets[0]!.name === 'Album 35MM Film', wb.worksheets[0]!.name);
   check('both rows read, keyed by Archive code', parsed.rows.length === 2 && Boolean(r1), parsed.rows.length);
   check('cells keyed by department and column name', r1?.cells['Details|Place'] === 'Surat, Mumbai' && r1.cells['Details|Date'] === '12/03/1998 - 20/03/1998' && r1.cells['Decision|Digital'] === 'Yes' && r1.cells['Decision|Discard'] === 'Yes', r1?.cells);
-  check('same column name in two departments stays apart', r1?.cells['Details|Remark'] === 'r1' && !('Decision|Remark' in r1.cells), r1?.cells);
+  check('the Details and Decision remarks stay apart', r1?.cells['Details|Details remark'] === 'r1' && !('Decision|Decision remark' in r1.cells), r1?.cells);
   check('custom column travels with its department', r1?.cells['Digitalization & Storage|Reel'] === '4', r1?.cells);
   check('blank cells are left out', !('Details|Place' in (parsed.rows.find((r) => r.code === 'ALB-surat-0002-R-000')?.cells ?? {})));
 
@@ -116,7 +116,7 @@ async function excelRoundTrip() {
   check('prasadi gets its own columns', ['Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Received by', 'Related media', 'Condition', 'Room', 'Cabinet', 'Shelf', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
   check('prasadi: the common Date column reads Date received, other formats keep Date', labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'prasadi') === 'Date received' && labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'photo') === 'Date', null);
   const prsDetails = forFormat(allColumns([]), 'prasadi').filter((c) => c.dept === 'details').map((c) => c.label);
-  check('prasadi Details follow the requirements document, number by number', prsDetails.join(' | ') === ['Media type', 'Archive code', 'Status', 'Title', 'Photo', 'Photo Archive', 'Category', 'Subcategory', 'Guru', 'Location used by Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Date received', 'Received From', 'Received by', 'Room', 'Cabinet', 'Shelf', 'Related media', 'Condition', "Sender's code", 'Phy source', 'Remark'].join(' | '), prsDetails);
+  check('prasadi Details follow the requirements document, number by number', prsDetails.join(' | ') === ['Media type', 'Archive code', 'Status', 'Title', 'Photo', 'Photo Archive', 'Category', 'Subcategory', 'Guru', 'Location used by Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Date received', 'Received From', 'Received by', 'Room', 'Cabinet', 'Shelf', 'Related media', 'Condition', "Sender's code", 'Phy source', 'Details remark'].join(' | '), prsDetails);
   const photoRegistry = allColumns([]).filter((c) => appliesToFormat(c, 'photo')).map((c) => c.id).join();
   check('other formats keep the registry order', forFormat(allColumns([]), 'photo').map((c) => c.id).join() === photoRegistry);
   // Status: Active / Inactive / Details Missing
@@ -137,8 +137,8 @@ async function excelRoundTrip() {
   check('prasadi: Phy storage loc. is replaced by Room / Cabinet / Shelf, but stays a common column', !prs.includes('Phy storage loc.') && allColumns([]).filter(isCommonColumn).some((c) => c.id === 'phyStorageLoc'), prs);
   check('prasadi drops video-only columns', !['Name on tape', 'Name on case', 'Dig source', 'Duplicate code'].some((l) => prs.includes(l)), prs);
   check('prasadi has no Decision columns and no Captured', !['Digital', 'Redigital', 'Discard', 'Captured'].some((l) => prs.includes(l)), prs);
-  check('prasadi keeps path / storage / MLS / remark', ['File path', 'MLS tagged', 'Return / discard', 'Remark', 'Place'].every((l) => prs.includes(l)), prs);
-  check('video has no prasadi columns but keeps tape / case / decision', !vid.includes('Blessed by') && !vid.includes('Sticker applied') && !vid.includes('Re-check in') && vid.includes('Name on tape') && vid.includes('Name on case') && vid.includes('Digital') && vid.includes('Captured'), vid);
+  check('prasadi keeps path / storage / MLS / remark', ['File path', 'MLS tagged', 'Return / discard', 'Details remark', 'Place'].every((l) => prs.includes(l)), prs);
+  check('video has no prasadi columns but keeps tape / case / decision', !vid.includes('Blessed by') && !vid.includes('Sticker applied') && !vid.includes('Re-check in') && vid.includes('Name on tape') && vid.includes('Name on case') && vid.includes('Digital') && vid.includes('Digitalized'), vid);
   check('no format known = every column', allColumns([]).every((c) => appliesToFormat(c, null)));
   const common = allColumns([]).filter(isCommonColumn).map((c) => c.label);
   check('common columns carry no format-specific column', !['Blessed by', 'Name on tape', 'Digital', 'Re-check in'].some((l) => common.includes(l)) && common.includes('Place') && common.includes('Logging date'), common);
@@ -147,7 +147,7 @@ async function excelRoundTrip() {
   check('weeks → due date', nextCheckDate(new Date('2026-10-17T15:00:00Z'), 3).toISOString().slice(0, 10) === '2026-11-07');
   check('overdue days', daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-10T08:00:00Z')) === 3 && daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-07T23:00:00Z')) === 0);
   check('weeks text', weeksText(1) === '1 week' && weeksText(3) === '3 weeks');
-  check('born digital: only Photo / Video with Data type Digital', bornDigitalFields('photo', 'digital') !== null && bornDigitalFields('video', 'digital') !== null && bornDigitalFields('photo', 'both') === null && bornDigitalFields('video', 'physical') === null && bornDigitalFields('audio', 'digital') === null && bornDigitalFields('prasadi', 'digital') === null);
+  check('born digital: Photo / Video with Data type Digital, and any Physical + Digital line — never physical, Audio / Documents digital, or Prasadi', bornDigitalFields('photo', 'digital') !== null && bornDigitalFields('video', 'digital') !== null && bornDigitalFields('photo', 'both') !== null && bornDigitalFields('audio', 'both') !== null && bornDigitalFields('video', 'physical') === null && bornDigitalFields('audio', 'digital') === null && bornDigitalFields('prasadi', 'digital') === null && bornDigitalFields('prasadi', 'both') === null);
   check('prasadi auto-decides as keep physical', itemResultOf(autoDecisionFields('prasadi')!.decision) === 'physical' && autoDecisionFields('video') === null);
   // Bulk edit bar: every field is derived from the registry per selected format.
   const ids = (formats: string[], custom: Parameters<typeof bulkFieldsFor>[1] = []) => bulkFieldsFor(formats, custom).map((f) => f.id);
@@ -441,7 +441,8 @@ async function main() {
     check('Redigital and Discard stay blank, so the item is still undecided', dpItems.every((i) => i.redigital === null && i.discard === null && i.result === null));
     const physPhoto = await mk('photo', 'physical', sample.mediaSubtype);
     const bothPhoto = await mk('photo', 'both', sample.mediaSubtype);
-    check('physical and physical + digital photo items are left blank', [...(await grid(physPhoto.id)).items, ...(await grid(bothPhoto.id)).items].every((i) => i.digital === null));
+    check('physical photo items are left blank', (await grid(physPhoto.id)).items.every((i) => i.digital === null));
+    check('Physical + Digital photo items start with Digital = Yes too', (await grid(bothPhoto.id)).items.every((i) => i.digital === true && i.redigital === null && i.discard === null));
     const vSample = await ArchiveLot.findOne({ format: 'video' }).select('mediaSubtype').lean();
     if (vSample) {
       const digitalVideo = await mk('video', 'digital', vSample.mediaSubtype);

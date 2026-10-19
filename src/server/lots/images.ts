@@ -7,7 +7,8 @@ import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotImage, type LotImageDoc } from '@/models/LotImage';
 import { canWorkLot } from '@/server/lots/access';
 import { can } from '@/server/permissions';
-import { dropAsset, putAsset, type ParsedUpload } from '@/server/projects/images';
+import { destroyImage, uploadImage } from '@/server/cloudinary';
+import type { ParsedUpload } from '@/server/projects/images';
 import type { LotImage as LotImageDto, LotImagesResponse } from '@/types/lot-image';
 
 /**
@@ -90,7 +91,7 @@ export async function listLotImages(lotId: string, ctx: MutationContext): Promis
 export async function addLotImage(lotId: string, upload: ParsedUpload, ctx: MutationContext): Promise<{ image: LotImageDto }> {
   const lot = await loadLot(lotId);
   assertCanManage(lot, ctx);
-  const stored = await putAsset(`lots/${lotId}`, upload.file);
+  const stored = await uploadImage(`archive-tracker/lots/${lotId}`, upload.file);
 
   const session = await LotImage.startSession();
   try {
@@ -121,7 +122,7 @@ export async function addLotImage(lotId: string, upload: ParsedUpload, ctx: Muta
     if (!created) throw new HttpError(500, 'Could not save the photo.');
     return { image: created };
   } catch (error) {
-    await dropAsset(stored.publicId);
+    await destroyImage(stored.publicId);
     throw error;
   } finally {
     await session.endSession();
@@ -142,7 +143,7 @@ export async function deleteLotImage(lotId: string, imageId: string, ctx: Mutati
       publicId = doc.publicId;
       await logActivity(session, lot, ctx, 'lot_image_deleted', `Photo deleted from ${lot.lotReference}`, doc.caption || doc.fileName);
     });
-    if (publicId) await dropAsset(publicId);
+    if (publicId) await destroyImage(publicId);
     return { ok: true };
   } finally {
     await session.endSession();

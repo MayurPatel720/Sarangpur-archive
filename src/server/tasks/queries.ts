@@ -31,6 +31,7 @@ import type {
   TaskPanelQuery,
   TaskPanelResponse,
   TaskRow,
+  TaskAttachment,
 } from '@/types/task';
 
 /** Single cast from plain-data pipelines to Mongoose stages (rule 2). */
@@ -80,6 +81,7 @@ interface TaskLike {
   checklistTotal?: number;
   checklistDone?: number;
   commentCount?: number;
+  personal?: boolean;
   doneAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -130,6 +132,7 @@ export function shapeTaskRow(doc: TaskLike, today: string): TaskRow {
     checklistTotal: doc.checklistTotal ?? 0,
     checklistDone: doc.checklistDone ?? 0,
     commentCount: doc.commentCount ?? 0,
+    personal: doc.personal === true,
     doneAt: doc.doneAt ? new Date(doc.doneAt).toISOString() : null,
     createdAt: new Date(doc.createdAt).toISOString(),
     updatedAt: new Date(doc.updatedAt).toISOString(),
@@ -138,10 +141,14 @@ export function shapeTaskRow(doc: TaskLike, today: string): TaskRow {
 
 /* ---------------------------------------------------------------- permissions */
 
-type Actable = Pick<TaskLike, 'assignees' | 'assignee' | 'assigneeName' | 'createdBy'>;
+type Actable = Pick<TaskLike, 'assignees' | 'assignee' | 'assigneeName' | 'createdBy'> & { personal?: boolean };
 
-/** Admin sees everything; everyone else only tasks they are an assignee or the creator of. */
+/**
+ * Admin sees everything; everyone else only tasks they are an assignee or the creator of.
+ * A personal to-do is private to its creator — admins included.
+ */
 export function canViewTask(task: Actable, ctx: MutationContext): boolean {
+  if (task.personal) return String(task.createdBy) === ctx.userId;
   return isTaskAdmin(ctx) || isAssignee(task, ctx.userId) || String(task.createdBy) === ctx.userId;
 }
 
@@ -164,6 +171,7 @@ function filterFor(
 ): TaskFilter {
   const f: TaskFilter = {};
   if (!isTaskAdmin(ctx)) f.visibleTo = oid(ctx.userId);
+  f.viewer = oid(ctx.userId);
   if (q.format) f.format = q.format;
   if (q.assignee) f.assignee = oid(q.assignee === 'me' ? ctx.userId : q.assignee);
   if (q.status) f.status = q.status;
@@ -337,7 +345,14 @@ type HistoryRow = {
 type TaskDetailDoc = TaskLike & {
   description?: string | null;
   checklist?: { _id: unknown; text: string; done: boolean }[];
-  comments?: { _id: unknown; author: unknown; authorName: string; text: string; at: Date }[];
+  comments?: {
+    _id: unknown;
+    author: unknown;
+    authorName: string;
+    text: string;
+    attachments?: (Omit<TaskAttachment, 'width' | 'height'> & { width?: number | null; height?: number | null })[];
+    at: Date;
+  }[];
 };
 
 /** Shared by the read path and every mutation, so a write answers with exactly what a read would. */
@@ -359,6 +374,15 @@ export function buildDetail(
         authorId: String(c.author),
         authorName: c.authorName,
         text: c.text,
+        attachments: (c.attachments ?? []).map((a) => ({
+          url: a.url,
+          publicId: a.publicId,
+          fileName: a.fileName,
+          contentType: a.contentType,
+          sizeBytes: a.sizeBytes,
+          width: a.width ?? null,
+          height: a.height ?? null,
+        })),
         at: new Date(c.at).toISOString(),
       })),
     },
@@ -374,7 +398,8 @@ export function buildDetail(
     can: {
       changeStatus: canActOnTask(doc, ctx) && (!cancelled || canAssign),
       cancel: canAssign,
-      edit: canAssign,
+      // A personal to-do is edited by its owner; everything else by an assigner.
+      edit: canAssign || (doc.personal === true && String(doc.createdBy) === ctx.userId),
     },
   };
 }

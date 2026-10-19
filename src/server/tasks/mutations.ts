@@ -3,15 +3,21 @@ import { FORMATS, TASK_STATUS_LABELS, type TaskStatus } from '@/lib/domain';
 import { HttpError, type MutationContext } from '@/lib/api';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { Project } from '@/models/Project';
+import { ActivityLog } from '@/models/ActivityLog';
 import { Task } from '@/models/Task';
+import { connectToDatabase } from '@/lib/mongo';
+import { destroyImage } from '@/server/cloudinary';
 import { User } from '@/models/User';
 import { auditActor, persistTaskAudit, withTaskAudit, type TaskAuditEntry, type TaskNotice } from '@/server/audit';
 import { can } from '@/server/permissions';
 import { assertCanActOnTask, assigneesOf, getTaskDetail } from './queries';
 import type {
   TaskChecklistBody,
+  TaskAttachment,
   TaskCommentBody,
   TaskCreateInput,
+  TaskPersonalCreateInput,
+  TaskPersonalUpdateBody,
   TaskDetailResponse,
   TaskStatusBody,
   TaskUpdateBody,
@@ -99,7 +105,12 @@ async function resolveProject(id: string, session: ClientSession) {
  * assignee notices) without writing it. Shared by `createTask` (own transaction via
  * `withTaskAudit`) and `createTaskInSession` (a caller-owned transaction).
  */
-async function buildTaskCreate(body: TaskCreateInput, ctx: MutationContext, session: ClientSession) {
+async function buildTaskCreate(
+  body: TaskCreateInput,
+  ctx: MutationContext,
+  session: ClientSession,
+  opts: { personal?: boolean } = {},
+) {
   const assignees = await resolveAssignees(body.assigneeIds, session);
   const lot = body.lotId ? await resolveLot(body.lotId, session) : null;
   const project = body.projectId ? await resolveProject(body.projectId, session) : null;
@@ -124,9 +135,10 @@ async function buildTaskCreate(body: TaskCreateInput, ctx: MutationContext, sess
     checklist: items,
     checklistTotal: items.length,
     checklistDone: 0,
+    personal: opts.personal === true,
   });
 
-  const bits = [`Assigned to ${names(assignees)}`];
+  const bits = [opts.personal ? 'Personal to-do' : `Assigned to ${names(assignees)}`];
   if (body.dueDate) bits.push(`due ${body.dueDate}`);
   if (lot) bits.push(`lot ${lot.code}`);
   if (project) bits.push(`project ${project.code}`);
@@ -135,7 +147,7 @@ async function buildTaskCreate(body: TaskCreateInput, ctx: MutationContext, sess
     task,
     result: String(task._id),
     entries: [{ kind: 'task_created' as const, title: 'Task created', detail: bits.join(' · ') }],
-    notices: assignees.map((a) => ({
+    notices: (opts.personal ? [] : assignees).map((a) => ({
       userId: a.id,
       kind: 'task_assigned' as const,
       text: `${ctx.userName} assigned you "${body.title}"`,
@@ -359,11 +371,29 @@ export async function setTaskStatus(
 
 /* ----------------------------------------------------------------- comments */
 
+/** Cloudinary folder for a task's comment images. */
+export const taskImageFolder = (taskId: string) => `archive-tracker/tasks/${taskId}`;
+
+/** An attachment must be one WE uploaded for THIS task — never a caller-supplied URL. */
+function assertOwnAttachments(taskId: string, items: TaskAttachment[]): void {
+  const prefix = `${taskImageFolder(taskId)}/`;
+  for (const a of items) {
+    if (!a.publicId.startsWith(prefix) || !a.url.startsWith('https://res.cloudinary.com/') || !a.url.includes(a.publicId)) {
+      throw new HttpError(400, 'That image was not uploaded for this task.');
+    }
+  }
+}
+
 export async function addTaskComment(
   taskId: string,
   body: TaskCommentBody,
   ctx: MutationContext,
 ): Promise<TaskDetailResponse> {
+  const text = body.text ?? '';
+  const attachments = body.attachments ?? [];
+  if (text.length === 0 && attachments.length === 0) throw new HttpError(400, 'Write something or attach an image.');
+  assertOwnAttachments(taskId, attachments);
+
   await withTaskAudit({
     taskId,
     actor: auditActor(ctx),
@@ -377,22 +407,19 @@ export async function addTaskComment(
       task.comments.push({
         author: new Types.ObjectId(ctx.userId),
         authorName: ctx.userName,
-        text: body.text,
+        text,
+        attachments,
         at: new Date(),
       });
       task.commentCount = task.comments.length;
 
+      const imgNote = attachments.length > 0 ? `${attachments.length} image${attachments.length === 1 ? '' : 's'}` : '';
+      const summary = [text.length > 140 ? `${text.slice(0, 140)}…` : text, imgNote].filter(Boolean).join(' · ');
       const recipients = [...new Set([...assigneesOf(task).map((p) => p.id), String(task.createdBy)])];
       return {
         task,
         result: undefined,
-        entries: [
-          {
-            kind: 'task_comment_added',
-            title: 'Comment added',
-            detail: body.text.length > 140 ? `${body.text.slice(0, 140)}…` : body.text,
-          },
-        ],
+        entries: [{ kind: 'task_comment_added', title: 'Comment added', detail: summary }],
         notices: recipients.map((userId) => ({
           userId,
           kind: 'task_comment' as const,
@@ -402,6 +429,104 @@ export async function addTaskComment(
     },
   });
   return getTaskDetail(taskId, ctx);
+}
+
+/* ------------------------------------------------------- personal to-dos (mine) */
+
+/** The first format the user may open — personal to-dos still carry a format. */
+function defaultFormatFor(ctx: MutationContext): (typeof FORMATS)[number] {
+  return FORMATS.find((f) => ctx.grants.includes(`format:${f}`)) ?? FORMATS[0];
+}
+
+export async function createPersonalTask(
+  body: TaskPersonalCreateInput,
+  ctx: MutationContext,
+): Promise<TaskDetailResponse> {
+  if (body.dueDate) assertRealDay(body.dueDate);
+  const id = await withTaskAudit({
+    actor: auditActor(ctx),
+    mutate: (_none, session) =>
+      buildTaskCreate(
+        {
+          title: body.title,
+          description: body.description,
+          assigneeIds: [ctx.userId],
+          priority: body.priority ?? 'normal',
+          dueDate: body.dueDate,
+          format: defaultFormatFor(ctx),
+          checklist: body.checklist ?? [],
+        },
+        ctx,
+        session,
+        { personal: true },
+      ),
+  });
+  return getTaskDetail(id, ctx);
+}
+
+function assertOwnPersonal(task: { personal?: boolean; createdBy: unknown }, ctx: MutationContext): void {
+  if (task.personal !== true || String(task.createdBy) !== ctx.userId) {
+    throw new HttpError(403, 'Only the owner can change a personal to-do.');
+  }
+}
+
+export async function updatePersonalTask(
+  taskId: string,
+  body: TaskPersonalUpdateBody,
+  ctx: MutationContext,
+): Promise<TaskDetailResponse> {
+  if (body.dueDate) assertRealDay(body.dueDate);
+  await withTaskAudit({
+    taskId,
+    actor: auditActor(ctx),
+    mutate: async (task) => {
+      if (!task) throw new HttpError(404, 'Task not found.');
+      assertOwnPersonal(task, ctx);
+      const changes: { field: string; from: unknown; to: unknown }[] = [];
+      const note = (field: string, from: unknown, to: unknown) => {
+        if (JSON.stringify(from) !== JSON.stringify(to)) changes.push({ field, from, to });
+      };
+      if (body.title !== undefined && body.title !== task.title) {
+        note('title', task.title, body.title);
+        task.title = body.title;
+      }
+      if (body.description !== undefined && (body.description || null) !== (task.description ?? null)) {
+        note('description', task.description ?? null, body.description || null);
+        task.description = body.description || null;
+      }
+      if (body.priority !== undefined && body.priority !== task.priority) {
+        note('priority', task.priority, body.priority);
+        task.priority = body.priority;
+      }
+      if (body.dueDate !== undefined && body.dueDate !== (task.dueDate ?? null)) {
+        note('dueDate', task.dueDate ?? null, body.dueDate);
+        task.dueDate = body.dueDate;
+      }
+      return {
+        task,
+        result: undefined,
+        entries:
+          changes.length > 0
+            ? [{ kind: 'task_updated' as const, title: `To-do edited: ${changes.map((c) => c.field).join(', ')}`, changes }]
+            : [],
+      };
+    },
+  });
+  return getTaskDetail(taskId, ctx);
+}
+
+/** Deletes a personal to-do and its history. Comment images are removed from storage too. */
+export async function deletePersonalTask(taskId: string, ctx: MutationContext): Promise<{ ok: true }> {
+  await connectToDatabase();
+  if (!Types.ObjectId.isValid(taskId)) throw new HttpError(404, 'Task not found.');
+  const task = await Task.findById(taskId).lean();
+  if (!task) throw new HttpError(404, 'Task not found.');
+  assertOwnPersonal(task, ctx);
+  const publicIds = (task.comments ?? []).flatMap((c) => (c.attachments ?? []).map((a) => a.publicId));
+  await Task.deleteOne({ _id: task._id });
+  await ActivityLog.deleteMany({ task: task._id });
+  await Promise.all(publicIds.map((id) => destroyImage(id)));
+  return { ok: true };
 }
 
 /* ---------------------------------------------------------------- checklist */

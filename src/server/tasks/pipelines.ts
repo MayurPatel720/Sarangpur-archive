@@ -21,6 +21,11 @@ export interface TaskFilter {
    * collection stores (ObjectId in production, a plain string in the mingo fixture).
    */
   visibleTo?: unknown;
+  /**
+   * The viewer. Personal to-dos belong to their creator alone: everyone else's are
+   * excluded, admins included.
+   */
+  viewer?: unknown;
   assignee?: unknown;
   status?: string;
   priority?: string;
@@ -50,6 +55,9 @@ export function taskMatch(f: TaskFilter, today: string): Record<string, unknown>
 
   if (f.visibleTo !== undefined) {
     and.push({ $or: [{ 'assignees.id': f.visibleTo }, { createdBy: f.visibleTo }] });
+  }
+  if (f.viewer !== undefined) {
+    and.push({ $or: [{ personal: { $ne: true } }, { createdBy: f.viewer }] });
   }
   if (f.format) and.push({ format: f.format });
   if (f.assignee !== undefined) and.push({ 'assignees.id': f.assignee });

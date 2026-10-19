@@ -77,6 +77,10 @@ export const queryKeys = {
     all: ['todos'] as const,
     list: (params: string) => ['todos', 'list', params] as const,
   },
+  returns: {
+    all: ['returns'] as const,
+    list: (params: string) => [...queryKeys.returns.all, 'list', params] as const,
+  },
   tasks: {
     all: ['tasks'] as const,
     list: (params: string) => [...queryKeys.tasks.all, 'list', params] as const,

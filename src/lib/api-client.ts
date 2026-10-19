@@ -189,12 +189,23 @@ import {
 } from '@/types/triage';
 
 import {
+  returnRecordResponseSchema,
+  returnsResponseSchema,
+  type ReturnRecordBody,
+  type ReturnRecordResponse,
+  type ReturnsResponse,
+} from '@/types/returns';
+import {
+  taskAttachmentResponseSchema,
   taskDetailResponseSchema,
   taskListResponseSchema,
   taskMutationResponseSchema,
   taskPanelResponseSchema,
+  type TaskAttachment,
   type TaskChecklistBody,
   type TaskCommentBody,
+  type TaskPersonalCreateInput,
+  type TaskPersonalUpdateBody,
   type TaskCreateInput,
   type TaskDetailResponse,
   type TaskListResponse,
@@ -745,6 +756,13 @@ export const todosApi = {
     sendJson<{ ok: true }>(`/api/todos/${encodeURIComponent(id)}`, 'DELETE', {}, todoDeleteResponseSchema),
 };
 
+export const returnsApi = {
+  list: (params: Record<string, string>) =>
+    getJson<ReturnsResponse>(`/api/returns${qs(params)}`, returnsResponseSchema),
+  record: (body: ReturnRecordBody) =>
+    sendJson<ReturnRecordResponse>('/api/returns/record', 'POST', body, returnRecordResponseSchema),
+};
+
 export const tasksApi = {
   list: (params: Record<string, string>) =>
     getJson<TaskListResponse>(`/api/tasks${qs(params)}`, taskListResponseSchema),
@@ -777,6 +795,33 @@ export const tasksApi = {
       'POST',
       body,
       taskMutationResponseSchema,
+    ),
+  /** My to-do: private to-dos for the signed-in user. */
+  createMine: (body: TaskPersonalCreateInput) =>
+    sendJson<TaskDetailResponse>('/api/tasks/mine', 'POST', body, taskMutationResponseSchema),
+  updateMine: (id: string, body: TaskPersonalUpdateBody) =>
+    sendJson<TaskDetailResponse>(
+      `/api/tasks/mine/${encodeURIComponent(id)}`,
+      'PATCH',
+      body,
+      taskMutationResponseSchema,
+    ),
+  deleteMine: (id: string) =>
+    sendJson<{ ok: true }>(`/api/tasks/mine/${encodeURIComponent(id)}`, 'DELETE', {}, z.object({ ok: z.literal(true) })),
+  /** Comment images: upload one (multipart), or drop one that was never posted. */
+  uploadImage: (id: string, form: FormData) =>
+    sendForm<TaskAttachment>(
+      `/api/tasks/${encodeURIComponent(id)}/attachments`,
+      'POST',
+      form,
+      taskAttachmentResponseSchema,
+    ),
+  discardImage: (id: string, publicId: string) =>
+    sendJson<{ ok: true }>(
+      `/api/tasks/${encodeURIComponent(id)}/attachments`,
+      'DELETE',
+      { publicId },
+      z.object({ ok: z.literal(true) }),
     ),
   setChecklist: (id: string, body: TaskChecklistBody) =>
     sendJson<TaskDetailResponse>(

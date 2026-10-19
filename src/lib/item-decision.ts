@@ -46,14 +46,17 @@ export function autoDecisionFields(format: string): {
 }
 
 /**
- * Photo and video lines entered as Data type "Digital" already exist as files, so their items
- * start with the Decision "Digital" answer = Yes. Redigital and Discard stay blank: they are still
- * the team's call, and an item counts as decided only once all three are answered. "Physical" and
- * "Physical + Digital" lines, and every other format, are left alone.
+ * A digital copy already exists, so the Decision "Digital" answer starts as Yes: Photo / Video lines
+ * entered as Data type "Digital", and any line entered as "Physical + Digital". Redigital and Discard
+ * stay blank: they are still the team's call, and an item counts as decided only once all three are
+ * answered. "Physical" lines, Audio / Documents lines entered as "Digital", and the physical-only
+ * formats (Prasadi) are left alone.
  */
 export const BORN_DIGITAL_FORMATS: readonly string[] = ['photo', 'video'];
 
 export function bornDigitalFields(format: string, dataType: string): { decision: { digital: true } } | null {
+  if (PHYSICAL_ONLY_FORMATS.includes(format)) return null;
+  if (dataType === 'both') return { decision: { digital: true } };
   return BORN_DIGITAL_FORMATS.includes(format) && dataType === 'digital' ? { decision: { digital: true } } : null;
 }
 

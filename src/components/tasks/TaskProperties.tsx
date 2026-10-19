@@ -34,8 +34,10 @@ export function TaskProperties({
   pending: boolean;
   onUpdate: (body: TaskUpdateBody) => void;
 }) {
+  const personal = task.personal;
   return (
     <div className="flex flex-col gap-4">
+      {personal ? null : (
       <TaskPropertyRow label="Assignees">
         <AssigneeMultiSelect
           selected={task.assignees}
@@ -45,8 +47,9 @@ export function TaskProperties({
           onChange={(next) => onUpdate({ assigneeIds: next.map((a) => a.id) })}
         />
       </TaskPropertyRow>
+      )}
 
-      <TaskPropertyRow label="Priority">
+      <TaskPropertyRow label="Importance">
         {canEdit ? (
           <Select
             value={task.priority}
@@ -81,6 +84,8 @@ export function TaskProperties({
         )}
       </TaskPropertyRow>
 
+      {personal ? null : (
+      <>
       <TaskPropertyRow label="Format" hint={canEdit && task.lotId ? 'Follows the linked lot.' : undefined}>
         {canEdit ? (
           <Select
@@ -121,6 +126,8 @@ export function TaskProperties({
           onChange={(projectId) => onUpdate({ projectId })}
         />
       </TaskPropertyRow>
+      </>
+      )}
 
       <dl className="m-0 pt-3 border-t border-line-soft flex flex-col gap-0.5 text-[11.5px] text-ink-3">
         <div className="flex gap-1">

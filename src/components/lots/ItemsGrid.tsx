@@ -39,13 +39,12 @@ import { useMe } from '@/hooks/useCan';
  * decides the lot, and the lot's stage then follows capture / MLS / logging by itself.
  */
 
-type Filter = 'all' | 'undecided' | 'archive' | 'discard' | 'physical';
+type Filter = 'all' | 'undecided' | 'archive' | 'discard';
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'undecided', label: 'Undecided' },
   { id: 'archive', label: 'Digitize' },
   { id: 'discard', label: 'Discard' },
-  { id: 'physical', label: 'Keep physical' },
 ];
 
 const ROW_PX = 42;
@@ -331,7 +330,6 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               <span className="flex flex-wrap gap-1.5">
                 <Badge severity="good">Digitize {s.archive}</Badge>
                 <Badge severity="critical">Discard {s.discard}</Badge>
-                <Badge severity="neutral">Keep physical {s.physical}</Badge>
               </span>
             </>
           )}
@@ -542,7 +540,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                     <span className="text-[12px] text-ink-3 tabular-nums sm:ml-auto">
                       {sh.format === PRASADI_FORMAT
                         ? `${sh.all.filter((r) => r.attrs.stickerApplied === true).length} stickered · ${sh.all.filter((r) => r.recheckWeeks).length} check planned`
-                        : `${decided}/${sh.all.length} decided · ${captured} captured · ${tagged} tagged`}
+                        : `${decided}/${sh.all.length} decided · ${captured} digitalized · ${tagged} tagged`}
                     </span>
                   </button>
                   {open && !empty ? <div className="border-t border-line">{gridBox}</div> : null}

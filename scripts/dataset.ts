@@ -55,8 +55,8 @@ type Format = 'photo' | 'video' | 'audio' | 'documents' | 'prasadi';
 
 interface LotSpec {
   format: Format;
-  /** One or more media rows of this format: [sub-type value, quantity]. */
-  lines: [string, number][];
+  /** One or more media rows of this format: [sub-type value, quantity, 'both'?] — 'both' = Physical + Digital. */
+  lines: [string, number, 'both'?][];
   stage: Stage;
   /** Days since the lot entered its current stage. */
   days: number;
@@ -87,7 +87,7 @@ interface ProjectSpec {
 
 const L = (
   format: Format,
-  lines: [string, number][],
+  lines: [string, number, 'both'?][],
   stage: Stage,
   days: number,
   assignee: number | 'admin' | null,
@@ -106,7 +106,7 @@ const PROJECTS: ProjectSpec[] = [
     assignAll: 0,
     ctx: { place: 'Akshardham Gandhinagar', venue: 'Mahelav Shri Swaminarayan Mandir', event: 'Mahelav', year: 2009, month: '12', day: 23 },
     lots: [
-      L('video', [['Mini DVs', 5], ['DV-CAM', 3], ['BetaCAM', 2]], 'storage', 12, 0),
+      L('video', [['Mini DVs', 5], ['DV-CAM', 3], ['BetaCAM', 2, 'both']], 'storage', 12, 0),
       L('audio', [['Cassettes', 4], ['Spools', 3]], 'storage', 20, 1),
       L('photo', [['35MM Film — Negatives', 14], ['35MM Film — Slides', 8], ['Print — Print', 4]], 'mls_tag', 3, 2, { splitReturn: 2 }),
       L('documents', [['Letters', 5], ['Invitation cards', 3]], 'scanning', 4, 0),
@@ -172,7 +172,7 @@ const PROJECTS: ProjectSpec[] = [
     assignAll: 2,
     ctx: { place: 'Kolkata', venue: 'Kolkata Mandir', event: 'Janma Jayanti Natak', year: 2003, month: '12', day: 7 },
     lots: [
-      L('video', [['Mini DVs', 4], ['DVD', 3]], 'storage', 15, 0),
+      L('video', [['Mini DVs', 4], ['DVD', 3, 'both']], 'storage', 15, 0),
       L('audio', [['Cassettes', 5], ['MDC', 3]], 'scanning', 3, 1),
       L('photo', [['Print — Print', 10], ['Print — Album', 6]], 'decision', 2, 2),
       L('prasadi', [['Prasadi', 5]], 'returned', 18, 1),
@@ -600,6 +600,8 @@ export function buildDataset(now = new Date()): Dataset {
           remarks: named ? draft.remarks : null,
           digitalSource: digitized ? 'Sarangpur Capture' : null,
           decision: {
+            // Physical + Digital media already has a digital copy: "Digital" starts as Yes.
+            digital: ls.lines[lineIndex]![2] === 'both' ? true : null,
             existsInMls: answered ? false : null,
             newCopyIsBetter: null,
             conditionUsable: answered ? true : null,
@@ -628,9 +630,9 @@ export function buildDataset(now = new Date()): Dataset {
       }
 
       /* ---- lot ---- */
-      const mediaLines = ls.lines.map(([subtype, qty], i) => ({
+      const mediaLines = ls.lines.map(([subtype, qty, line3], i) => ({
         format: ls.format,
-        dataType: subtype === 'Digital' ? 'digital' : 'physical',
+        dataType: line3 === 'both' ? 'both' : subtype === 'Digital' ? 'digital' : 'physical',
         mediaSubtype: subtype,
         quantity: qty,
         quantityToDigitize: archivedLot ? lineStats[i]!.selected : 0,
