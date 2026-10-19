@@ -9,7 +9,7 @@ import { can } from '@/server/permissions';
 import { withAudit, auditActor } from '@/server/audit';
 import { LOT_PATCH_SHARED_KEYS, propagateFromLot } from '@/server/projects/sync';
 import { intakeMissing } from '@/lib/intake-gate';
-import { autoDecisionFields, PHYSICAL_ONLY_FORMATS } from '@/lib/item-decision';
+import { autoDecisionFields, bornDigitalFields, PHYSICAL_ONLY_FORMATS } from '@/lib/item-decision';
 import { assertActiveReferenceValue, getActiveReferenceItems, getReferenceList, bumpUsage, transferUsage } from '@/server/reference';
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { assertActive } from '@/server/reference/runtime';
@@ -125,6 +125,8 @@ async function buildItemDocs(
         notDigitizedReason: selected ? null : line.notDigitizedReason,
         // Prasadi is never digitized: it starts already decided as "keep physical".
         ...autoDecisionFields(line.format),
+        // A digital photo / video line already has its files: Decision "Digital" starts as Yes.
+        ...bornDigitalFields(line.format, line.dataType),
       });
       n += 1;
     });

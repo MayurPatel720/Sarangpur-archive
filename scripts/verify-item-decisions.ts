@@ -24,7 +24,8 @@ import { markDuplicate, recodeSheet, reorderItems, setItemNumber, updateColumns 
 import { importItems } from '../src/server/lots/item-import';
 import { listPrasadiChecks, markPrasadiChecked } from '../src/server/lots/prasadi-checks';
 import { parseDateRange, formatDateRange, isoDayToDmy } from '../src/lib/date-range';
-import { autoDecisionFields, itemResultOf } from '../src/lib/item-decision';
+import { autoDecisionFields, bornDigitalFields, itemResultOf } from '../src/lib/item-decision';
+import { createItem } from '../src/server/lots/items';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
 import type { GridItem, ImportBody } from '../src/types/items';
 import { allColumns, appliesToFormat, isCommonColumn } from '../src/lib/item-columns';
@@ -117,6 +118,7 @@ async function excelRoundTrip() {
   check('weeks → due date', nextCheckDate(new Date('2026-10-17T15:00:00Z'), 3).toISOString().slice(0, 10) === '2026-11-07');
   check('overdue days', daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-10T08:00:00Z')) === 3 && daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-07T23:00:00Z')) === 0);
   check('weeks text', weeksText(1) === '1 week' && weeksText(3) === '3 weeks');
+  check('born digital: only Photo / Video with Data type Digital', bornDigitalFields('photo', 'digital') !== null && bornDigitalFields('video', 'digital') !== null && bornDigitalFields('photo', 'both') === null && bornDigitalFields('video', 'physical') === null && bornDigitalFields('audio', 'digital') === null && bornDigitalFields('prasadi', 'digital') === null);
   check('prasadi auto-decides as keep physical', itemResultOf(autoDecisionFields('prasadi')!.decision) === 'physical' && autoDecisionFields('video') === null);
   // Bulk edit bar: every field is derived from the registry per selected format.
   const ids = (formats: string[], custom: Parameters<typeof bulkFieldsFor>[1] = []) => bulkFieldsFor(formats, custom).map((f) => f.id);
@@ -396,6 +398,36 @@ async function main() {
     await rejects('a non-assignee cannot delete a photo', () => deleteLotImage(owned.id, '0'.repeat(24), viewerOnly), 403);
     await rejects('deleting a missing photo is a 404', () => deleteLotImage(owned.id, '0'.repeat(24), admin), 404);
     await rejects('an unknown lot is a 404', () => listLotImages('0'.repeat(24), admin), 404);
+
+    console.log('born digital');
+    const mk = async (format: string, dataType: string, subtype: string) => {
+      const l = await createIntake({ ...base, mediaLines: [{ format, dataType, mediaSubtype: subtype, quantity: 2 }] }, admin);
+      created.push(...l.lots.map((x) => x.id));
+      return l;
+    };
+    const digitalPhoto = await mk('photo', 'digital', sample.mediaSubtype);
+    const dpItems = (await grid(digitalPhoto.id)).items;
+    check('digital photo items start with Decision Digital = Yes', dpItems.length === 2 && dpItems.every((i) => i.digital === true), dpItems.map((i) => i.digital));
+    check('Redigital and Discard stay blank, so the item is still undecided', dpItems.every((i) => i.redigital === null && i.discard === null && i.result === null));
+    const physPhoto = await mk('photo', 'physical', sample.mediaSubtype);
+    const bothPhoto = await mk('photo', 'both', sample.mediaSubtype);
+    check('physical and physical + digital photo items are left blank', [...(await grid(physPhoto.id)).items, ...(await grid(bothPhoto.id)).items].every((i) => i.digital === null));
+    const vSample = await ArchiveLot.findOne({ format: 'video' }).select('mediaSubtype').lean();
+    if (vSample) {
+      const digitalVideo = await mk('video', 'digital', vSample.mediaSubtype);
+      check('digital video items start with Digital = Yes', (await grid(digitalVideo.id)).items.every((i) => i.digital === true));
+    }
+    const aSample = await ArchiveLot.findOne({ format: 'audio' }).select('mediaSubtype').lean();
+    if (aSample) {
+      const digitalAudio = await mk('audio', 'digital', aSample.mediaSubtype);
+      check('digital audio is not auto-answered', (await grid(digitalAudio.id)).items.every((i) => i.digital === null));
+    }
+    const added = await createItem(digitalPhoto.id, {}, admin);
+    check('Add item on a digital photo lot also starts with Digital = Yes', (await grid(digitalPhoto.id)).items.find((i) => i.id === added.id)?.digital === true);
+    const addedPhys = await createItem(physPhoto.id, {}, admin);
+    check('Add item on a physical photo lot stays blank', (await grid(physPhoto.id)).items.find((i) => i.id === addedPhys.id)?.digital === null);
+    await bulkUpdateItems(digitalPhoto.id, { itemIds: [dpItems[0]!.id], set: { digital: false } }, admin);
+    check('the answer can still be changed', (await grid(digitalPhoto.id)).items.find((i) => i.id === dpItems[0]!.id)?.digital === false);
 
     console.log('prasadi');
     const prs = await createIntake(

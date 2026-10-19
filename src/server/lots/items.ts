@@ -3,7 +3,7 @@ import { HttpError } from '@/lib/api';
 import { LotItem } from '@/models/LotItem';
 import { allocateItemCodes } from '@/server/codes';
 import { parseItemCodeParts } from '@/lib/item-code';
-import { autoDecisionFields } from '@/lib/item-decision';
+import { autoDecisionFields, bornDigitalFields } from '@/lib/item-decision';
 import { namingPrefix } from '@/server/lots/mutations';
 import { withAudit, auditActor } from '@/server/audit';
 import { assertActiveReferenceValue } from '@/server/reference';
@@ -103,6 +103,7 @@ export async function createItem(
               notDigitizedReason: selected ? null : (body.notDigitizedReason ?? null),
               fileName: body.fileName?.trim() || null,
               ...autoDecisionFields(format),
+              ...bornDigitalFields(format, lot.mediaLines?.[0]?.dataType ?? lot.dataType),
             },
           ],
           { session },
