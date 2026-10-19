@@ -8,6 +8,7 @@ import { BUILTIN_COLUMNS, type ColumnSpec } from '@/lib/item-columns';
 export const MASTER_LOT_COLUMNS: ColumnSpec[] = [
   { id: 'lotNo', label: 'Lot no', dept: 'lot', kind: 'readonly', width: 130 },
   { id: 'projectNo', label: 'Project no', dept: 'lot', kind: 'readonly', width: 130 },
+  { id: 'projectName', label: 'Project name', dept: 'lot', kind: 'readonly', width: 200 },
   { id: 'lotStage', label: 'Lot stage', dept: 'lot', kind: 'readonly', width: 120 },
   { id: 'assignee', label: 'Assigned to', dept: 'lot', kind: 'readonly', width: 150 },
 ];
@@ -38,6 +39,7 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
   ),
   lotNo: { param: 'lot', type: 'text' },
   projectNo: { param: 'project', type: 'text' },
+  projectName: { param: 'projectName', type: 'text' },
   lotStage: { param: 'stage', type: 'select', options: 'stage' },
   mediaType: { param: 'dataType', type: 'select', options: 'dataType' },
   code: { param: 'code', type: 'text' },

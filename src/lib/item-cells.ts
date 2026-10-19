@@ -46,6 +46,8 @@ export function cellText(
       return m.lotReference ?? '';
     case 'projectNo':
       return m.projectCode ?? '';
+    case 'projectName':
+      return m.projectName ?? '';
     case 'lotStage':
       return m.lotStage ? (STAGE_LABELS[m.lotStage as Stage] ?? m.lotStage) : '';
     case 'assignee':

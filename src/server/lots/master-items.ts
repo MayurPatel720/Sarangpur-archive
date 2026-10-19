@@ -56,13 +56,17 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   if (query.lot) lotFilter.lotReference = contains(query.lot);
   if (query.stage) lotFilter.stage = query.stage;
   if (query.dataType) lotFilter['mediaLines.dataType'] = { $in: dataTypesMatching(query.dataType) };
-  if (query.project) {
-    const projects = await Project.find({ $or: [{ code: contains(query.project) }, { name: contains(query.project) }] })
-      .select('_id')
-      .limit(1000)
-      .lean();
-    lotFilter.projectIds = { $in: projects.map((p) => p._id) };
+  // "Project no" matches the code or the name; "Project name" matches the name only. Both may be set.
+  const projectConds: Filter[] = [];
+  for (const [value, match] of [
+    [query.project, (v: string) => ({ $or: [{ code: contains(v) }, { name: contains(v) }] })],
+    [query.projectName, (v: string) => ({ name: contains(v) })],
+  ] as const) {
+    if (!value) continue;
+    const projects = await Project.find(match(value)).select('_id').limit(1000).lean();
+    projectConds.push({ projectIds: { $in: projects.map((p) => p._id) } });
   }
+  if (projectConds.length > 0) lotFilter.$and = projectConds;
   if (Object.keys(lotFilter).length > 0) {
     const lots = await ArchiveLot.find(lotFilter).select('_id').limit(MAX_LOT_IDS).lean();
     f.lot = { $in: lots.map((l) => l._id) };

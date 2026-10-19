@@ -19,6 +19,8 @@ export const masterQuerySchema = z.object({
   // Lot / project
   lot: text,
   project: text,
+  /** Project name only (`project` matches the code or the name). */
+  projectName: text,
   stage: text,
   dataType: text,
   // Details
