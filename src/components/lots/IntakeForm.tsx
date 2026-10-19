@@ -323,7 +323,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
                     onChange={setPhotos}
                     disabled={busy}
                     showFormat={false}
-                    waitingNote="Photos are resized and uploaded after the lot is registered. You can add or remove them later from the lot page."
+                    waitingNote=""
                   />
                   {uploadingPhotos ? (
                     <p role="status" className="m-0 text-[12.5px] font-medium text-ink-2">
