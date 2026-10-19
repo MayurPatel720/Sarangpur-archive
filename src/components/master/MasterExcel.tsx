@@ -15,7 +15,7 @@ import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { cellText } from '@/lib/item-cells';
-import { appliesToFormat, isCommonColumn, labelFor, DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
+import { forFormat, isCommonColumn, DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
 import { MASTER_COLUMNS, MASTER_FILTERS, type MasterFilter } from '@/lib/master-columns';
 import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { num } from '@/lib/format';
@@ -147,10 +147,10 @@ export function MasterExcel() {
   // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
   // every format has — a format's own columns need that format picked (and Export writes a sheet each).
   const columns = useMemo(
-    () =>
-      MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId) && (format ? appliesToFormat(c, format) : isCommonColumn(c))).map((c) =>
-        format ? { ...c, label: labelFor(c, format) } : c,
-      ),
+    () => {
+      const inBands = MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId));
+      return format ? forFormat(inBands, format) : inBands.filter(isCommonColumn);
+    },
     [shown, format],
   );
   const bands = useMemo(() => {
@@ -187,7 +187,7 @@ export function MasterExcel() {
         : [...byFormat.entries()].map(([f, fr]) => ({
             name: FORMAT_LABELS[f as Format] ?? f,
             rows: fr,
-            columns: shownCols.filter((c) => appliesToFormat(c, f)).map((c) => ({ ...c, label: labelFor(c, f) })),
+            columns: forFormat(shownCols, f),
           }));
       const wb = await buildItemsWorkbook({ sheets, columns, refLabel });
       const buf = await wb.xlsx.writeBuffer();

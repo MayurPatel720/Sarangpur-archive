@@ -96,6 +96,45 @@ export const isCommonColumn = (c: FormatRule & { common?: boolean }): boolean =>
 export const labelFor = (c: Pick<ColumnSpec, 'label' | 'labels'>, format: string | null): string =>
   (format !== null && c.labels?.[format]) || c.label;
 
+/**
+ * A format's own column order (within each department), where it differs from the registry's.
+ * Prasadi follows the requirements document, number by number:
+ *   1 Title · 2 Category · 3 Subcategory · 4 Guru · 5 Date used by Guru · 6 Area used by Guru ·
+ *   7 Item details · 8 Quantity · 9 Item history · 10 Occasion (prasang) · 11 Date received ·
+ *   12 Received by · 13 Location (Room, Cabinet, Shelf) · 14 Related media
+ * with the item's Photo next to its Title and the shared columns (Sender's code, Place, Phy source,
+ * Remark) after them. Columns not listed keep their registry order, after the listed ones.
+ */
+export const FORMAT_COLUMN_ORDER: Record<string, string[]> = {
+  prasadi: [
+    'itemName', 'photo', 'category', 'subcategory', 'blessedBy', 'usedOn', 'usedArea', 'description', 'quantity', 'history',
+    'event', 'dateRange', 'receivedBy', 'room', 'cabinet', 'shelf', 'relatedMedia', 'itemCondition',
+  ],
+};
+
+/**
+ * The columns of one media format's sheet, ready to show: only the ones that apply, labelled the way
+ * that format reads them, in its own order. The identity columns (Media type, Archive code) stay first
+ * and departments keep their order; custom columns stay last in their department.
+ */
+export function forFormat<T extends Pick<ColumnSpec, 'id' | 'label' | 'labels' | 'dept' | 'kind' | 'formats' | 'notFormats'>>(cols: T[], format: string): T[] {
+  const applicable = cols.filter((c) => appliesToFormat(c, format)).map((c) => ({ ...c, label: labelFor(c, format) }));
+  const order = FORMAT_COLUMN_ORDER[format];
+  if (!order) return applicable;
+  const rank = (c: T) => {
+    if (c.kind === 'readonly' || c.kind === 'code') return -1; // identity columns first
+    const i = order.indexOf(c.id);
+    return i === -1 ? order.length : i;
+  };
+  // Stable sort inside each department; the departments themselves keep their first-seen order.
+  const depts: string[] = [];
+  for (const c of applicable) if (!depts.includes(c.dept)) depts.push(c.dept);
+  return depts.flatMap((d) => {
+    const group = applicable.filter((c) => c.dept === d);
+    return group.map((c, i) => ({ c, i })).sort((a, b) => rank(a.c) - rank(b.c) || a.i - b.i).map((x) => x.c);
+  });
+}
+
 /** Every name a column answers to — its base label and each per-format one — for matching an imported header. */
 export const allLabels = (c: Pick<ColumnSpec, 'label' | 'labels'>): string[] => [c.label, ...Object.values(c.labels ?? {})];
 
@@ -150,9 +189,9 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, notFormats: PRASADI, hint: 'Where the digital copy came from, e.g. Mumbai.' },
   { id: 'fileName', label: 'File path', dept: 'storage', kind: 'text', field: 'fileName', width: 240 },
   { id: 'phyStorageLoc', label: 'Phy storage loc.', dept: 'storage', kind: 'text', field: 'phyStorageLoc', width: 170, notFormats: PRASADI, common: true },
-  { id: 'room', label: 'Room', dept: 'storage', kind: 'ref', field: 'room', attr: true, refList: 'prasadiRoom', width: 220, formats: PRASADI },
-  { id: 'cabinet', label: 'Cabinet', dept: 'storage', kind: 'text', field: 'cabinet', attr: true, width: 110, formats: PRASADI, hint: 'Cabinet number.' },
-  { id: 'shelf', label: 'Shelf', dept: 'storage', kind: 'text', field: 'shelf', attr: true, width: 100, formats: PRASADI, hint: 'Shelf number.' },
+  { id: 'room', label: 'Room', dept: 'details', kind: 'ref', field: 'room', attr: true, refList: 'prasadiRoom', width: 220, formats: PRASADI },
+  { id: 'cabinet', label: 'Cabinet', dept: 'details', kind: 'text', field: 'cabinet', attr: true, width: 110, formats: PRASADI, hint: 'Cabinet number.' },
+  { id: 'shelf', label: 'Shelf', dept: 'details', kind: 'text', field: 'shelf', attr: true, width: 100, formats: PRASADI, hint: 'Shelf number.' },
   { id: 'stickerApplied', label: 'Sticker applied', dept: 'storage', kind: 'flag', field: 'stickerApplied', attr: true, width: 130, formats: PRASADI, hint: 'Yes = the archive-code sticker is on the item.' },
   { id: 'recheckWeeks', label: 'Re-check in', dept: 'storage', kind: 'weeks', field: 'recheckWeeks', width: 130, formats: PRASADI, hint: 'Type a number of weeks. When they pass, the item shows on the Alerts page to be checked again.' },
   { id: 'nextCheckDue', label: 'Next check due', dept: 'storage', kind: 'info', width: 140, formats: PRASADI },

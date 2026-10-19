@@ -1,6 +1,6 @@
 import { parseDateRange } from '@/lib/date-range';
 import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
-import { allColumns, appliesToFormat, labelFor, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, appliesToFormat, forFormat, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ItemsBulkSet } from '@/types/items';
 
 /**
@@ -69,7 +69,9 @@ const inputOf = (c: ColumnSpec & { custom?: CustomColumn }): BulkInput | null =>
 /** Every field that can be set on rows of the given formats, in the Excel's department order. */
 export function bulkFieldsFor(formats: string[], custom: CustomColumn[]): BulkField[] {
   const out: BulkField[] = [];
-  for (const c of allColumns(custom)) {
+  // One format ticked: its own column order and labels; several: the registry's.
+  const columns = formats.length === 1 ? forFormat(allColumns(custom), formats[0]!) : allColumns(custom);
+  for (const c of columns) {
     if (c.dept === 'lot' || SKIPPED_KINDS.has(c.kind)) continue;
     const input = inputOf(c);
     if (!input) continue;
@@ -87,7 +89,7 @@ export function bulkFieldsFor(formats: string[], custom: CustomColumn[]): BulkFi
     out.push({
       id: c.id,
       // A column that reads differently for one format (Prasadi: Date → Date received) uses that name when only that format is ticked.
-      label: formats.length === 1 ? labelFor(c, formats[0]!) : c.label,
+      label: c.label,
       dept: c.dept as DeptId,
       input,
       hint: c.hint,

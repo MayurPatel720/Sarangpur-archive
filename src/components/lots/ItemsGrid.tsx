@@ -12,7 +12,7 @@ import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, appliesToFormat, labelFor, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, appliesToFormat, forFormat, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -161,7 +161,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   );
   /** Visible columns per media format: a Prasadi sheet gets Prasadi columns, a video sheet its tape / case columns. */
   const columnsByFormat = useMemo(
-    () => new Map(lotFormats.map((f) => [f, visibleSpecs.filter((s) => appliesToFormat(s, f)).map((s) => ({ ...s, label: labelFor(s, f) }))])),
+    () => new Map(lotFormats.map((f) => [f, forFormat(visibleSpecs, f)])),
     [lotFormats, visibleSpecs],
   );
 

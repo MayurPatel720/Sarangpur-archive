@@ -30,7 +30,7 @@ import { addItemImage, deleteItemImage, listItemImages } from '../src/server/lot
 import { LotImage } from '../src/models/LotImage';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
 import type { GridItem, ImportBody } from '../src/types/items';
-import { allColumns, appliesToFormat, isCommonColumn, labelFor } from '../src/lib/item-columns';
+import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
 import { CLEAR, buildBulkSet, bulkFieldsFor } from '../src/lib/bulk-fields';
 import { buildItemsWorkbook, readItemsFromExcel } from '../src/components/lots/excel-io';
@@ -109,6 +109,10 @@ async function excelRoundTrip() {
   const vid = labelsFor('video');
   check('prasadi gets its own columns', ['Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Received by', 'Related media', 'Condition', 'Room', 'Cabinet', 'Shelf', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
   check('prasadi: the common Date column reads Date received, other formats keep Date', labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'prasadi') === 'Date received' && labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'photo') === 'Date', null);
+  const prsDetails = forFormat(allColumns([]), 'prasadi').filter((c) => c.dept === 'details').map((c) => c.label);
+  check('prasadi Details follow the requirements document, number by number', prsDetails.join(' | ') === ['Media type', 'Archive code', 'Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Date received', 'Received by', 'Room', 'Cabinet', 'Shelf', 'Related media', 'Condition', "Sender's code", 'Place', 'Phy source', 'Remark'].join(' | '), prsDetails);
+  const photoRegistry = allColumns([]).filter((c) => appliesToFormat(c, 'photo')).map((c) => c.id).join();
+  check('other formats keep the registry order', forFormat(allColumns([]), 'photo').map((c) => c.id).join() === photoRegistry);
   check('prasadi: Phy storage loc. is replaced by Room / Cabinet / Shelf, but stays a common column', !prs.includes('Phy storage loc.') && allColumns([]).filter(isCommonColumn).some((c) => c.id === 'phyStorageLoc'), prs);
   check('prasadi drops video-only columns', !['Name on tape', 'Name on case', 'Dig source', 'Duplicate code'].some((l) => prs.includes(l)), prs);
   check('prasadi has no Decision columns and no Captured', !['Digital', 'Redigital', 'Discard', 'Captured'].some((l) => prs.includes(l)), prs);
