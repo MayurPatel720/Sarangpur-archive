@@ -511,26 +511,6 @@ export function ConditionStep({ ctx }: { ctx: StepCtx }) {
               placeholder="e.g. /archive/2026/LOT-2026-1285"
             />
           </Field>
-          <div className="mt-2 flex flex-col gap-1">
-            <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
-              <input
-                type="checkbox"
-                checked={draft.physicalLabelApplied}
-                onChange={(e) => patch({ physicalLabelApplied: e.target.checked })}
-                className="h-4 w-4 accent-accent"
-              />
-              Physical label applied
-            </label>
-            <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
-              <input
-                type="checkbox"
-                checked={draft.containerLabelApplied}
-                onChange={(e) => patch({ containerLabelApplied: e.target.checked })}
-                className="h-4 w-4 accent-accent"
-              />
-              Container label applied
-            </label>
-          </div>
         </FormSection>
       ) : null}
 
