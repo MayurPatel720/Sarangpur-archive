@@ -53,8 +53,8 @@ const STEP_MEDIA = 2;
 
 /** One-line orientation under the stepper. The media step's intro lives on its section. */
 const STEP_INTROS: readonly (string | null)[] = [
-  'Where the media came from and who to contact about it.',
-  'Condition on arrival, why it was sent, and any return request.',
+  null,
+  null,
   null,
 ];
 
