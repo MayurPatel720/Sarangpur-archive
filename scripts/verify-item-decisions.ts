@@ -30,6 +30,10 @@ import { addItemImage, deleteItemImage, listItemImages } from '../src/server/lot
 import { LotImage } from '../src/models/LotImage';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
 import { itemNumberBodySchema, type GridItem, type ImportBody } from '../src/types/items';
+import { cellText } from '../src/lib/item-cells';
+import { getReferenceList } from '../src/server/reference';
+import { listMasterItems } from '../src/server/lots/master-items';
+import { masterQuerySchema } from '../src/types/master';
 import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
 import { CLEAR, buildBulkSet, bulkFieldsFor } from '../src/lib/bulk-fields';
@@ -437,6 +441,114 @@ async function main() {
     check('Add item on a physical photo lot stays blank', (await grid(physPhoto.id)).items.find((i) => i.id === addedPhys.id)?.digital === null);
     await bulkUpdateItems(digitalPhoto.id, { itemIds: [dpItems[0]!.id], set: { digital: false } }, admin);
     check('the answer can still be changed', (await grid(digitalPhoto.id)).items.find((i) => i.id === dpItems[0]!.id)?.digital === false);
+
+    console.log('requirements PDF: lists and the two example items');
+    const subs = await getReferenceList('prasadiSubcategory');
+    const cats = await getReferenceList('prasadiCategory');
+    const subsOf = (cat: string) => subs.filter((i) => i.active && i.meta?.category === cat).map((i) => i.label);
+    check('16 categories, Furniture among them', cats.filter((c) => c.active).length === 16 && cats.some((c) => c.value === 'furniture'), cats.length);
+    check('Bathroom: Shower Bed, Accessories (Buckets, Wipers)', subsOf('bathroom').join(' | ') === 'Shower Bed | Accessories (Buckets, Wipers)', subsOf('bathroom'));
+    check('Personal Wear: seven, ending in Haars', subsOf('personal_wear').join(' | ') === 'Dhotyia | Gatariya | Failyu | Pagh | Walking Shoes | Glasses | Haars', subsOf('personal_wear'));
+    check('Medical Equipments: Wheelchair, Exercise Machines', subsOf('medical_equipments').join(' | ') === 'Wheelchair | Exercise Machines', subsOf('medical_equipments'));
+    check('Sabha Stage: Haars, Puja Items', subsOf('sabha_stage').join(' | ') === 'Haars | Puja Items (Arti, Puja Dish etc.)', subsOf('sabha_stage'));
+    check('Bhojan: Thal Set, Wooden Utensils, Food Items (Furniture moved out)', subsOf('bhojan').join(' | ') === 'Thal Set | Wooden Utensils | Food Items', subsOf('bhojan'));
+    check('Furniture: Walking Chair, Side Tables, Flower Vases, Bhojan Tables', subsOf('furniture').join(' | ') === 'Walking Chair | Side Tables | Flower Vases | Bhojan Tables', subsOf('furniture'));
+    check('categories the PDF leaves empty stay empty', ['sitting_room', 'medical', 'puja', 'gift_items', 'musical_instruments', 'publications'].every((c) => subsOf(c).length === 0));
+
+    const ex = await createIntake(
+      { ...base, mediaLines: [{ format: 'prasadi', dataType: 'physical', mediaSubtype: 'Prasadi', quantity: 2 }] },
+      admin,
+    );
+    created.push(...ex.lots.map((l) => l.id));
+    const exItems = (await grid(ex.id)).items;
+    // Example 1 arrives the way an Excel import does it: header names and dropdown LABELS
+    const ex1Code = exItems[0]!.code;
+    const ex1 = await importItems(
+      ex.id,
+      {
+        apply: true,
+        rows: [
+          {
+            code: ex1Code,
+            cells: {
+              'Details|Title': 'Gatariyu',
+              'Details|Category': 'Personal Wear',
+              'Details|Subcategory': 'Gatariya',
+              'Details|Guru': 'Pramukh Swami Maharaj',
+              'Details|Item details': '95th Birthday Gatariyu Set',
+              'Details|Quantity': '2',
+              'Details|Item history': 'This item was worn by Pramukh Swami Maharaj during his 95th birthday. This gataryiu was gifted by Ramanbhai from Tajpur. Thereafter on Dec 8, 2016 the gatariyu was given by Pujya Narayancharan Swami to P. Vedantpriya Swami for archive.',
+              'Details|Area used by Guru': 'Yagnapurush Vadi Samaiyo Ground',
+              'Details|Date used by Guru': '07/12/2016',
+              'Details|Date received': '08/12/2016',
+              'Details|Received by': 'P. Vedantpriya Swami',
+              'Details|Room': 'Room 1 (Chiku Vadi)',
+              'Details|Cabinet': '1',
+              'Details|Shelf': '6',
+              'Details|Place': 'Sarangpur',
+            },
+          },
+        ],
+      },
+      admin,
+    );
+    check('PDF example 1 imports with no errors', ex1.applied && ex1.errors.length === 0 && ex1.ignoredColumns.length === 0, [ex1.errors, ex1.ignoredColumns]);
+    // Example 2 is typed in the grid / bulk bar, which sends list VALUES
+    const ex2Id = exItems[1]!.id;
+    await bulkUpdateItems(
+      ex.id,
+      {
+        itemIds: [ex2Id],
+        set: {
+          itemName: 'Photo Frame',
+          description: 'MSM Parshad Photo',
+          dateRange: '23/07/2026',
+          place: 'Sarangpur',
+          attrs: {
+            category: 'gift_items',
+            blessedBy: 'mahant_swami_maharaj',
+            quantity: 1,
+            history: 'On July 23, 2026 after Mahant Swami Maharaj’s Puja darshan in Pramukh Mandapam, Pujya Viveksagar Swami spoke about this day being Parshadi Diksha Day.',
+            usedArea: 'Pramukh Mandapam',
+            usedOn: '23/07/2026',
+            receivedBy: 'P. Amrutyogi Swami',
+            room: 'room_1',
+            cabinet: '1',
+            shelf: '6',
+          },
+        },
+      },
+      admin,
+    );
+    const after = (await grid(ex.id)).items;
+    const e1 = after.find((i) => i.code === ex1Code)!;
+    const e2 = after.find((i) => i.id === ex2Id)!;
+    check('example 1 saved as list values with the right dates', e1.itemName === 'Gatariyu' && e1.attrs.category === 'personal_wear' && e1.attrs.subcategory === 'personal_wear.gatariya' && e1.attrs.blessedBy === 'pramukh_swami_maharaj' && e1.attrs.quantity === 2 && e1.attrs.room === 'room_1' && e1.attrs.cabinet === '1' && e1.attrs.shelf === '6' && e1.attrs.usedOn === '07/12/2016' && e1.dateRange === '08/12/2016' && e1.place === 'Sarangpur' && e1.attrs.receivedBy === 'P. Vedantpriya Swami', e1);
+    check('example 2 saved (Gift Items has no subcategory)', e2.itemName === 'Photo Frame' && e2.attrs.category === 'gift_items' && e2.attrs.subcategory === undefined && e2.attrs.blessedBy === 'mahant_swami_maharaj' && e2.attrs.quantity === 1 && e2.dateRange === '23/07/2026', e2);
+    await rejects('example 2 cannot take a Bhojan subcategory under Gift Items', () => bulkUpdateItems(ex.id, { itemIds: [ex2Id], set: { attrs: { subcategory: 'bhojan.food_items' } } }, admin), 400);
+
+    // What the Excel shows and exports, with the labels a screen resolves from the lists
+    const refs = Object.fromEntries(await Promise.all(['guru', 'prasadiCategory', 'prasadiSubcategory', 'prasadiRoom'].map(async (k) => [k, await getReferenceList(k)] as const)));
+    const lab = (l: string, v: string | null) => (v ? (refs[l]?.find((i) => i.value === v)?.label ?? v) : '');
+    const prsCols = forFormat(allColumns([]), 'prasadi');
+    const cell = (item: GridItem, id: string) => cellText(item, prsCols.find((c) => c.id === id)!, lab);
+    check('the Excel shows example 1 by name, not by code', cell(e1, 'blessedBy') === 'Pramukh Swami Maharaj' && cell(e1, 'category') === 'Personal Wear' && cell(e1, 'subcategory') === 'Gatariya' && cell(e1, 'room') === 'Room 1 (Chiku Vadi)' && cell(e1, 'dateRange') === '08/12/2016' && cell(e1, 'quantity') === '2', [cell(e1, 'blessedBy'), cell(e1, 'category'), cell(e1, 'room')]);
+    check('the Excel shows example 2 by name', cell(e2, 'blessedBy') === 'Mahant Swami Maharaj' && cell(e2, 'category') === 'Gift Items' && cell(e2, 'itemName') === 'Photo Frame', [cell(e2, 'blessedBy'), cell(e2, 'category')]);
+    const exWb = await buildItemsWorkbook({ sheets: [{ name: 'Prasadi', rows: after, columns: prsCols }], columns: prsCols, refLabel: lab });
+    const exRead = await readItemsFromExcel(new File([await exWb.xlsx.writeBuffer()], 'ex.xlsx'));
+    const exCells = exRead.rows.find((r) => r.code === ex1Code)?.cells ?? {};
+    check('the exported sheet has example 1 under the document’s column names', exCells['Details|Guru'] === 'Pramukh Swami Maharaj' && exCells['Details|Date received'] === '08/12/2016' && exCells['Details|Room'] === 'Room 1 (Chiku Vadi)' && exCells['Details|Item details'] === '95th Birthday Gatariyu Set', exCells);
+    // and it re-imports cleanly (round trip), changing nothing
+    const reimport = await importItems(ex.id, { apply: false, rows: exRead.rows }, admin);
+    check('the exported sheet imports back with nothing to change and no errors', reimport.errors.length === 0 && reimport.willChange === 0, [reimport.errors, reimport.changes.slice(0, 5)]);
+
+    // The Master Excel finds them by the dropdowns
+    const mGuru = await listMasterItems(masterQuerySchema.parse({ format: 'prasadi', a_blessedBy: 'mahant_swami_maharaj', pageSize: 50 }), admin);
+    check('Master Excel: filter by Guru finds example 2', mGuru.rows.some((r) => r.id === ex2Id), mGuru.total);
+    const mCat = await listMasterItems(masterQuerySchema.parse({ format: 'prasadi', a_category: 'personal_wear', pageSize: 50 }), admin);
+    check('Master Excel: filter by Category finds example 1', mCat.rows.some((r) => r.code === ex1Code), mCat.total);
+    const mQty = await listMasterItems(masterQuerySchema.parse({ format: 'prasadi', a_quantity: '2', pageSize: 50 }), admin);
+    check('Master Excel: filter by Quantity is exact', mQty.rows.some((r) => r.code === ex1Code) && !mQty.rows.some((r) => r.id === ex2Id), mQty.total);
 
     console.log('last three digits');
     const cd = (await grid(digitalPhoto.id)).items;

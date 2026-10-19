@@ -18,6 +18,7 @@
     "db:backfill-item-format": "tsx scripts/backfill-item-format.ts",
     "db:backfill-prasadi-decisions": "tsx scripts/backfill-prasadi-decisions.ts",
     "db:backfill-born-digital": "tsx scripts/backfill-born-digital.ts",
+    "db:sync-prasadi-lists": "tsx scripts/sync-prasadi-lists.ts",
     "db:backfill-format-grants": "tsx scripts/backfill-format-grants.ts",
     "db:backfill-system-grants": "tsx scripts/backfill-system-grants.ts",
     "db:backfill-task-grants": "tsx scripts/backfill-task-grants.ts",
