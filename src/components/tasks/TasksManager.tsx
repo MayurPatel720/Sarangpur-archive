@@ -125,8 +125,8 @@ export function TasksManager() {
     <div className="flex flex-col gap-4 md:gap-5">
       <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
         <div className="flex flex-col gap-1.5 min-w-0">
-          <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">Tasks</h1>
-          <p className="m-0 text-[12.5px] text-ink-3">
+          <h1 className="m-0 text-balance text-[20px] sm:text-[24px] font-semibold tracking-[-0.022em] text-ink">Tasks</h1>
+          <p className="m-0 text-[12.5px] text-ink-3 tabular-nums" aria-live="polite">
             {list.data
               ? `${list.data.total} ${list.data.total === 1 ? 'task' : 'tasks'}${isAdmin ? '' : ' assigned to or set by you'}.`
               : 'Daily work, assigned and closed by the team.'}
@@ -137,7 +137,7 @@ export function TasksManager() {
             <button
               type="button"
               onClick={() => setAssigning(true)}
-              className="inline-flex items-center justify-center h-10 px-4 bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold cursor-pointer"
+              className="inline-flex items-center justify-center h-10 px-4 bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold cursor-pointer transition-[filter] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent touch-manipulation"
             >
               Assign task
             </button>
@@ -145,11 +145,15 @@ export function TasksManager() {
         ) : null}
       </div>
 
-      <div className="bg-surface border border-line rounded-[8px] p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div role="search" aria-label="Filter tasks" className="bg-surface border border-line rounded-[10px] shadow-control p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <Field label="Search">
           <TextInput
             value={text}
             onChange={(e) => setText(e.target.value)}
+            type="search"
+            name="q"
+            autoComplete="off"
+            spellCheck={false}
             placeholder="Title, lot, project, person…"
             aria-label="Search tasks"
           />
@@ -219,12 +223,12 @@ export function TasksManager() {
           <div className="flex items-end gap-2 flex-wrap sm:col-span-2 lg:col-span-3 xl:col-span-6">
             {filters.lot ? (
               <GhostButton type="button" className="h-8 !px-2.5 text-[12px]" onClick={() => setFilter('lot', '')}>
-                Linked lot filter ✕
+                Linked lot filter ×
               </GhostButton>
             ) : null}
             {filters.project ? (
               <GhostButton type="button" className="h-8 !px-2.5 text-[12px]" onClick={() => setFilter('project', '')}>
-                Linked project filter ✕
+                Linked project filter ×
               </GhostButton>
             ) : null}
           </div>
@@ -256,13 +260,13 @@ export function TasksManager() {
             onRetry={() => void list.refetch()}
           />
         ) : !list.data ? (
-          <div className="flex flex-col gap-3 p-4" aria-label="Loading tasks">
+          <div className="flex flex-col gap-3 p-4" role="status" aria-label="Loading tasks">
             {[0, 1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-[52px] w-full" />
             ))}
           </div>
         ) : list.data.rows.length === 0 ? (
-          <p className="m-0 px-4 py-10 text-center text-[13px] font-medium text-ink-3">
+          <p className="m-0 px-4 py-12 text-center text-[13px] font-medium text-ink-3 text-balance">
             {hasFilters ? 'No tasks match these filters.' : 'No tasks yet.'}
           </p>
         ) : (

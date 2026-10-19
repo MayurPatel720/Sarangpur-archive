@@ -8,7 +8,7 @@ import { TaskStatusBadge } from '@/components/tasks/TaskStatusBadge';
 import type { TaskRow } from '@/types/task';
 
 const chipLink =
-  'inline-flex items-center gap-1 font-medium text-ink-2 no-underline hover:text-ink hover:underline';
+  'inline-flex items-center gap-1 font-medium text-ink-2 no-underline hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded-[2px]';
 
 /**
  * One task as a compact card: title, status, then a single meta line — assignees,
@@ -27,13 +27,14 @@ export function TaskCard({
   const finished = task.status === 'done' || task.status === 'cancelled';
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-2.5 border-b border-line-row last:border-b-0 min-w-0">
+    <div className="flex flex-col gap-1.5 px-4 py-3 border-b border-line-row last:border-b-0 min-w-0 transition-colors hover:bg-surface-subtle">
       <div className="flex items-center gap-2 min-w-0">
         <button
           type="button"
           onClick={() => onOpen(task.id)}
-          className={`flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer text-[13px] font-semibold hover:underline truncate ${
-            finished ? 'text-ink-3' : 'text-ink'
+          title={task.title}
+          className={`flex-1 min-w-0 text-left bg-transparent border-0 p-0 cursor-pointer text-[14px] font-semibold hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent rounded-[2px] truncate touch-manipulation ${
+            finished ? 'text-ink-3 line-through decoration-ink-4' : 'text-ink'
           }`}
         >
           {task.title}
@@ -46,7 +47,7 @@ export function TaskCard({
         <p className="m-0 text-[12px] text-danger break-words">Blocked: {task.blockedReason}</p>
       ) : null}
 
-      <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[11.5px] text-ink-3 min-w-0">
+      <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-[12px] text-ink-3 min-w-0">
         {showAssignee ? (
           <span className="min-w-0 max-w-[220px] text-ink-2">
             <AssigneeAvatars assignees={task.assignees} />
@@ -67,8 +68,8 @@ export function TaskCard({
           </Link>
         ) : null}
         {task.checklistTotal > 0 ? (
-          <span className="tnum" aria-label={`${task.checklistDone} of ${task.checklistTotal} checklist items done`}>
-            ☑ {task.checklistDone}/{task.checklistTotal}
+          <span className="tnum" title="Checklist progress" aria-label={`${task.checklistDone} of ${task.checklistTotal} checklist items done`}>
+            Checklist {task.checklistDone}/{task.checklistTotal}
           </span>
         ) : null}
       </div>
