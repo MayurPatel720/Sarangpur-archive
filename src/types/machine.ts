@@ -220,6 +220,7 @@ export const machineEventBodySchema = z.discriminatedUnion('type', [
     /** Condition after the repair. */
     condition: machineConditionSchema.default('working'),
   }),
+  z.object({ type: z.literal('history.note'), text: text(400).min(1, 'Write a note first.') }),
   z.object({ type: z.literal('service.log'), servicedOn: day, note: text(300).optional() }),
 ]);
 export type MachineEventBody = z.input<typeof machineEventBodySchema>;

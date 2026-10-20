@@ -42,11 +42,11 @@ export const MACHINE_CATEGORY_SUGGESTIONS = [
   'Other',
 ] as const;
 
-export const MACHINE_HISTORY_KINDS = ['created', 'edited', 'condition', 'usage', 'loan', 'repair', 'service', 'part'] as const;
+export const MACHINE_HISTORY_KINDS = ['created', 'edited', 'condition', 'usage', 'loan', 'repair', 'service', 'part', 'note'] as const;
 export type MachineHistoryKind = (typeof MACHINE_HISTORY_KINDS)[number];
 
 /** Newest-first cap on the embedded history (older entries drop off). */
-export const MAX_MACHINE_HISTORY = 200;
+export const MAX_MACHINE_HISTORY = 1000;
 
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 

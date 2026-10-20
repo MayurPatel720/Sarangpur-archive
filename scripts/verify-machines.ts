@@ -8,7 +8,7 @@ import './load-env';
 
 import type { MutationContext } from '../src/lib/api';
 import { connectToDatabase } from '../src/lib/mongo';
-import { addMonthsIso, daysUntil, nextServiceDue } from '../src/lib/machine';
+import { addMonthsIso, daysUntil, MAX_MACHINE_HISTORY, nextServiceDue } from '../src/lib/machine';
 import { Machine } from '../src/models/Machine';
 import { applyMachineEvent, createMachine, deleteMachine, updateMachine } from '../src/server/machines/mutations';
 import { getMachine, listMachines } from '../src/server/machines/queries';
@@ -144,10 +144,15 @@ async function main() {
     check('not due yet is excluded', notDue.total === 0);
     check('counters add up', found.counts.all >= 1 && found.counts.working + found.counts.needsRepair + found.counts.notWorking === found.counts.all);
 
+    console.log('history notes');
+    r = await applyMachineEvent(id, { type: 'history.note', text: 'Sent to the lab for a check' }, ctx);
+    check('a note is added to the history', r.machine.history[0]?.kind === 'note' && r.machine.history[0]?.text === 'Sent to the lab for a check');
+    await rejects('an empty note is refused', async () => applyMachineEvent(id, { type: 'history.note', text: '   ' } as never, ctx), 400);
+
     console.log('history cap');
-    for (let i = 0; i < 205; i += 1) await applyMachineEvent(id, { type: 'service.log', servicedOn: '2026-10-02' }, ctx);
+    for (let i = 0; i < MAX_MACHINE_HISTORY + 5; i += 1) await applyMachineEvent(id, { type: 'service.log', servicedOn: '2026-10-02' }, ctx);
     const full = await getMachine(id);
-    check('history is capped at 200', full.machine.history.length === 200, full.machine.history.length);
+    check('history is capped', full.machine.history.length === MAX_MACHINE_HISTORY, full.machine.history.length);
 
     console.log('delete');
     await deleteMachine(id);

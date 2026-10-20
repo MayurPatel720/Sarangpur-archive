@@ -229,6 +229,10 @@ export async function applyMachineEvent(id: string, body: MachineEventBody, ctx:
       }
       break;
     }
+    case 'history.note': {
+      log(doc, ctx, 'note', body.text);
+      break;
+    }
     case 'service.log': {
       assertRealDay(body.servicedOn);
       doc.lastServicedOn = body.servicedOn;

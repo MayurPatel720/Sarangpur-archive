@@ -12,7 +12,7 @@ import { useUrlTab } from '@/lib/useUrlTab';
 import { useCan } from '@/hooks/useCan';
 import { IconChevronLeft } from '@/components/ui/icons';
 import { Definition, EmptyValue, ErrorState, Panel, PanelHeader, Skeleton, TabPanel, Tabs } from '@/components/ui/primitives';
-import { GhostButton, PrimaryButton } from '@/components/ui/Form';
+import { GhostButton, PrimaryButton, TextInput } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/Toast';
 import { ConditionBadge, LoanChip, ServiceChip, UsageChip } from '@/components/machines/MachineBadges';
@@ -69,6 +69,7 @@ export function MachineDetail({ machineId }: { machineId: string }) {
   const { tab, setTab } = useUrlTab(TABS, 'overview');
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [note, setNote] = useState('');
 
   const detail = useQuery({
     queryKey: queryKeys.machines.detail(machineId),
@@ -373,12 +374,39 @@ export function MachineDetail({ machineId }: { machineId: string }) {
       <TabPanel id="history" active={tab === 'history'}>
         <Panel className="overflow-hidden">
           <PanelHeader title="What happened, newest first" />
+          {canManage ? (
+            <form
+              className="flex flex-col gap-2 border-b border-line-row p-4 sm:flex-row"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const text = note.trim();
+                if (!text) return;
+                event.mutate({ type: 'history.note', text }, { onSuccess: () => setNote('') });
+              }}
+            >
+              <TextInput
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={400}
+                name="note"
+                autoComplete="off"
+                placeholder="Add a note to the history…"
+                aria-label="Add a note to the history"
+              />
+              <PrimaryButton type="submit" className="shrink-0" disabled={event.isPending || !note.trim()}>
+                Add note
+              </PrimaryButton>
+            </form>
+          ) : null}
           {m.history.length === 0 ? (
             <Empty>No history yet.</Empty>
           ) : (
             m.history.map((h, i) => (
               <Row key={`${h.at}-${i}`}>
-                <span className="break-words text-[13px] font-medium text-ink">{h.text}</span>
+                <span className="break-words text-[13px] font-medium text-ink">
+                  {h.kind === 'note' ? <span className="mr-2 inline-flex rounded-[4px] border border-line bg-surface-sunken px-1.5 py-px align-middle text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ink-3">Note</span> : null}
+                  {h.text}
+                </span>
                 <span className="text-[11.5px] tabular-nums text-ink-3">
                   {dateTime(h.at)} · {h.by}
                 </span>
