@@ -77,6 +77,11 @@ export const queryKeys = {
     all: ['todos'] as const,
     list: (params: string) => ['todos', 'list', params] as const,
   },
+  machines: {
+    all: ['machines'] as const,
+    list: (params: string) => ['machines', 'list', params] as const,
+    detail: (id: string) => ['machines', 'detail', id] as const,
+  },
   returns: {
     all: ['returns'] as const,
     list: (params: string) => [...queryKeys.returns.all, 'list', params] as const,

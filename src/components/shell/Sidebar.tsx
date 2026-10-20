@@ -43,6 +43,7 @@ const WORKFLOW_ITEMS = [
   { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
   { icon: IconCheckCircle, label: 'My to-do', href: '/todos', perm: 'task:view' },
   { icon: IconCheckCircle, label: 'Tasks', href: '/tasks', perm: 'task:view' },
+  { icon: IconSettings, label: 'Machines', href: '/machines', perm: 'machine:view' },
   { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
   { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconAlertTriangle, label: 'Alerts', href: '/alerts', perm: null },

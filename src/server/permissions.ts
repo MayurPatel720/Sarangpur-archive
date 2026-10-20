@@ -63,6 +63,9 @@ export const PERMISSIONS = [
   'task:assign',
   /** See every user's tasks (and filter by assignee). Admin-only by seed. */
   'task:viewAll',
+  // Machines register. `view` = see machines; `manage` = add, edit, lend, repair, delete.
+  'machine:view',
+  'machine:manage',
   // Admin
   'user:manage',
   'settings:manage',
@@ -120,6 +123,7 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'attachment:upload',
     'project:view',
     'task:view',
+    'machine:view',
     'item:create',
     ...FORMAT_PERMISSIONS,
   ],
@@ -143,6 +147,8 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'attachment:upload',
     'project:view',
     'task:view',
+    'machine:view',
+    'machine:manage',
     'item:create',
     ...FORMAT_PERMISSIONS,
   ],
@@ -168,6 +174,8 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'attachment:upload',
     'project:view',
     'task:view',
+    'machine:view',
+    'machine:manage',
     'item:create',
     ...FORMAT_PERMISSIONS,
   ],
@@ -184,6 +192,7 @@ export const SYSTEM_ROLE_GRANTS: Record<SystemRoleKey, Permission[]> = {
     'storage:view',
     'project:view',
     'task:view',
+    'machine:view',
     ...FORMAT_PERMISSIONS,
   ],
 };

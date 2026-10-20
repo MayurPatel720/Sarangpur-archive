@@ -170,6 +170,16 @@ import {
   type TodoResponse,
 } from '@/types/todo';
 import {
+  machineDeleteResponseSchema,
+  machineListResponseSchema,
+  machineResponseSchema,
+  type MachineCreateBody,
+  type MachineEventBody,
+  type MachineListResponse,
+  type MachinePatchBody,
+  type MachineResponse,
+} from '@/types/machine';
+import {
   itemImageResponseSchema,
   itemImagesResponseSchema,
   type ItemImageResponse,
@@ -754,6 +764,19 @@ export const todosApi = {
     sendJson<TodoResponse>(`/api/todos/${encodeURIComponent(id)}`, 'PATCH', body, todoResponseSchema),
   remove: (id: string) =>
     sendJson<{ ok: true }>(`/api/todos/${encodeURIComponent(id)}`, 'DELETE', {}, todoDeleteResponseSchema),
+};
+
+export const machinesApi = {
+  list: (params: Record<string, string>) =>
+    getJson<MachineListResponse>(`/api/machines${qs(params)}`, machineListResponseSchema),
+  detail: (id: string) => getJson<MachineResponse>(`/api/machines/${encodeURIComponent(id)}`, machineResponseSchema),
+  create: (body: MachineCreateBody) => sendJson<MachineResponse>('/api/machines', 'POST', body, machineResponseSchema),
+  update: (id: string, body: MachinePatchBody) =>
+    sendJson<MachineResponse>(`/api/machines/${encodeURIComponent(id)}`, 'PATCH', body, machineResponseSchema),
+  event: (id: string, body: MachineEventBody) =>
+    sendJson<MachineResponse>(`/api/machines/${encodeURIComponent(id)}/events`, 'POST', body, machineResponseSchema),
+  remove: (id: string) =>
+    sendJson<{ ok: true }>(`/api/machines/${encodeURIComponent(id)}`, 'DELETE', {}, machineDeleteResponseSchema),
 };
 
 export const returnsApi = {

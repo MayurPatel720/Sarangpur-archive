@@ -26,3 +26,4 @@ export { Notification, type NotificationDoc } from './Notification';
 export { LotPickup, type LotPickupDoc } from './LotPickup';
 export { ProjectImage, type ProjectImageDoc } from './ProjectImage';
 export { LotImage, type LotImageDoc } from './LotImage';
+export { Machine, type MachineDoc } from './Machine';

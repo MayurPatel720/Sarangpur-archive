@@ -23,6 +23,7 @@
     "db:backfill-format-grants": "tsx scripts/backfill-format-grants.ts",
     "db:backfill-system-grants": "tsx scripts/backfill-system-grants.ts",
     "db:backfill-task-grants": "tsx scripts/backfill-task-grants.ts",
+    "db:backfill-machine-grants": "tsx scripts/backfill-machine-grants.ts",
     "db:backfill-task-assignees": "tsx scripts/backfill-task-assignees.ts",
     "verify:seed": "tsx scripts/verify-seed.ts",
     "verify:decision-rule": "tsx scripts/verify-decision-rule.ts",
@@ -32,6 +33,7 @@
     "verify:returns-todo": "tsx scripts/verify-returns-todo.ts",
     "verify:item-decisions": "tsx scripts/verify-item-decisions.ts",
     "verify:todos": "tsx scripts/verify-todos.ts",
+    "verify:machines": "tsx scripts/verify-machines.ts",
     "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile && npm run verify:search",
     "db:check": "tsx scripts/check-db.ts"
   },
