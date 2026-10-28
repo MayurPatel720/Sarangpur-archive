@@ -36,7 +36,7 @@ import { cellText } from '../src/lib/item-cells';
 import { getReferenceList } from '../src/server/reference';
 import { listMasterItems } from '../src/server/lots/master-items';
 import { masterQuerySchema } from '../src/types/master';
-import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor } from '../src/lib/item-columns';
+import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor, SHEET_HIDDEN, shownOnSheet } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
 import { CLEAR, buildBulkSet, bulkFieldsFor } from '../src/lib/bulk-fields';
 import { buildItemsWorkbook, readItemsFromExcel } from '../src/components/lots/excel-io';
@@ -113,10 +113,14 @@ async function excelRoundTrip() {
   const labelsFor = (format: string) => allColumns([]).filter((c) => appliesToFormat(c, format)).map((c) => c.label);
   const prs = labelsFor('prasadi');
   const vid = labelsFor('video');
-  check('prasadi gets its own columns', ['Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Received by', 'Related media', 'Condition', 'Room', 'Cabinet', 'Shelf', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
+  check('prasadi gets its own columns', ['Title', 'Photo', 'Category', 'Subcategory', 'Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Received by (POC)', 'Related media', 'Condition', 'Room', 'Cabinet', 'Shelf', 'Sticker applied', 'Re-check in', 'Next check due', 'Last checked'].every((l) => prs.includes(l)), prs);
   check('prasadi: the common Date column reads Date received, other formats keep Date', labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'prasadi') === 'Date received' && labelFor(allColumns([]).find((c) => c.id === 'dateRange')!, 'photo') === 'Date', null);
   const prsDetails = forFormat(allColumns([]), 'prasadi').filter((c) => c.dept === 'details').map((c) => c.label);
-  check('prasadi Details follow the requirements document, number by number', prsDetails.join(' | ') === ['Media type', 'Archive code', 'Status', 'Title', 'Photo', 'Photo Archive', 'Category', 'Subcategory', 'Guru', 'Location used by Guru', 'Date used by Guru', 'Area used by Guru', 'Item details', 'Quantity', 'Item history', 'Occasion', 'Date received', 'Received From', 'Received by', 'Room', 'Cabinet', 'Shelf', 'Related media', 'Condition', "Sender's code", 'Phy source', 'Details remark'].join(' | '), prsDetails);
+  check('prasadi Details are exactly the requirements document fields (plus Condition), in its order', prsDetails.join(' | ') === ['Archive code', 'Status', 'Title', 'Photo', 'Photo Archive', 'Category', 'Subcategory', 'Guru', 'Item details', 'Room', 'Cabinet', 'Shelf', 'Quantity', 'Item history', 'Location used by Guru', 'Area used by Guru', 'Date used by Guru', 'Date received', 'Received by (POC)', 'Condition'].join(' | '), prsDetails);
+  const prsSheet = forFormat(allColumns([]), 'prasadi').filter((c) => c.dept !== 'details').map((c) => c.label);
+  check('prasadi sheet outside Details: the quality check and Return / discard only', prsSheet.join(' | ') === ['Sticker applied', 'Re-check in', 'Next check due', 'Last checked', 'Return / discard'].join(' | '), prsSheet);
+  check('hidden Prasadi columns are still stored, and the removal form still works with them', SHEET_HIDDEN.prasadi!.every((id) => allColumns([]).some((c) => c.id === id)) && REMOVAL_COLUMNS.every((c) => SHEET_HIDDEN.prasadi!.includes(c.id) && appliesToFormat(c, 'prasadi') && !shownOnSheet(c, 'prasadi')));
+  check('hiding is for Prasadi only: other formats still show their remark, MLS tag and file path', ['remarks', 'taggedInMls', 'fileName'].every((id) => forFormat(allColumns([]), 'photo').some((c) => c.id === id)));
   const photoRegistry = allColumns([]).filter((c) => appliesToFormat(c, 'photo')).map((c) => c.id).join();
   check('other formats keep the registry order', forFormat(allColumns([]), 'photo').map((c) => c.id).join() === photoRegistry);
   // Status: Active / Inactive / Details Missing
@@ -155,7 +159,7 @@ async function excelRoundTrip() {
   const prasadiBulk = ids(['prasadi']);
   check('bulk: photo rows get the photo fields', ['senderCode', 'nameOnTape', 'digital', 'captured', 'taggedInMls', 'logged', 'disposition', 'physicalSource'].every((i) => photoBulk.includes(i)), photoBulk);
   check('bulk: photo rows get no Prasadi fields', !photoBulk.some((i) => ['blessedBy', 'stickerApplied', 'recheckWeeks', 'itemName'].includes(i)), photoBulk);
-  check('bulk: Prasadi rows get the Prasadi fields', ['itemName', 'category', 'subcategory', 'blessedBy', 'usedOn', 'usedArea', 'description', 'quantity', 'history', 'event', 'receivedBy', 'relatedMedia', 'itemCondition', 'room', 'cabinet', 'shelf', 'stickerApplied', 'recheckWeeks', 'taggedInMls'].every((i) => prasadiBulk.includes(i)) && !prasadiBulk.includes('phyStorageLoc') && !prasadiBulk.includes('photo'), prasadiBulk);
+  check('bulk: Prasadi rows get the Prasadi fields', ['itemName', 'category', 'subcategory', 'blessedBy', 'usedOn', 'usedArea', 'description', 'quantity', 'history', 'receivedBy', 'itemCondition', 'room', 'cabinet', 'shelf', 'stickerApplied', 'recheckWeeks'].every((i) => prasadiBulk.includes(i)) && !['event', 'relatedMedia', 'taggedInMls', 'senderCode'].some((i) => prasadiBulk.includes(i)) && !prasadiBulk.includes('phyStorageLoc') && !prasadiBulk.includes('photo'), prasadiBulk);
   check('bulk: Prasadi rows get no tape / case / Decision / Captured fields', !prasadiBulk.some((i) => ['nameOnTape', 'nameOnCase', 'digitalSource', 'digital', 'redigital', 'discard', 'decisionRemark', 'captured'].includes(i)), prasadiBulk);
   check('bulk: never offers the read-only columns', !['mediaType', 'code', 'duplicateCode', 'nextCheckDue', 'lastCheckedAt'].some((i) => ids(['photo', 'prasadi']).includes(i)));
   const mixedBulk = bulkFieldsFor(['photo', 'prasadi'], []);
@@ -165,8 +169,8 @@ async function excelRoundTrip() {
   const sample = bulkFieldsFor(['prasadi'], [{ key: 'c_9', label: 'Shelf no', type: 'number', dept: 'storage' }]);
   const built = buildBulkSet(sample, { blessedBy: 'pramukh_swami_maharaj', stickerApplied: 'Yes', recheckWeeks: '3', c_9: '12', place: '', description: CLEAR });
   check('bulk: values land in the right place and blanks are left alone', built.set.description === null && built.set.recheckWeeks === 3 && built.set.attrs?.blessedBy === 'pramukh_swami_maharaj' && built.set.attrs?.stickerApplied === true && built.set.custom?.c_9 === 12 && !('place' in built.set) && Object.keys(built.errors).length === 0, built);
-  const bad = buildBulkSet(sample, { recheckWeeks: '0', c_9: 'abc', loggedAt: '31/02/2026' });
-  check('bulk: bad values are reported per field and nothing is sent on', Object.keys(bad.errors).sort().join() === 'c_9,loggedAt,recheckWeeks', bad.errors);
+  const bad = buildBulkSet(sample, { recheckWeeks: '0', c_9: 'abc' });
+  check('bulk: bad values are reported per field and nothing is sent on', Object.keys(bad.errors).sort().join() === 'c_9,recheckWeeks', bad.errors);
   check('bulk: Clear blanks a Yes/No answer but is refused on a flag', buildBulkSet(bulkFieldsFor(['photo'], []), { digital: CLEAR }).set.digital === null && Boolean(buildBulkSet(bulkFieldsFor(['photo'], []), { captured: CLEAR }).errors.captured));
   const prsRow = row(3, { format: 'prasadi', itemName: 'Mala', attrs: { blessedBy: 'pramukh_swami_maharaj', stickerApplied: true, category: 'bedroom', quantity: 2 }, dateRange: '12/03/1998', recheckWeeks: 3, nextCheckDue: '07/11/2026' });
   const lookup = (l: string, v: string | null) => (l === 'guru' && v === 'pramukh_swami_maharaj' ? 'Pramukh Swami Maharaj' : l === 'prasadiCategory' && v === 'bedroom' ? 'Bedroom' : (v ?? ''));

@@ -1,7 +1,7 @@
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { parseDateRange } from '@/lib/date-range';
-import { allColumns, allLabels, appliesToFormat, deptLabel, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
+import { allColumns, allLabels, deptLabel, shownOnSheet, type ColumnSpec, type CustomColumn } from '@/lib/item-columns';
 import { cellText } from '@/lib/item-cells';
 import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
 import { REF_LIST_KEYS, findRefItem, refLabel as refLabelOf, type RefLists } from '@/lib/ref-lists';
@@ -91,7 +91,7 @@ export async function importItems(
         continue;
       }
       // A column that does not exist for this row's media format (e.g. "Blessed by" on a video) is ignored.
-      if (!spec.custom && !appliesToFormat(spec, item.format)) {
+      if (!spec.custom && !shownOnSheet(spec, item.format)) {
         ignored.add(spec.label);
         continue;
       }

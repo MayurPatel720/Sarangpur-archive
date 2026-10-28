@@ -13,7 +13,7 @@ import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, appliesToFormat, forFormat, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, forFormat, shownOnSheet, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -165,11 +165,11 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const prasadiOnly = lotFormats.length > 0 && lotFormats.every((f) => f === PRASADI_FORMAT);
   /** Departments that have a column on at least one of this lot's sheets (Removal exists only for Prasadi). */
   const lotDepts = useMemo(
-    () => DEPARTMENTS.filter((d) => specs.some((s) => s.dept === d.id && (lotFormats.length === 0 || lotFormats.some((f) => appliesToFormat(s, f))))),
+    () => DEPARTMENTS.filter((d) => specs.some((s) => s.dept === d.id && (lotFormats.length === 0 || lotFormats.some((f) => shownOnSheet(s, f))))),
     [specs, lotFormats],
   );
   const hiddenSpecs = useMemo(
-    () => specs.filter((s) => hiddenIds.has(s.id) && (lotFormats.length === 0 || lotFormats.some((f) => appliesToFormat(s, f)))),
+    () => specs.filter((s) => hiddenIds.has(s.id) && (lotFormats.length === 0 || lotFormats.some((f) => shownOnSheet(s, f)))),
     [specs, hiddenIds, lotFormats],
   );
   /** Visible columns per media format: a Prasadi sheet gets Prasadi columns, a video sheet its tape / case columns. */

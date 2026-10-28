@@ -101,6 +101,24 @@ type FormatRule = Pick<ColumnSpec, 'formats' | 'notFormats'>;
 export const appliesToFormat = (c: FormatRule, format: string | null): boolean =>
   format === null || ((!c.formats || c.formats.includes(format)) && !c.notFormats?.includes(format));
 
+/**
+ * Columns a format still has in the database (nothing is deleted, and a few still work behind a dialog,
+ * like the removal form behind Prasadi's Status) but no longer shows on its sheet: not in the lot Excel,
+ * the Master Excel, the bulk-edit bar or an import. Prasadi's sheet keeps only the fields of its requirements document,
+ * plus the quality-check columns, Condition, and Return / discard.
+ */
+export const SHEET_HIDDEN: Record<string, readonly string[]> = {
+  prasadi: [
+    'mediaType', 'event', 'receivedFrom', 'relatedMedia', 'senderCode', 'physicalSource', 'remarks', 'fileName', 'storageRemark', 'taggedInMls',
+    'logged', 'loggedAt', 'loggerName',
+    'removedOn', 'sentBy', 'sentFrom', 'requestedBy', 'newLocation', 'sentTo', 'receivedAtNewOn', 'requestHistory',
+  ],
+};
+
+/** Is this column shown on a sheet of the given format? (`appliesToFormat`, minus the columns the format hides.) */
+export const shownOnSheet = (c: Pick<ColumnSpec, 'id' | 'formats' | 'notFormats'>, format: string | null): boolean =>
+  appliesToFormat(c, format) && !(format !== null && (SHEET_HIDDEN[format]?.includes(c.id) ?? false));
+
 /** A column every media format has — what the Master Excel shows when no single format is chosen. */
 export const isCommonColumn = (c: FormatRule & { common?: boolean }): boolean => c.common === true || (!c.formats && !c.notFormats);
 
@@ -110,18 +128,15 @@ export const labelFor = (c: Pick<ColumnSpec, 'label' | 'labels'>, format: string
 
 /**
  * A format's own column order (within each department), where it differs from the registry's.
- * Prasadi follows the requirements document, number by number:
- *   1 Title · 2 Category · 3 Subcategory · 4 Guru · 5 Date used by Guru · 6 Area used by Guru ·
- *   7 Item details · 8 Quantity · 9 Item history · 10 Occasion (prasang) · 11 Date received ·
- *   12 Received by · 13 Location (Room, Cabinet, Shelf) · 14 Related media
- * with the Status first, the item's Photo next to its Title (then its Photo Archive reference),
- * Place read as "Location used by Guru", and the shared columns (Sender's code, Phy source, Remark) after them. Columns not listed keep their registry order, after the listed ones.
+ * Prasadi follows its requirements document: Status, Title, Photo, Photo Archive, Category, Subcategory,
+ * Guru, Item details, Location (Room, Cabinet, Shelf), Quantity, Item history, Location used by Guru,
+ * Area used by Guru, Date used by Guru, Date received, Received by (POC), then Condition (the quality check records it).
+ * Place reads as "Location used by Guru". Columns not listed keep their registry order, after the listed ones.
  */
 export const FORMAT_COLUMN_ORDER: Record<string, string[]> = {
   prasadi: [
-    'status', 'itemName', 'photo', 'photoArchive', 'category', 'subcategory', 'blessedBy', 'place', 'usedOn', 'usedArea',
-    'description', 'quantity', 'history', 'event', 'dateRange', 'receivedFrom', 'receivedBy', 'room', 'cabinet', 'shelf',
-    'relatedMedia', 'itemCondition',
+    'status', 'itemName', 'photo', 'photoArchive', 'category', 'subcategory', 'blessedBy', 'description', 'room', 'cabinet', 'shelf',
+    'quantity', 'history', 'place', 'usedArea', 'usedOn', 'dateRange', 'receivedBy', 'itemCondition',
   ],
 };
 
@@ -131,7 +146,7 @@ export const FORMAT_COLUMN_ORDER: Record<string, string[]> = {
  * and departments keep their order; custom columns stay last in their department.
  */
 export function forFormat<T extends Pick<ColumnSpec, 'id' | 'label' | 'labels' | 'dept' | 'kind' | 'formats' | 'notFormats'>>(cols: T[], format: string): T[] {
-  const applicable = cols.filter((c) => appliesToFormat(c, format)).map((c) => ({ ...c, label: labelFor(c, format) }));
+  const applicable = cols.filter((c) => shownOnSheet(c, format)).map((c) => ({ ...c, label: labelFor(c, format) }));
   const order = FORMAT_COLUMN_ORDER[format];
   if (!order) return applicable;
   const rank = (c: T) => {
@@ -186,7 +201,7 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'history', label: 'Item history', dept: 'details', kind: 'longtext', field: 'history', attr: true, width: 280, formats: PRASADI, hint: 'Where it came from and how it was used.' },
   { id: 'event', label: 'Occasion', dept: 'details', kind: 'text', field: 'event', width: 200, formats: PRASADI, hint: 'The prasang: when / how it was given, e.g. Diksha day, home visit, festival.' },
   { id: 'receivedFrom', label: 'Received From', dept: 'details', kind: 'text', field: 'receivedFrom', attr: true, width: 180, formats: PRASADI, hint: 'Who gave it to the archive.' },
-  { id: 'receivedBy', label: 'Received by', dept: 'details', kind: 'text', field: 'receivedBy', attr: true, width: 170, formats: PRASADI, hint: 'The point of contact who received it.' },
+  { id: 'receivedBy', label: 'Received by (POC)', aliases: ['Received by'], dept: 'details', kind: 'text', field: 'receivedBy', attr: true, width: 170, formats: PRASADI, hint: 'The point of contact who received it.' },
   { id: 'relatedMedia', label: 'Related media', dept: 'details', kind: 'text', field: 'relatedMedia', attr: true, check: 'itemCodes', width: 220, formats: PRASADI, hint: 'Archive codes of related photos / videos, separated by commas.' },
   { id: 'itemCondition', label: 'Condition', dept: 'details', kind: 'text', field: 'itemCondition', width: 150, formats: PRASADI, hint: 'e.g. Good, Fragile, Needs care.' },
   { id: 'nameOnTape', label: 'Name on tape', dept: 'details', kind: 'text', field: 'nameOnTape', width: 170, notFormats: PRASADI },

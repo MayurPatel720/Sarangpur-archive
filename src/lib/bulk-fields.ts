@@ -1,6 +1,6 @@
 import { parseDateRange } from '@/lib/date-range';
 import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
-import { allColumns, appliesToFormat, forFormat, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, forFormat, shownOnSheet, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ItemsBulkSet } from '@/types/items';
 
 /**
@@ -84,7 +84,7 @@ export function bulkFieldsFor(formats: string[], custom: CustomColumn[]): BulkFi
         : null;
     if (!target) continue;
     // Applicable to which of the selected formats? (custom columns belong to every format)
-    const applies = c.custom ? formats : formats.filter((f) => appliesToFormat(c, f));
+    const applies = c.custom ? formats : formats.filter((f) => shownOnSheet(c, f));
     if (formats.length > 0 && applies.length === 0) continue;
     out.push({
       id: c.id,
