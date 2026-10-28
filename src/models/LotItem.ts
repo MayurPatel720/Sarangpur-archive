@@ -96,6 +96,8 @@ const lotItemSchema = new Schema(
     /** Item photos (Prasadi): count and cover URL, kept in step with the LotImage rows (no lookup on read). */
     imageCount: { type: Number, default: 0, min: 0, max: 5 },
     coverUrl: { type: String, default: null },
+    /** The first photos' URLs (cover first, at most 4) for the Excel's photo mosaic. */
+    photoUrls: { type: [String], default: [] },
     recheckWeeks: { type: Number, default: null, min: 1, max: 260 },
     nextCheckDue: { type: Date, default: null },
     lastCheckedAt: { type: Date, default: null },

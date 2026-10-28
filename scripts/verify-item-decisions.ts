@@ -91,7 +91,7 @@ async function excelRoundTrip() {
     decisionRemark: null, result: null, captured: false, digitalSource: null, fileName: null, phyStorageLoc: null,
     disposition: null, dispositionStatus: null, taggedInMls: false, storageRemark: null, logged: false, loggedAt: '',
     loggerName: null, custom: {}, itemName: null, description: null, event: null, itemCondition: null, attrs: {},
-    recheckWeeks: null, nextCheckDue: '', lastCheckedAt: '', imageCount: 0, coverUrl: null, ...over,
+    recheckWeeks: null, nextCheckDue: '', lastCheckedAt: '', imageCount: 0, coverUrl: null, photoUrls: [], ...over,
   });
   const custom = [{ key: 'c_1', label: 'Reel', type: 'number' as const, dept: 'storage' as const }];
   const wb = await buildItemsWorkbook({

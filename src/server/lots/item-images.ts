@@ -57,6 +57,9 @@ async function log(session: ClientSession, lot: LotHead, item: ItemHead, ctx: Mu
   );
 }
 
+/** How many photo URLs the item row carries for the Excel's mosaic. */
+const ITEM_PHOTO_PREVIEW = 4;
+
 /** Recomputes the item's denormalised photo summary from its image rows (inside the caller's transaction). */
 async function syncItem(session: ClientSession, itemId: Types.ObjectId): Promise<void> {
   const imgs = await LotImage.find({ item: itemId }).sort({ createdAt: 1 }).session(session);
@@ -66,7 +69,7 @@ async function syncItem(session: ClientSession, itemId: Types.ObjectId): Promise
     await imgs[0].save({ session });
     cover = imgs[0];
   }
-  await LotItem.updateOne({ _id: itemId }, { $set: { imageCount: imgs.length, coverUrl: cover?.url ?? null } }, { session });
+  await LotItem.updateOne({ _id: itemId }, { $set: { imageCount: imgs.length, coverUrl: cover?.url ?? null, photoUrls: [...(cover ? [cover] : []), ...imgs.filter((i) => i !== cover)].slice(0, ITEM_PHOTO_PREVIEW).map((i) => i.url) } }, { session });
 }
 
 export async function listItemImages(lotId: string, itemId: string, ctx: MutationContext): Promise<ItemImagesResponse> {

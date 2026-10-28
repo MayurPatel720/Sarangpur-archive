@@ -34,6 +34,61 @@ type Spec = ColumnSpec & { custom?: CustomColumn };
 
 /** Row height of a sheet with a photo column (a normal row is 42px: this is about four of them). */
 export const PHOTO_ROW_PX = 168;
+
+/**
+ * The photo column's cell: a small mosaic of the item's first photos (1 → one big picture, 2 → two,
+ * 3 → one tall and two small, 4 or more → a 2×2 grid with "+N" on the last tile) and a footer with the
+ * count and a Manage button. Clicking a picture opens the photos full screen; Manage (or an empty
+ * cell) opens the add / delete dialog — the grid's click handler tells them apart by `data-manage`.
+ */
+function PhotoCell({ item }: { item: GridItem }) {
+  const total = item.imageCount;
+  const urls = item.photoUrls.length > 0 ? item.photoUrls : item.coverUrl ? [item.coverUrl] : [];
+  if (total === 0 || urls.length === 0) {
+    return (
+      <span className="flex h-full w-full flex-col items-center justify-center gap-1 rounded-[8px] border border-dashed border-line-strong bg-surface-subtle text-accent transition-colors hover:bg-accent-soft">
+        <span className="text-[20px] font-light leading-none" aria-hidden>
+          +
+        </span>
+        <span className="text-[12px] font-semibold">Add photos</span>
+        <span className="text-[11px] text-ink-3">up to 5</span>
+      </span>
+    );
+  }
+  const shown = urls.slice(0, 4);
+  const more = total - shown.length;
+  const layout = shown.length === 1 ? 'grid-cols-1 grid-rows-1' : shown.length === 2 ? 'grid-cols-2 grid-rows-1' : 'grid-cols-2 grid-rows-2';
+  return (
+    <span className="flex h-full w-full flex-col gap-1">
+      <span className={`grid min-h-0 flex-1 gap-[3px] overflow-hidden rounded-[6px] ${layout}`}>
+        {shown.map((u, i) => (
+          <span
+            key={u}
+            className={`relative block min-h-0 min-w-0 overflow-hidden bg-surface-sunken ${shown.length === 3 && i === 0 ? 'row-span-2' : ''}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={photoMediumUrl(u)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-150 hover:scale-105" />
+            {i === shown.length - 1 && more > 0 ? (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-[15px] font-semibold tabular-nums text-white">+{more}</span>
+            ) : null}
+          </span>
+        ))}
+      </span>
+      <span className="flex h-7 shrink-0 items-center justify-between gap-2 px-0.5">
+        <span className="text-[11.5px] font-semibold tabular-nums text-ink-2">
+          {total} {total === 1 ? 'photo' : 'photos'}
+        </span>
+        <button
+          type="button"
+          data-manage
+          className="h-6 cursor-pointer rounded-[4px] border border-line-strong bg-surface px-2 text-[11px] font-semibold text-accent transition-colors hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent"
+        >
+          Manage
+        </button>
+      </span>
+    </span>
+  );
+}
 type Tri = boolean | null;
 const TRI_VALUES = ['Yes', 'No', ''] as const;
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
@@ -302,23 +357,7 @@ export function ItemFamilyGrid({
               else onViewPhotos(p.data);
             },
             valueGetter: (p) => p.data?.imageCount ?? 0,
-            cellRenderer: (p: ICellRendererParams<GridItem>) =>
-              p.data?.coverUrl ? (
-                <span className="relative block h-full w-full overflow-hidden rounded-[6px]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={photoMediumUrl(p.data.coverUrl)} alt="" className="h-full w-full object-cover" />
-                  <span className="absolute bottom-1 left-1 rounded-[4px] bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                    {p.data.imageCount} {p.data.imageCount === 1 ? 'photo' : 'photos'}
-                  </span>
-                  <span data-manage className="absolute right-1 top-1 rounded-[4px] bg-surface px-1.5 py-0.5 text-[11px] font-semibold text-accent shadow-control">
-                    Manage
-                  </span>
-                </span>
-              ) : (
-                <span className="flex h-full w-full items-center justify-center rounded-[6px] border border-dashed border-line-strong text-[12px] font-medium text-accent">
-                  + Add photo
-                </span>
-              ),
+            cellRenderer: (p: ICellRendererParams<GridItem>) => (p.data ? <PhotoCell item={p.data} /> : null),
           };
         case 'weeks':
           // Only a number is typed; "weeks" is always written beside it.

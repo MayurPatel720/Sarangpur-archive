@@ -70,6 +70,8 @@ export const gridItemSchema = z.object({
   /** Prasadi item photos: how many (max 5) and the cover image's URL (null = none). */
   imageCount: z.number(),
   coverUrl: z.string().nullable(),
+  /** Up to 4 photo URLs, cover first (for the photo mosaic). */
+  photoUrls: z.array(z.string()),
   /** Prasadi quality check: weeks until the next one (null = none planned) and its dates (`dd/mm/yyyy` or ''). */
   recheckWeeks: z.number().nullable(),
   nextCheckDue: z.string(),

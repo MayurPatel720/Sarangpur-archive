@@ -173,6 +173,8 @@ export function toGridRow(it: ItemLean, lot: RowLotInfo): GridItem {
       attrs: (it.attrs ?? {}) as GridItem['attrs'],
       imageCount: it.imageCount ?? 0,
       coverUrl: it.coverUrl ?? null,
+      // items saved before the mosaic existed only have a cover
+      photoUrls: it.photoUrls?.length ? it.photoUrls : it.coverUrl ? [it.coverUrl] : [],
       recheckWeeks: it.recheckWeeks ?? null,
       nextCheckDue: isoDayToDmy(isoDay(it.nextCheckDue)),
       lastCheckedAt: isoDayToDmy(isoDay(it.lastCheckedAt)),
