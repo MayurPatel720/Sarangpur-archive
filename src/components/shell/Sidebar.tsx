@@ -33,6 +33,9 @@ import {
   IconClock,
 } from '@/components/ui/icons';
 
+/** Formats whose sidebar shows the Machines tile. */
+const MACHINE_FORMATS: readonly string[] = ['photo', 'video'];
+
 type NavItem = { icon: React.ElementType; label: string; href: string };
 
 const WORKFLOW_ITEMS = [
@@ -222,6 +225,8 @@ export function Sidebar() {
     const isPicker = item.label === 'Main dashboard';
     const isFormatDash = item.label === 'Dashboard';
     if (isFormatDash && ready && accessible && accessible.length === 0) continue;
+    // Machines (recorders, cameras…) matter to the Photo and Video blocks only; the last block used keeps it on its own pages.
+    if (item.href === '/machines' && !MACHINE_FORMATS.includes((ctxFormat ?? lastFormat ?? '') as never)) continue;
     // Some rows deep-link with a query (e.g. `/projects?new=1`) — active only
     // when the pathname AND those exact params match; extra params are ignored.
     const [bare = item.href, itemQuery = ''] = item.href.split('?');

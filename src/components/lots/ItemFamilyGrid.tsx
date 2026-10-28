@@ -38,8 +38,8 @@ export const PHOTO_ROW_PX = 168;
 /**
  * The photo column's cell: a small mosaic of the item's first photos (1 → one big picture, 2 → two,
  * 3 → one tall and two small, 4 or more → a 2×2 grid with "+N" on the last tile) and a footer with the
- * count and a Manage button. Clicking a picture opens the photos full screen; Manage (or an empty
- * cell) opens the add / delete dialog — the grid's click handler tells them apart by `data-manage`.
+ * count and a Manage button. Clicking a picture opens the photos full screen; Manage, the "+N" tile (or an empty
+ * cell) opens the dialog with all the photos — the grid's click handler tells them apart by `data-manage`.
  */
 function PhotoCell({ item }: { item: GridItem }) {
   const total = item.imageCount;
@@ -59,7 +59,7 @@ function PhotoCell({ item }: { item: GridItem }) {
   const more = total - shown.length;
   const layout = shown.length === 1 ? 'grid-cols-1 grid-rows-1' : shown.length === 2 ? 'grid-cols-2 grid-rows-1' : 'grid-cols-2 grid-rows-2';
   return (
-    <span className="flex h-full w-full flex-col gap-1">
+    <span className="flex h-full w-full flex-col gap-1 leading-none">
       <span className={`grid min-h-0 flex-1 gap-[3px] overflow-hidden rounded-[6px] ${layout}`}>
         {shown.map((u, i) => (
           <span
@@ -69,7 +69,7 @@ function PhotoCell({ item }: { item: GridItem }) {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={photoMediumUrl(u)} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-150 hover:scale-105" />
             {i === shown.length - 1 && more > 0 ? (
-              <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-[15px] font-semibold tabular-nums text-white">+{more}</span>
+              <span data-manage title="See all photos" className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/55 text-[15px] font-semibold tabular-nums text-white transition-colors hover:bg-black/70">+{more}</span>
             ) : null}
           </span>
         ))}
