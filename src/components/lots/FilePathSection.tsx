@@ -7,6 +7,7 @@ import type { LotDetailResponse, LotPatchBody } from '@/types/lot';
 import { Field, FormError, PrimaryButton, TextInput } from '@/components/ui/Form';
 import { Badge, Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
+import { cleanPath, loadBaseFolder, readDrop } from '@/lib/file-path';
 
 type DetailLot = LotDetailResponse['lot'];
 
@@ -75,7 +76,19 @@ export function FilePathSection({ lot, onChanged }: { lot: DetailLot; onChanged:
               <TextInput
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
-                placeholder="e.g. /archive/2026/LOT-2026-1285"
+                // pasted "Copy as path" quotes and file:// links are cleaned up; a dropped path text or folder fills it in
+                onBlur={() => setFilePath((v) => cleanPath(v))}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const d = readDrop(e.dataTransfer, loadBaseFolder());
+                  if (d.path) setFilePath(d.path);
+                  else if (d.name) setFilePath(d.name);
+                }}
+                name="digitalFilePath"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="e.g. /archive/2026/LOT-2026-1285 (paste or drop a folder)"
               />
             </Field>
             <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">

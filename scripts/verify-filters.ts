@@ -8,6 +8,7 @@ import './load-env';
 
 import { advancedFilterSchema, isRuleComplete, LOT_FILTER_FIELDS, parseAdvanced, serializeAdvanced } from '../src/lib/advanced-filters';
 import { connectToDatabase } from '../src/lib/mongo';
+import { cleanPath, joinPath } from '../src/lib/file-path';
 import type { MutationContext } from '../src/lib/api';
 import { MASTER_SORTABLE_IDS } from '../src/lib/master-columns';
 import { ALL_PERMISSIONS } from '../src/server/permissions';
@@ -39,6 +40,14 @@ async function rejects(label: string, fn: () => Promise<unknown> | unknown, stat
 const adv = (f: unknown) => JSON.stringify(f);
 
 async function main() {
+  console.log('file paths');
+  check('quotes from Windows "Copy as path" are removed', cleanPath('"E:\\Scans\\Lot 1"') === 'E:\\Scans\\Lot 1', cleanPath('"E:\\Scans\\Lot 1"'));
+  check('a file:// link becomes a path', cleanPath('file:///E:/Scans/Lot%201') === 'E:\\Scans\\Lot 1', cleanPath('file:///E:/Scans/Lot%201'));
+  check('a network share link keeps its host', cleanPath('file://server/share/x') === '\\\\server\\share\\x', cleanPath('file://server/share/x'));
+  check('a trailing slash goes, a bare drive keeps one', cleanPath('D:\\Archive\\') === 'D:\\Archive' && cleanPath('E:\\') === 'E:\\');
+  check('joining uses the parent\'s separator', joinPath('D:\\Archive', 'MDV-0001') === 'D:\\Archive\\MDV-0001' && joinPath('/archive/2026/', 'MDV-0001') === '/archive/2026/MDV-0001');
+  check('an empty parent leaves the name alone', joinPath('', 'x') === 'x');
+
   console.log('rows');
   const rule = (field: string, op: string, value?: string, value2?: string) => ({ field, op, value, value2 });
   check('a text row needs a value, "is empty" does not', !isRuleComplete(rule('owner', 'contains', ''), LOT_FILTER_FIELDS) && isRuleComplete(rule('owner', 'empty'), LOT_FILTER_FIELDS));

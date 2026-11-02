@@ -21,6 +21,7 @@ import { refLabel, refOptions, type RefLists } from '@/lib/ref-lists';
 import { ITEM_STATUS_LABELS, isInactive, itemStatus, missingRequired } from '@/lib/item-status';
 import { Badge } from '@/components/ui/primitives';
 import { photoMediumUrl } from '@/lib/project-photos';
+import { cleanPath, loadBaseFolder, readDrop } from '@/lib/file-path';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
 
@@ -34,6 +35,40 @@ type Spec = ColumnSpec & { custom?: CustomColumn };
 
 /** Row height of a sheet with a photo column (a normal row is 42px: this is about four of them). */
 export const PHOTO_ROW_PX = 168;
+
+/**
+ * The File path cell: shows the path and takes a drop. Dropping text (a path or a file:// link) fills
+ * it in; dropping a file or folder gives only its name (browsers hide the location), which is added to
+ * the base folder saved from "Set path for all". Typing or pasting works too, and quotes from
+ * Windows "Copy as path" are removed when the cell is saved.
+ */
+function PathCell({ p, onNote }: { p: ICellRendererParams<GridItem>; onNote: (message: string) => void }) {
+  const value = p.data?.fileName ?? '';
+  return (
+    <span
+      className="block h-full w-full truncate rounded-[4px] data-[over=true]:bg-accent-soft data-[over=true]:ring-2 data-[over=true]:ring-accent"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.currentTarget.dataset.over = 'true';
+      }}
+      onDragLeave={(e) => {
+        e.currentTarget.dataset.over = 'false';
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.currentTarget.dataset.over = 'false';
+        const d = readDrop(e.dataTransfer, loadBaseFolder());
+        if (d.path) p.node.setDataValue('fileName', d.path);
+        else if (d.name) {
+          p.node.setDataValue('fileName', d.name);
+          onNote('The browser only shared the name. Use "Set path for all" to save a base folder, or paste the full path.');
+        }
+      }}
+    >
+      {value || <span className="text-ink-4">Type, paste or drop a path</span>}
+    </span>
+  );
+}
 
 /**
  * The photo column's cell: a small mosaic of the item's first photos (1 → one big picture, 2 → two,
@@ -199,6 +234,21 @@ export function ItemFamilyGrid({
         editable: canDetails,
         cellEditor: 'agTextCellEditor',
       });
+
+      if (spec.id === 'fileName' && !spec.custom) {
+        return {
+          ...textEdit(),
+          tooltipValueGetter: () => 'Type, paste, or drop a file or folder here',
+          valueSetter: (p: ValueSetterParams<GridItem>) => {
+            if (!p.data) return false;
+            const next = cleanPath(String(p.newValue ?? ''));
+            if ((p.data.fileName ?? '') === next) return false;
+            p.data.fileName = next === '' ? null : next;
+            return true;
+          },
+          cellRenderer: (p: ICellRendererParams<GridItem>) => <PathCell p={p} onNote={onInvalid} />,
+        };
+      }
 
       if (spec.custom) {
         const key = spec.custom.key;

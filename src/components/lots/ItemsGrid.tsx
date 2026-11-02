@@ -13,7 +13,7 @@ import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconPlus } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, forFormat, shownOnSheet, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, BUILTIN_COLUMNS, forFormat, shownOnSheet, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -26,6 +26,7 @@ import { ItemPhotoViewer } from './ItemPhotoViewer';
 import { TagSheet } from './TagSheet';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
+import { SetPathDialog } from './SetPathDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { ItemFamilyGrid, PHOTO_ROW_PX } from './ItemFamilyGrid';
 import { useMe } from '@/hooks/useCan';
@@ -90,6 +91,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const { lists: refLists } = useReferenceLists();
   const refLabel = useCallback((list: string, v: string | null) => refLabelOf(refLists, list, v), [refLists]);
 
+  const [showPath, setShowPath] = useState(false);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: gridKey });
 
   const save = useMutation({
@@ -218,6 +220,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   }, []);
   const deselectAll = () => gridApis.current.forEach((api) => api.deselectAll());
   const onSave = useCallback((itemIds: string[], set: ItemsBulkSet) => save.mutate({ itemIds, set }), [save]);
+  /** Rows that have a File path column (Prasadi's sheet has none). */
+  const pathSpec = BUILTIN_COLUMNS.find((c) => c.id === 'fileName')!;
+  const pathItems = useMemo(() => (data?.items ?? []).filter((i) => shownOnSheet(pathSpec, i.format)), [data?.items, pathSpec]);
   const onReorder = useCallback((lineIndex: number, orderedIds: string[]) => reorder.mutate({ lineIndex, orderedIds }), [reorder]);
 
   const hideColumn = useCallback(
@@ -428,6 +433,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               </div>
             ) : null}
             <div role="toolbar" aria-label="Excel tools" className="flex items-center gap-1.5 sm:ml-auto">
+              {canDetails && pathItems.length > 0 ? (
+                <GhostButton onClick={() => setShowPath(true)} title="Fill the File path column from one parent folder">Set path</GhostButton>
+              ) : null}
               {canDetails ? (
                 <GhostButton onClick={() => setShowImport(true)}>Import</GhostButton>
               ) : null}
@@ -591,6 +599,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         />
       ) : null}
       {showImport ? <ImportDialog lotId={lotId} onClose={() => setShowImport(false)} onDone={refresh} /> : null}
+      {showPath ? <SetPathDialog lotId={lotId} items={pathItems} selectedIds={selected} onClose={() => setShowPath(false)} onDone={refresh} /> : null}
       {showAddColumn ? (
         <AddColumnDialog
           pending={columns.isPending}
