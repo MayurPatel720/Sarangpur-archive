@@ -13,6 +13,7 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { GhostButton, Select } from '@/components/ui/Form';
 import { IconButton } from '@/components/ui/IconButton';
+import { IconLock } from '@/components/ui/icons';
 import { useToast } from '@/components/ui/Toast';
 import type { Severity } from '@/types/dashboard';
 import type { ProjectDetailResponse, ProjectLotRow } from '@/types/project';
@@ -80,11 +81,17 @@ export function ProjectLotsTable({
     onError: (e) => toast.error('Could not change assignee', e instanceof ApiRequestError ? e.message : undefined),
   });
 
+  const dash = <span className="text-ink-4">—</span>;
   const columns: Column<ProjectLotRow>[] = [
     {
       key: 'lot',
       header: 'Lot',
-      render: (r) => (
+      render: (r) => r.locked ? (
+        <span className="flex items-center gap-1.5 whitespace-nowrap font-mono font-semibold text-ink-3">
+          <IconLock size={13} />
+          {r.lotReference}
+        </span>
+      ) : (
         <span className="flex flex-col gap-0.5 min-w-0">
           <Link
             href={`/register/${r.id}`}
@@ -105,28 +112,30 @@ export function ProjectLotsTable({
     {
       key: 'media',
       header: 'Media',
-      render: (r) => (
+      render: (r) => r.locked ? (
+        <span className="text-[12px] text-ink-3">Locked: you don't have permission to see this lot.</span>
+      ) : (
         <span className="text-ink-2 break-words">
           {r.mediaLines.map((l) => `${l.mediaSubtype} × ${num(l.quantity)}`).join(', ')}
         </span>
       ),
     },
-    { key: 'items', header: 'Items', className: 'tnum', render: (r) => num(r.quantity) },
+    { key: 'items', header: 'Items', className: 'tnum', render: (r) => (r.locked ? dash : num(r.quantity)) },
     {
       key: 'stage',
       header: 'Stage',
-      render: (r) => <Badge severity={STAGE_SEVERITY[r.stage] ?? 'neutral'}>{stageLabel(r.stage)}</Badge>,
+      render: (r) => (r.locked ? dash : <Badge severity={STAGE_SEVERITY[r.stage] ?? 'neutral'}>{stageLabel(r.stage)}</Badge>),
     },
     {
       key: 'decision',
       header: 'Decision',
-      render: (r) => <Badge severity={DECISION_SEVERITY[r.decision] ?? 'neutral'}>{DECISION_LABELS[r.decision as Decision] ?? prettify(r.decision)}</Badge>,
+      render: (r) => (r.locked ? dash : <Badge severity={DECISION_SEVERITY[r.decision] ?? 'neutral'}>{DECISION_LABELS[r.decision as Decision] ?? prettify(r.decision)}</Badge>),
     },
     {
       key: 'assignee',
       header: 'Assignee',
       render: (r) =>
-        canAssign ? (
+        r.locked ? dash : canAssign ? (
           <span
             className="block min-w-[150px]"
             onClick={(e) => e.stopPropagation()}
@@ -155,7 +164,7 @@ export function ProjectLotsTable({
     {
       key: 'progress',
       header: 'Progress',
-      render: (r) => (
+      render: (r) => r.locked ? dash : (
         <div className="flex flex-col gap-1">
           <MiniBar label="Scanned" have={r.scanned} of={r.scanTarget} />
           <MiniBar label="Tagged" have={r.tagged} of={r.quantity} />
@@ -180,10 +189,10 @@ export function ProjectLotsTable({
           loading={false}
           emptyMessage="No lots in this project yet."
           getRowKey={(r) => r.id}
-          onRowClick={(r) => router.push(`/register/${r.id}`)}
+          onRowClick={(r) => { if (!r.locked) router.push(`/register/${r.id}`); }}
           rowActions={
             canAssign
-              ? (r) => (
+              ? (r) => r.locked ? null : (
                   <IconButton
                     label={`Remove ${r.lotReference} from project`}
                     variant="danger"

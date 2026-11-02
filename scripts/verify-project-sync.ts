@@ -110,7 +110,14 @@ async function main() {
     const sib = await getLotDetail(videoLot.id);
     check('sibling got origin', sib.lot.originSource === originSource, sib.lot.originSource);
     check('sibling got date', Boolean(sib.lot.dateReceived), sib.lot.dateReceived);
-    const proj = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 });
+    const proj = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 }, admin.grants);
+    const noVideo = admin.grants.filter((g) => g !== 'format:video');
+    const lockedView = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 }, noVideo);
+    const lrow = lockedView.lots.rows.find((r) => r.id === videoLot.id);
+    check('a lot of a format you cannot open is locked, with only its number and format', lrow?.locked === true && lrow.format === 'video' && lrow.ownerName === '' && lrow.assigneeName === null && lrow.quantity === 0 && lrow.mediaLines.length === 0, lrow);
+    check('the lots you can open stay open', lockedView.lots.rows.filter((r) => r.id !== videoLot.id).every((r) => !r.locked));
+    check('a locked lot does not leak its assignee into the team', lockedView.project.team.length === 1, lockedView.project.team);
+    check('an admin with every format sees nothing locked', proj.lots.rows.every((r) => !r.locked));
     check('project shared has origin', proj.project.shared.originSource === originSource);
     check('project has nothing missing', proj.project.missing.length === 0, proj.project.missing);
     check('team derived from assignees', proj.project.team.length === 2, proj.project.team);

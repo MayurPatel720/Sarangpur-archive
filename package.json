@@ -17,6 +17,7 @@
     "db:reset-sample": "tsx scripts/reset-data.ts",
     "db:backfill-item-format": "tsx scripts/backfill-item-format.ts",
     "db:backfill-prasadi-decisions": "tsx scripts/backfill-prasadi-decisions.ts",
+    "db:backfill-prasadi-physical": "tsx scripts/backfill-prasadi-physical.ts",
     "db:backfill-item-photo-urls": "tsx scripts/backfill-item-photo-urls.ts",
     "db:seed-prasadi-lot": "tsx scripts/seed-prasadi-lot.ts",
     "db:backfill-born-digital": "tsx scripts/backfill-born-digital.ts",

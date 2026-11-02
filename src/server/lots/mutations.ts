@@ -64,7 +64,8 @@ export async function validateLotVocab(
 ): Promise<{ lines: NormalisedLine[]; subtypeKeys: (string | null)[] }> {
   const lines: NormalisedLine[] = body.mediaLines.map((l) => ({
     format: l.format,
-    dataType: l.dataType,
+    // Prasadi items are kept as the physical things they are: never digital, whatever the request says.
+    dataType: l.format === 'prasadi' ? 'physical' : l.dataType,
     mediaSubtype: l.mediaSubtype,
     quantity: l.quantity,
     quantityToDigitize: l.quantityToDigitize ?? 0,

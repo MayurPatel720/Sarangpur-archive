@@ -30,7 +30,7 @@ export async function GET(
       { status: 400 },
     );
   }
-  return handleQuery(projectDetailResponseSchema, () => getProjectDetail(projectId, parsed.data), {
+  return handleQuery(projectDetailResponseSchema, (ctx) => getProjectDetail(projectId, parsed.data, ctx!.grants), {
     permission: 'project:view',
   });
 }

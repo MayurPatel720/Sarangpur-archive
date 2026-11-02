@@ -9,7 +9,7 @@ export const MASTER_LOT_COLUMNS: ColumnSpec[] = [
   { id: 'lotNo', label: 'Lot no', dept: 'lot', kind: 'readonly', width: 130 },
   { id: 'projectNo', label: 'Project no', dept: 'lot', kind: 'readonly', width: 130 },
   { id: 'projectName', label: 'Project name', dept: 'lot', kind: 'readonly', width: 200 },
-  { id: 'lotStage', label: 'Lot stage', dept: 'lot', kind: 'readonly', width: 120 },
+  { id: 'lotStage', label: 'Stage', dept: 'lot', kind: 'readonly', width: 120 },
   { id: 'assignee', label: 'Assigned to', dept: 'lot', kind: 'readonly', width: 150 },
 ];
 

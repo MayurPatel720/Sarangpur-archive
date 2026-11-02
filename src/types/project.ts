@@ -246,6 +246,8 @@ export const projectLotRowSchema = lotRowSchema.extend({
   scanTarget: z.number(),
   /** Items tagged in MLS, of `quantity`. */
   tagged: z.number(),
+  /** True when the viewer's role cannot open this lot's format: only its number and format are sent. */
+  locked: z.boolean(),
 });
 export type ProjectLotRow = z.infer<typeof projectLotRowSchema>;
 

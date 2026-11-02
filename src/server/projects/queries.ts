@@ -119,10 +119,41 @@ export function shapeProjectActivity(
   }));
 }
 
+/** What a viewer without the lot's format permission gets for it: the number and the format, nothing else. */
+function lockedLotRow(d: { _id: unknown; lotReference: string; format: string }): ProjectDetailResponse['lots']['rows'][number] {
+  return {
+    locked: true,
+    id: String(d._id),
+    lotReference: d.lotReference,
+    namingCode: null,
+    dateReceived: null,
+    ownerName: '',
+    assigneeName: null,
+    assigneeId: null,
+    pointOfContactName: null,
+    format: d.format,
+    mediaSubtype: '',
+    quantity: 0,
+    dataType: '',
+    decision: '',
+    stage: '',
+    receiverName: '',
+    returnLabel: '',
+    returnSeverity: 'neutral',
+    mediaLines: [],
+    scanned: 0,
+    scanTarget: 0,
+    tagged: 0,
+  };
+}
+
 export async function getProjectDetail(
   projectId: string,
   lotsQuery: ProjectDetailQuery,
+  grants: readonly string[],
 ): Promise<ProjectDetailResponse> {
+  // A lot of a format the viewer's role cannot open is shown as locked: its number and format only.
+  const canOpen = (format: string) => grants.includes(`format:${format}`);
   await connectToDatabase();
   if (!Types.ObjectId.isValid(projectId)) throw new HttpError(404, 'Project not found.');
   const project = await Project.findById(projectId).lean();
@@ -166,6 +197,7 @@ export async function getProjectDetail(
     tagged: number;
   }>(asPipeline(projectItemStatsPipeline(memberIds.map((d) => d._id))));
 
+  const lockedCodes = new Set(memberIds.filter((m) => !canOpen(m.format)).map((m) => m.lotReference));
   const createdByName = (users[0]?.name as string | undefined) ?? null;
   const receiverIds = [...new Set(lotDocs.map((d) => String(d.receiver)))];
   const receivers = await User.find({ _id: { $in: receiverIds } }).select('name').lean();
@@ -173,7 +205,7 @@ export async function getProjectDetail(
 
   const teamCounts = new Map<string, { name: string; count: number }>();
   for (const m of memberIds) {
-    if (!m.assignee) continue;
+    if (!m.assignee || !canOpen(m.format)) continue;
     const key = String(m.assignee);
     const prev = teamCounts.get(key);
     if (prev) prev.count += 1;
@@ -197,9 +229,9 @@ export async function getProjectDetail(
         lotId: String(m._id),
         lotReference: m.lotReference,
         format: m.format,
-        quantity: m.quantity,
-        assigneeId: m.assignee ? String(m.assignee) : null,
-        assigneeName: m.assigneeName ?? null,
+        quantity: canOpen(m.format) ? m.quantity : 0,
+        assigneeId: m.assignee && canOpen(m.format) ? String(m.assignee) : null,
+        assigneeName: canOpen(m.format) ? (m.assigneeName ?? null) : null,
       })),
       missing: intakeMissing(
         (project.shared ?? {}) as { dateReceived?: string; originSource?: string; owner?: { name?: string } },
@@ -214,7 +246,8 @@ export async function getProjectDetail(
       taggedItems: stats.tagged,
     },
     lots: {
-      rows: lotDocs.map((d) => ({
+      rows: lotDocs.map((d) => !canOpen(d.format) ? lockedLotRow(d) : ({
+        locked: false,
         id: String(d._id),
         lotReference: d.lotReference,
         namingCode: d.namingCode ?? null,
@@ -244,7 +277,8 @@ export async function getProjectDetail(
       page: lotsQuery.lotPage,
       pageSize: lotsQuery.lotPageSize,
     },
-    recentActivity: shapeProjectActivity(activityRows),
+    // History lines about a locked lot are left out too.
+    recentActivity: shapeProjectActivity(activityRows.filter((a) => !a.lotCode || !lockedCodes.has(a.lotCode))),
   };
 }
 

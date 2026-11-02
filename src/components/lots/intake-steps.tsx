@@ -288,7 +288,7 @@ export function buildSharedFields(d: IntakeDraft) {
 export function buildMediaLines(d: IntakeDraft) {
   return d.lines.map((l) => ({
     format: l.format,
-    dataType: l.dataType,
+    dataType: l.format === 'prasadi' ? 'physical' : l.dataType,
     mediaSubtype: l.mediaSubtype.trim(),
     quantity: Number(l.quantity),
     // Selection for digitization is decided at a later stage.
@@ -595,7 +595,7 @@ export function MediaStep({
           autoFocus={autoFocus}
           value={row.format}
           disabled={Boolean(initialFormat)}
-          onChange={(e) => setLine(rowId, { format: e.target.value, mediaSubtype: '' })}
+          onChange={(e) => setLine(rowId, { format: e.target.value, mediaSubtype: '', ...(e.target.value === 'prasadi' ? { dataType: 'physical' } : {}) })}
         >
           {(formats.data?.items ?? [])
             .filter((f) => !initialFormat || f.value === initialFormat)
@@ -611,7 +611,10 @@ export function MediaStep({
       key: 'dataType',
       header: 'Data type',
       className: 'min-w-[128px]',
-      render: ({ row, rowId, index, autoFocus }) => (
+      // Prasadi is always physical: no choice to make, just the quantity.
+      render: ({ row, rowId, index, autoFocus }) => row.format === 'prasadi' ? (
+        <span className="text-ink-4" aria-label={`Line ${index + 1}, physical only`}>—</span>
+      ) : (
         <Select
           aria-label={`Line ${index + 1}, data type`}
           autoFocus={autoFocus}
