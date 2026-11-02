@@ -127,6 +127,7 @@ function toParams(filters: LotFilters, page: number, pageSize: number, meId?: st
   if (filters.assignee === 'me') p.assignee = meId ?? '';
   else if (filters.assignee) p.assignee = filters.assignee;
   if (filters.returnStatus) p.returnStatus = filters.returnStatus;
+  if (filters.adv) p.adv = filters.adv;
   const from = filters.receivedFrom.trim();
   const to = filters.receivedTo.trim();
   // DatePicker emits ISO YYYY-MM-DD; also accept dd/mm/yyyy if ever seeded as text.

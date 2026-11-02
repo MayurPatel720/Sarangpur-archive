@@ -6,10 +6,14 @@ import { useQuery } from '@tanstack/react-query';
 import { projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
+import { useReferenceList } from '@/hooks/useReferenceList';
+import { useUserPicker } from '@/hooks/useUserPicker';
 import type { ProjectListResponse } from '@/types/project';
 import { ErrorState, Panel, PanelHeader } from '@/components/ui/primitives';
 import { DataTable, type Column } from '@/components/ui/DataTable';
-import { Field, TextInput } from '@/components/ui/Form';
+import { Field, GhostButton, Select, TextInput } from '@/components/ui/Form';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { AdvancedFilterButton } from '@/components/ui/AdvancedFilters';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { useUrlPagination } from '@/lib/useUrlPagination';
 
@@ -51,6 +55,17 @@ export function ProjectsManager({ assigneeId }: { /** "My lots": only projects t
   const router = useRouter();
   const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
   const [search, setSearch] = useState('');
+  // Filters beside the search: coordinator, format and stage of its lots, created dates, and the advanced rows.
+  const [pf, setPf] = useState({ coordinator: '', format: '', stage: '', createdFrom: '', createdTo: '', adv: '' });
+  const setFilter = (k: keyof typeof pf) => (v: string) => {
+    setPf((p) => ({ ...p, [k]: v }));
+    resetPage();
+  };
+  const filtersOn = Object.values(pf).some(Boolean);
+  const extra = useMemo(() => Object.fromEntries(Object.entries(pf).filter(([, v]) => v)) as Record<string, string>, [pf]);
+  const coordinators = useUserPicker();
+  const formats = useReferenceList('format');
+  const stages = useReferenceList('stage');
   const me = useMe();
   const canView = me.data ? me.data.grants.includes('project:view') : false;
   const canCreate = me.data ? me.data.grants.includes('project:create') : false;
@@ -67,10 +82,10 @@ export function ProjectsManager({ assigneeId }: { /** "My lots": only projects t
     return () => window.clearTimeout(t);
   }, [search]);
 
-  const key = useMemo(() => JSON.stringify({ page, pageSize, search: debounced, assignee: assigneeId ?? null }), [page, pageSize, debounced, assigneeId]);
+  const key = useMemo(() => JSON.stringify({ page, pageSize, search: debounced, assignee: assigneeId ?? null, extra }), [page, pageSize, debounced, assigneeId, extra]);
   const query = useQuery({
     queryKey: queryKeys.projects.list(key),
-    queryFn: () => projectsApi.list(page, pageSize, debounced || undefined, assigneeId),
+    queryFn: () => projectsApi.list(page, pageSize, debounced || undefined, assigneeId, extra),
     enabled: !!me.data && canView,
   });
 
@@ -128,19 +143,74 @@ export function ProjectsManager({ assigneeId }: { /** "My lots": only projects t
         ) : null}
       </div>
 
-      <div className="bg-surface border border-line rounded-[8px] p-3 md:p-4">
-        <div className="max-w-[420px]">
-          <Field label="Search">
-            <TextInput
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
+      <div role="search" aria-label="Filter projects" className="bg-surface border border-line rounded-[8px] p-3 md:p-4 flex flex-col gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="col-span-2">
+            <Field label="Search">
+              <TextInput
+                type="search"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  resetPage();
+                }}
+                name="q"
+                autoComplete="off"
+                placeholder="Code or name…"
+                aria-label="Search projects"
+              />
+            </Field>
+          </div>
+          <Field label="Coordinator">
+            <Select value={pf.coordinator} onChange={(e) => setFilter('coordinator')(e.target.value)} aria-label="Coordinator">
+              <option value="">Anyone</option>
+              {(coordinators.data?.users ?? []).map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Has a lot of format">
+            <Select value={pf.format} onChange={(e) => setFilter('format')(e.target.value)} aria-label="Format">
+              <option value="">Any format</option>
+              {(formats.data?.items ?? []).map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Has a lot at stage">
+            <Select value={pf.stage} onChange={(e) => setFilter('stage')(e.target.value)} aria-label="Stage">
+              <option value="">Any stage</option>
+              {(stages.data?.items ?? []).map((st) => (
+                <option key={st.value} value={st.value}>
+                  {st.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Created from">
+            <DatePicker value={pf.createdFrom} onChange={setFilter('createdFrom')} aria-label="Created from" />
+          </Field>
+          <Field label="Created to">
+            <DatePicker value={pf.createdTo} onChange={setFilter('createdTo')} aria-label="Created to" />
+          </Field>
+        </div>
+        <div className="flex items-center gap-3">
+          <AdvancedFilterButton entity="projects" value={pf.adv} onChange={setFilter('adv')} />
+          {filtersOn || search ? (
+            <GhostButton
+              onClick={() => {
+                setPf({ coordinator: '', format: '', stage: '', createdFrom: '', createdTo: '', adv: '' });
+                setSearch('');
                 resetPage();
               }}
-              placeholder="Code or name…"
-              aria-label="Search projects"
-            />
-          </Field>
+            >
+              Clear filters
+            </GhostButton>
+          ) : null}
         </div>
       </div>
 
@@ -158,7 +228,7 @@ export function ProjectsManager({ assigneeId }: { /** "My lots": only projects t
               columns={columns}
               rows={query.data?.rows ?? []}
               loading={query.isLoading}
-              emptyMessage="No projects yet."
+              emptyMessage={filtersOn || debounced ? 'No projects match these filters.' : 'No projects yet.'}
               getRowKey={(r) => r.id}
               onRowClick={(r) => router.push(`/projects/${r.id}`)}
             />

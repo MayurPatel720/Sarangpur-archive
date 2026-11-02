@@ -5,6 +5,7 @@ import { useUserPicker } from '@/hooks/useUserPicker';
 import { Field, GhostButton, Select, TextInput } from '@/components/ui/Form';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { Skeleton } from '@/components/ui/primitives';
+import { AdvancedFilterButton } from '@/components/ui/AdvancedFilters';
 
 export interface LotFilters {
   q: string;
@@ -19,6 +20,8 @@ export interface LotFilters {
   sort: string;
   receivedFrom: string;
   receivedTo: string;
+  /** Advanced filter rows as JSON ('' = none). */
+  adv: string;
 }
 
 export const EMPTY_FILTERS: LotFilters = {
@@ -33,6 +36,7 @@ export const EMPTY_FILTERS: LotFilters = {
   sort: '-dateReceived',
   receivedFrom: '',
   receivedTo: '',
+  adv: '',
 };
 
 export function RegisterFilters({
@@ -62,7 +66,8 @@ export function RegisterFilters({
     filters.assignee !== '' ||
     filters.returnStatus !== '' ||
     filters.receivedFrom !== '' ||
-    filters.receivedTo !== '';
+    filters.receivedTo !== '' ||
+    filters.adv !== '';
 
   return (
     <div className="bg-surface border border-line rounded-[8px] p-3 md:p-4">
@@ -210,6 +215,7 @@ export function RegisterFilters({
             </Select>
           </Field>
         </div>
+        <AdvancedFilterButton entity="lots" value={filters.adv} onChange={set('adv')} />
         {isActive ? (
           <div className="ml-auto">
             <GhostButton

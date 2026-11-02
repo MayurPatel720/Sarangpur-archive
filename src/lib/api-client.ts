@@ -594,12 +594,13 @@ export const masterApi = {
 };
 
 export const projectsApi = {
-  list: (page: number, pageSize: number, search?: string, assignee?: string) => {
+  list: (page: number, pageSize: number, search?: string, assignee?: string, extra: Record<string, string> = {}) => {
     const qs = new URLSearchParams({
       page: String(page),
       pageSize: String(pageSize),
       ...(search ? { search } : {}),
       ...(assignee ? { assignee } : {}),
+      ...extra,
     }).toString();
     return getJson<ProjectListResponse>(`/api/projects?${qs}`, projectListResponseSchema);
   },

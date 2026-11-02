@@ -212,6 +212,8 @@ export const lotListQuerySchema = z.object({
   returnStatus: z.union([z.string().trim().min(1).max(40), z.array(z.string().trim().min(1).max(40))]).optional(),
   /** My lots split; only applies together with `assignee`. new = not yet picked up by that person. */
   arrival: z.enum(['new', 'accepted']).optional(),
+  /** Advanced filter rows (JSON, see lib/advanced-filters). */
+  adv: z.string().max(3000).optional(),
 });
 export type LotListQuery = z.output<typeof lotListQuerySchema>;
 

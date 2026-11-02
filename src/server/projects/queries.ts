@@ -8,6 +8,8 @@ import { LotItem } from '@/models/LotItem';
 import { ActivityLog } from '@/models/ActivityLog';
 import { User } from '@/models/User';
 import { escapeRegex } from '@/server/lots/queries';
+import { parseAdvanced } from '@/lib/advanced-filters';
+import { buildProjectAdvanced } from '@/server/filters/advanced';
 import { intakeMissing } from '@/lib/intake-gate';
 import {
   projectActivityPipeline,
@@ -57,17 +59,35 @@ export async function listProjects(query: ProjectListQuery): Promise<ProjectList
     const rx = new RegExp(escapeRegex(query.search), 'i');
     filter.$or = [{ code: rx }, { name: rx }];
   }
+  // Conditions on a project's lots each give a list of project ids; the project must be in all of them.
+  const idLists: unknown[][] = [];
   if (query.assignee) {
-    const projectIds = await ArchiveLot.distinct('syncProjectId', {
-      assignee: new Types.ObjectId(query.assignee),
-      syncProjectId: { $ne: null },
-    });
-    filter._id = { $in: projectIds };
+    idLists.push(
+      await ArchiveLot.distinct('syncProjectId', { assignee: new Types.ObjectId(query.assignee), syncProjectId: { $ne: null } }),
+    );
   }
+  if (query.format) {
+    idLists.push(await ArchiveLot.distinct('projectIds', { $or: [{ format: query.format }, { 'mediaLines.format': query.format }] }));
+  }
+  if (query.stage) idLists.push(await ArchiveLot.distinct('projectIds', { stage: query.stage }));
+  if (idLists.length > 0) {
+    filter._id = { $in: idLists.reduce((acc, ids) => acc.filter((id) => ids.some((x) => String(x) === String(id)))) };
+  }
+  if (query.coordinator) filter.coordinator = new Types.ObjectId(query.coordinator);
+  if (query.createdFrom || query.createdTo) {
+    filter.createdAt = {
+      ...(query.createdFrom ? { $gte: new Date(`${query.createdFrom}T00:00:00.000+05:30`) } : {}),
+      ...(query.createdTo ? { $lt: new Date(new Date(`${query.createdTo}T00:00:00.000+05:30`).getTime() + 86_400_000) } : {}),
+    };
+  }
+  const advanced = query.adv ? parseAdvanced(query.adv) : null;
+  if (query.adv && !advanced) throw new HttpError(400, 'Invalid advanced filter.');
+  const advClause = advanced ? await buildProjectAdvanced(advanced) : null;
+  const finalFilter = advClause ? { $and: [filter, advClause] } : filter;
   const skip = (query.page - 1) * query.pageSize;
   const [docs, total] = await Promise.all([
-    Project.find(filter).sort({ createdAt: -1 }).skip(skip).limit(query.pageSize).lean(),
-    Project.countDocuments(filter),
+    Project.find(finalFilter).sort({ createdAt: -1 }).skip(skip).limit(query.pageSize).lean(),
+    Project.countDocuments(finalFilter),
   ]);
   return { rows: docs.map(shapeProjectRow), total, page: query.page, pageSize: query.pageSize };
 }

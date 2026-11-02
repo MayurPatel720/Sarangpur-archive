@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { TERMINAL_STAGES, dataTypesMatching } from '@/lib/domain';
 import { connectToDatabase } from '@/lib/mongo';
+import { parseAdvanced } from '@/lib/advanced-filters';
+import { buildLotAdvanced } from '@/server/filters/advanced';
 import { HttpError } from '@/lib/api';
 import { ArchiveLot, type ArchiveLotDoc } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
@@ -286,7 +288,7 @@ export async function listLots(query: LotListQuery): Promise<LotListResponse> {
 
   // Chips first; text (with receiver-name alternative) merges on top so the
   // receiver's name is searchable even though only the ObjectId is stored.
-  const { q, arrival: _arrival, ...chipQuery } = query;
+  const { q, arrival: _arrival, adv, ...chipQuery } = query;
   const filter = buildLotFilter(chipQuery);
   if (q) {
     const tokenClauses = buildTokenClauses(q);
@@ -307,14 +309,20 @@ export async function listLots(query: LotListQuery): Promise<LotListResponse> {
     filter._id = query.arrival === 'accepted' ? { $in: ids } : { $nin: ids };
   }
 
+  // Advanced filter rows are ANDed with everything above.
+  const advanced = adv ? parseAdvanced(adv) : null;
+  if (adv && !advanced) throw new HttpError(400, 'Invalid advanced filter.');
+  const advClause = advanced ? buildLotAdvanced(advanced) : null;
+  const finalFilter = advClause ? { $and: [filter, advClause] } : filter;
+
   const skip = (query.page - 1) * query.pageSize;
   const [docs, total] = await Promise.all([
-    ArchiveLot.find(filter)
+    ArchiveLot.find(finalFilter)
       .sort(SORT_MAP[query.sort] ?? { dateReceived: -1 })
       .skip(skip)
       .limit(query.pageSize)
       .lean(),
-    ArchiveLot.countDocuments(filter),
+    ArchiveLot.countDocuments(finalFilter),
   ]);
 
   // One batched User read for every receiver on the page (rule 4: no $lookup).

@@ -163,6 +163,16 @@ export const projectListQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   /** Only projects where this user is the assignee of at least one child lot ("My lots"). */
   assignee: objectIdSchema.optional(),
+  /** The project's coordinator. */
+  coordinator: objectIdSchema.optional(),
+  /** Projects with a lot of this format / at this stage. */
+  format: z.string().trim().min(1).max(40).optional(),
+  stage: z.string().trim().min(1).max(40).optional(),
+  /** Created between these days (`YYYY-MM-DD`, inclusive). */
+  createdFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  createdTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Advanced filter rows (JSON, see lib/advanced-filters). */
+  adv: z.string().max(3000).optional(),
 });
 export type ProjectListQuery = z.infer<typeof projectListQuerySchema>;
 

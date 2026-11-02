@@ -37,6 +37,7 @@
     "verify:item-decisions": "tsx scripts/verify-item-decisions.ts",
     "verify:todos": "tsx scripts/verify-todos.ts",
     "verify:machines": "tsx scripts/verify-machines.ts",
+    "verify:filters": "tsx scripts/verify-filters.ts",
     "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile && npm run verify:search",
     "db:check": "tsx scripts/check-db.ts"
   },
