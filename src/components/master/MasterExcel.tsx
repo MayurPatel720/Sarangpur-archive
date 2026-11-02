@@ -43,6 +43,19 @@ const SORTABLE = new Set(MASTER_SORTABLE_IDS);
 const inputCls =
   'h-7 w-full min-w-0 rounded-[4px] border border-line bg-surface px-1.5 text-[12px] text-ink placeholder:text-ink-4';
 
+/** True on phone-width screens (below 640px). */
+function usePhone() {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const on = () => setPhone(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return phone;
+}
+
 const clamp = (n: number) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(n)));
 
 function FilterCell({
@@ -138,6 +151,13 @@ export function MasterExcel() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [full, setFull] = useState(false);
   const allBox = useRef<HTMLInputElement>(null);
+  const phone = usePhone();
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [phoneFilters, setPhoneFilters] = useState(false);
+  /** Phones skip the row-number column, pin only one column and keep the filter row folded away until asked for. */
+  const numW = phone ? 0 : NUM_W;
+  const lead = phone ? 1 : 2;
+  const filterRowOn = phone ? phoneFilters : view.filterRow;
 
   // Filters apply after a short pause in typing, from page 1.
   useEffect(() => {
@@ -150,11 +170,16 @@ export function MasterExcel() {
   useEffect(() => setPage(1), [format]);
   useEffect(() => {
     if (!full) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setFull(false);
+      if (e.key === 'Escape' && !e.defaultPrevented) setFull(false);
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      document.removeEventListener('keydown', onKey);
+    };
   }, [full]);
 
   const optionsFor = (f: MasterFilter): { value: string; label: string }[] => {
@@ -205,14 +230,15 @@ export function MasterExcel() {
   const widthOf = (c: ColumnSpec) => view.widths[c.id] ?? c.width ?? 140;
   const pinLeft = useMemo(() => {
     const out = new Map<string, number>();
-    let left = SELECT_W + NUM_W;
+    let left = SELECT_W + numW;
+    const pins = phone ? view.pinned.slice(0, 1) : view.pinned;
     for (const c of columns) {
-      if (!view.pinned.includes(c.id)) break;
+      if (!pins.includes(c.id)) break;
       out.set(c.id, left);
       left += view.widths[c.id] ?? c.width ?? 140;
     }
     return out;
-  }, [columns, view.pinned, view.widths]);
+  }, [columns, view.pinned, view.widths, numW, phone]);
 
   const activeFilters = Object.values(filters).filter(Boolean).length;
   const rows = data?.rows ?? [];
@@ -351,16 +377,21 @@ export function MasterExcel() {
     setFilters({});
   };
 
-  const headTop = view.filterRow ? ['top-0', 'top-7', 'top-16'] : ['top-0', 'top-7'];
+  const headTop = filterRowOn ? ['top-0', 'top-7', 'top-16'] : ['top-0', 'top-7'];
   const first = (page - 1) * pageSize;
 
   return (
-    <div className={`flex min-h-0 flex-col gap-3 ${full ? 'fixed inset-0 z-[90] overflow-auto bg-bg p-4' : ''}`}>
+    <div className={`flex min-h-0 flex-col gap-3 ${full ? 'fixed inset-0 z-[90] bg-surface p-3 text-ink md:p-4' : ''}`}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h1 className="m-0 text-[18px] font-semibold tracking-[-0.015em] text-ink">Master Excel{format ? ` · ${FORMAT_LABELS[format as Format]}` : ''}</h1>
+        <h1 className={`m-0 text-[18px] font-semibold tracking-[-0.015em] text-ink ${full ? '' : 'sr-only'}`}>Master Excel{format ? ` · ${FORMAT_LABELS[format as Format]}` : ''}</h1>
         <span className="text-[12.5px] tabular-nums text-ink-3" aria-live="polite">
           {data ? `${num(data.total)} ${data.total === 1 ? 'item' : 'items'}` : ''}
         </span>
+        {full ? (
+          <button type="button" className={`${toolbarButton} ml-auto`} onClick={() => setFull(false)}>
+            Exit full screen
+          </button>
+        ) : null}
       </div>
 
       <div role="toolbar" aria-label="Sheet tools" className="flex flex-wrap items-center gap-2">
@@ -383,13 +414,23 @@ export function MasterExcel() {
           onToggleDept={(id, on) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) })}
         />
         <DisplayMenu view={view} setView={setView} />
-        <button type="button" className={toolbarButton} onClick={() => void list.refetch()} disabled={list.isFetching} title="Reload the items">
-          {list.isFetching ? 'Refreshing…' : 'Refresh'}
+        {phone ? (
+          <button type="button" className={toolbarButton} onClick={() => setPhoneFilters((v) => !v)} aria-pressed={phoneFilters}>
+            Filters{activeFilters > 0 ? ` (${activeFilters})` : ''}
+          </button>
+        ) : null}
+        {!full ? (
+          <button type="button" className={toolbarButton} onClick={() => setFull(true)} title="Full screen (Esc to leave)">
+            Full screen
+          </button>
+        ) : null}
+        <button type="button" className={`${toolbarButton} sm:hidden`} onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen}>
+          {moreOpen ? 'Fewer' : 'More'}
         </button>
-        <button type="button" className={toolbarButton} onClick={() => setFull((f) => !f)} aria-pressed={full} title="Full screen (Esc to leave)">
-          {full ? 'Exit full screen' : 'Full screen'}
-        </button>
-        <span className="flex items-center gap-2 sm:ml-auto">
+        <span className={`${moreOpen ? 'flex' : 'hidden'} w-full flex-wrap items-center gap-2 sm:ml-auto sm:flex sm:w-auto`}>
+          <button type="button" className={toolbarButton} onClick={() => void list.refetch()} disabled={list.isFetching} title="Reload the items">
+            {list.isFetching ? 'Refreshing…' : 'Refresh'}
+          </button>
           <button type="button" className={toolbarButton} onClick={() => void copyRows(selected.size > 0 ? rows.filter((r) => selected.has(r.id)) : rows)} disabled={rows.length === 0} title="Copy as tab-separated text, ready to paste into Excel">
             {selected.size > 0 ? `Copy ${selected.size} selected` : 'Copy this page'}
           </button>
@@ -443,12 +484,20 @@ export function MasterExcel() {
           <ErrorState message={list.error instanceof ApiRequestError ? list.error.message : "Couldn't load the items."} onRetry={() => void list.refetch()} />
         </Panel>
       ) : (
-        <Panel className="flex min-h-0 flex-col overflow-hidden">
-          <div className={`overflow-auto overscroll-contain ${full ? 'max-h-[calc(100dvh-210px)]' : 'max-h-[calc(100dvh-290px)]'}`}>
+        <Panel className={`relative flex min-h-0 flex-col overflow-hidden ${full ? 'flex-1' : ''}`}>
+          {list.isFetching && !list.isPending ? (
+            <div className="absolute inset-0 z-30 flex items-center justify-center bg-surface/60" role="status" aria-live="polite">
+              <span className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5 text-[12.5px] font-medium text-ink-2 shadow-control">
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-strong border-t-accent" aria-hidden="true" />
+                Loading…
+              </span>
+            </div>
+          ) : null}
+          <div className={`overflow-auto overscroll-contain ${full ? 'min-h-0 flex-1' : 'max-h-[calc(100dvh-236px)]'}`}>
             <table className="min-w-full border-separate border-spacing-0 text-[12.5px] text-ink-2">
               <thead>
                 <tr>
-                  <th colSpan={2} style={{ left: 0 }} className={`sticky ${headTop[0]} z-30 h-7 border-b border-line-soft bg-surface-sunken`} />
+                  <th colSpan={lead} style={{ left: 0 }} className={`sticky ${headTop[0]} z-30 h-7 border-b border-line-soft bg-surface-sunken`} />
                   {bands.map((b, i) => (
                     <th key={`${b.id}-${i}`} colSpan={b.span} className={`sticky ${headTop[0]} z-20 h-7 border-b border-l border-line-soft bg-surface-sunken px-2 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3`}>
                       {b.label}
@@ -457,11 +506,13 @@ export function MasterExcel() {
                 </tr>
                 <tr>
                   <th style={{ left: 0, width: SELECT_W, minWidth: SELECT_W }} className={`sticky ${headTop[1]} z-30 h-9 border-b border-line-soft bg-surface px-2 text-center`}>
-                    <input ref={allBox} type="checkbox" aria-label="Select every row on this page" className="h-4 w-4 accent-accent" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />
+                    <input ref={allBox} type="checkbox" aria-label="Select every row on this page" className="h-4 w-4 cursor-pointer accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />
                   </th>
-                  <th style={{ left: SELECT_W, width: NUM_W, minWidth: NUM_W }} className={`sticky ${headTop[1]} z-30 h-9 border-b border-line-soft bg-surface px-2 text-right text-[11px] font-semibold text-ink-4`} aria-label="Row number">
-                    #
-                  </th>
+                  {phone ? null : (
+                    <th style={{ left: SELECT_W, width: NUM_W, minWidth: NUM_W }} className={`sticky ${headTop[1]} z-30 h-9 border-b border-line-soft bg-surface px-2 text-right text-[11px] font-semibold text-ink-4`} aria-label="Row number">
+                      #
+                    </th>
+                  )}
                   {columns.map((c, i) => {
                     const pinned = pinLeft.has(c.id);
                     const sortable = SORTABLE.has(c.id);
@@ -473,12 +524,12 @@ export function MasterExcel() {
                         key={c.id}
                         aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
                         style={{ ...(fixed ? { width: w, minWidth: w, maxWidth: w } : { minWidth: c.width }), ...(pinned ? { left: pinLeft.get(c.id) } : {}) }}
-                        className={`sticky ${headTop[1]} ${pinned ? 'z-30' : 'z-20'} h-9 border-b border-line-soft bg-surface px-2 text-left text-[12px] font-semibold text-ink-3`}
+                        className={`sticky ${headTop[1]} ${pinned ? 'z-30' : 'z-20'} h-9 border-b border-r border-line-soft bg-surface-sunken px-2 text-left text-[12px] font-semibold text-ink-2`}
                         title={c.hint}
                       >
                         <div className="flex min-w-0 items-center gap-0.5">
                           {sortable ? (
-                            <button type="button" onClick={() => cycleSort(c.id)} className="flex min-w-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-left text-[12px] font-semibold text-ink-3 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+                            <button type="button" onClick={() => cycleSort(c.id)} className="flex min-w-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-left text-[12px] font-semibold text-ink-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
                               <span className="truncate">{c.label}</span>
                               <span aria-hidden className="text-[10px] text-accent">{dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : ''}</span>
                             </button>
@@ -511,15 +562,15 @@ export function MasterExcel() {
                           title="Drag to resize, double-click to reset"
                           onPointerDown={(e) => startResize(e, c)}
                           onDoubleClick={() => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== c.id)) }))}
-                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40"
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40 [@media(pointer:coarse)]:w-3"
                         />
                       </th>
                     );
                   })}
                 </tr>
-                {view.filterRow ? (
+                {filterRowOn ? (
                   <tr>
-                    <th style={{ left: 0 }} colSpan={2} className={`sticky ${headTop[2]} z-30 border-b border-line bg-surface`} />
+                    <th style={{ left: 0 }} colSpan={lead} className={`sticky ${headTop[2]} z-30 border-b border-line bg-surface`} />
                     {columns.map((c) => (
                       <th key={c.id} style={pinLeft.has(c.id) ? { left: pinLeft.get(c.id) } : undefined} className={`sticky ${headTop[2]} ${pinLeft.has(c.id) ? 'z-30' : 'z-20'} border-b border-line bg-surface px-1.5 py-1 font-normal`}>
                         <FilterCell
@@ -541,7 +592,7 @@ export function MasterExcel() {
                 {list.isPending
                   ? Array.from({ length: 8 }).map((_, i) => (
                       <tr key={i}>
-                        <td colSpan={columns.length + 2} className="px-2 py-1.5">
+                        <td colSpan={columns.length + lead} className="px-2 py-1.5">
                           <Skeleton className="h-5 w-full" />
                         </td>
                       </tr>
@@ -549,14 +600,19 @@ export function MasterExcel() {
                   : rows.map((row, ri) => {
                       const isSel = selected.has(row.id);
                       const rowBg = isSel ? 'bg-accent-soft' : 'bg-surface';
+                      const hov = isSel ? '' : 'group-hover:bg-surface-sunken';
                       return (
                         <tr key={row.id} className="group">
-                          <td style={{ left: 0, width: SELECT_W, minWidth: SELECT_W }} className={`sticky z-10 border-b border-line-soft px-2 text-center align-middle group-hover:bg-accent-soft ${rowBg}`}>
-                            <input type="checkbox" aria-label={`Select ${row.code}`} className="h-4 w-4 accent-accent" checked={isSel} onChange={() => toggleRow(row.id)} />
+                          <td style={{ left: 0, width: SELECT_W, minWidth: SELECT_W }} className={`sticky z-10 border-b border-line-soft px-0 text-center align-middle ${hov} ${rowBg}`}>
+                            <label className="-my-2 flex h-10 w-full cursor-pointer touch-manipulation items-center justify-center">
+                              <input type="checkbox" aria-label={`Select ${row.code}`} className="h-4 w-4 cursor-pointer accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent" checked={isSel} onChange={() => toggleRow(row.id)} />
+                            </label>
                           </td>
-                          <td style={{ left: SELECT_W, width: NUM_W, minWidth: NUM_W }} className={`sticky z-10 border-b border-line-soft px-2 text-right align-middle text-[11px] tabular-nums text-ink-4 group-hover:bg-accent-soft ${rowBg}`}>
-                            {first + ri + 1}
-                          </td>
+                          {phone ? null : (
+                            <td style={{ left: SELECT_W, width: NUM_W, minWidth: NUM_W }} className={`sticky z-10 border-b border-line-soft px-2 text-right align-middle text-[11px] tabular-nums text-ink-4 ${hov} ${rowBg}`}>
+                              {first + ri + 1}
+                            </td>
+                          )}
                           {columns.map((c) => {
                             const pinned = pinLeft.has(c.id);
                             const fixed = pinned || view.widths[c.id] !== undefined;
@@ -565,7 +621,7 @@ export function MasterExcel() {
                               <td
                                 key={c.id}
                                 style={{ ...(fixed ? { width: w, minWidth: w, maxWidth: w } : {}), ...(pinned ? { left: pinLeft.get(c.id) } : {}) }}
-                                className={`border-b border-line-soft px-2 align-middle group-hover:bg-accent-soft ${ROW_PADDING[view.density]} ${pinned ? `sticky z-10 ${rowBg}` : isSel ? 'bg-accent-soft' : ''} ${view.wrap ? 'whitespace-normal break-words' : 'truncate whitespace-nowrap'} ${fixed ? '' : 'max-w-[320px]'}`}
+                                className={`border-b border-r border-line-soft px-2 align-middle tabular-nums ${hov} ${ROW_PADDING[view.density]} ${pinned ? `sticky z-10 ${rowBg}` : isSel ? 'bg-accent-soft' : ''} ${view.wrap ? 'whitespace-normal break-words' : 'truncate whitespace-nowrap'} ${fixed ? '' : 'max-w-[320px]'}`}
                               >
                                 {cell(row, c)}
                               </td>
@@ -576,8 +632,16 @@ export function MasterExcel() {
                     })}
                 {data && rows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length + 2} className="px-3 py-8 text-center text-ink-3">
+                    <td colSpan={columns.length + lead} className="px-3 py-8 text-center text-ink-3">
                       No items match these filters.
+                      {activeFilters > 0 ? (
+                        <>
+                          {' '}
+                          <button type="button" onClick={() => setFilters({})} className="cursor-pointer border-0 bg-transparent p-0 text-accent underline">
+                            Clear filters
+                          </button>
+                        </>
+                      ) : null}
                     </td>
                   </tr>
                 ) : null}

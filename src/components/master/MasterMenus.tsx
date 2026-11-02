@@ -7,7 +7,7 @@ import { DEFAULT_VIEW, type Density, type MasterView, type SavedView } from '@/c
 /** Small menus for the Master Excel's toolbar and column headers. */
 
 const btn =
-  'inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[6px] border border-line-strong bg-surface px-2.5 text-[12.5px] font-semibold text-ink-2 shadow-control transition-colors hover:bg-accent-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50';
+  'inline-flex h-9 touch-manipulation cursor-pointer sm:h-8 items-center gap-1.5 rounded-[6px] border border-line-strong bg-surface px-2.5 text-[12.5px] font-semibold text-ink-2 shadow-control transition-colors hover:bg-accent-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50';
 export const toolbarButton = btn;
 
 const item =
