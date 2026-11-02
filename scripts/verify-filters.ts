@@ -8,6 +8,11 @@ import './load-env';
 
 import { advancedFilterSchema, isRuleComplete, LOT_FILTER_FIELDS, parseAdvanced, serializeAdvanced } from '../src/lib/advanced-filters';
 import { connectToDatabase } from '../src/lib/mongo';
+import type { MutationContext } from '../src/lib/api';
+import { MASTER_SORTABLE_IDS } from '../src/lib/master-columns';
+import { ALL_PERMISSIONS } from '../src/server/permissions';
+import { listMasterItems, SORT_PATHS } from '../src/server/lots/master-items';
+import { masterQuerySchema } from '../src/types/master';
 import { buildLotAdvanced } from '../src/server/filters/advanced';
 import { listLots } from '../src/server/lots/queries';
 import { listProjects } from '../src/server/projects/queries';
@@ -74,6 +79,18 @@ async function main() {
   check('projects: the Format dropdown and the advanced "has a lot of format" agree', byFormat.total === viaAdv.total, [byFormat.total, viaAdv.total]);
   const old = await listProjects(projectListQuerySchema.parse({ createdFrom: '2999-01-01' }));
   check('projects: created-from in the far future matches none', old.total === 0);
+
+  console.log('master excel sorting');
+  check('every sortable column has a place to sort on', MASTER_SORTABLE_IDS.every((id) => Boolean(SORT_PATHS[id])), MASTER_SORTABLE_IDS.filter((id) => !SORT_PATHS[id]));
+  const ctx: MutationContext = { userId: '000000000000000000000001', userName: 'Verifier', roleKey: 'admin', grants: [...ALL_PERMISSIONS] };
+  const asc = await listMasterItems(masterQuerySchema.parse({ sort: 'code', dir: 'asc', pageSize: 50 }), ctx);
+  const desc = await listMasterItems(masterQuerySchema.parse({ sort: 'code', dir: 'desc', pageSize: 50 }), ctx);
+  const codes = (r: { rows: { code: string }[] }) => r.rows.map((x) => x.code);
+  const sortedAsc = [...codes(asc)].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base', numeric: true }));
+  check('sorted by archive code A to Z', JSON.stringify(codes(asc)) === JSON.stringify(sortedAsc), codes(asc).slice(0, 5));
+  check('Z to A starts where A to Z ends (for a short list) or differs', asc.total <= 50 ? JSON.stringify(codes(desc)) === JSON.stringify([...codes(asc)].reverse()) : codes(desc)[0] !== codes(asc)[0]);
+  const unknown = await listMasterItems(masterQuerySchema.parse({ sort: 'nope', pageSize: 5 }), ctx);
+  check('an unknown sort column is ignored, not an error', unknown.rows.length > 0 || unknown.total === 0);
 
   console.log(failures === 0 ? '\nAll filter checks passed.' : `\n${failures} check(s) failed.`);
   process.exit(failures === 0 ? 0 : 1);

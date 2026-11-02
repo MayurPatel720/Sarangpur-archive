@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import Link from 'next/link';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ApiRequestError, masterApi } from '@/lib/api-client';
@@ -12,30 +12,38 @@ import { refLabel as refLabelOf } from '@/lib/ref-lists';
 import { photoThumbUrl } from '@/lib/project-photos';
 import { useToast } from '@/components/ui/Toast';
 import { ErrorState, Panel, Skeleton } from '@/components/ui/primitives';
-import { GhostButton } from '@/components/ui/Form';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { cellText } from '@/lib/item-cells';
 import { forFormat, isCommonColumn, DEPARTMENTS, deptLabel, type ColumnSpec } from '@/lib/item-columns';
-import { MASTER_COLUMNS, MASTER_FILTERS, type MasterFilter } from '@/lib/master-columns';
+import { MASTER_COLUMNS, MASTER_FILTERS, MASTER_SORTABLE_IDS, type MasterFilter } from '@/lib/master-columns';
 import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { num } from '@/lib/format';
 import type { MasterRow } from '@/types/master';
 import { buildItemsWorkbook } from '@/components/lots/excel-io';
+import { applyView, DEFAULT_VIEW, MAX_WIDTH, MIN_WIDTH, moveColumn, ROW_PADDING, useMasterView } from '@/components/master/master-view';
+import { ColumnsMenu, DisplayMenu, ExportMenu, HeaderMenu, ViewsMenu, toolbarButton } from '@/components/master/MasterMenus';
 
 /**
- * The Master Excel: every item of every lot (and its project) in one sheet. Filter row under the
- * column names (type to filter, picks for the dropdowns), server-side paging, department tick
- * boxes to show / hide column groups, and Export of everything that matches the filters.
- * Read only — items are edited in their own lot's Excel (click a lot no or archive code).
+ * The Master Excel: every item of every lot (and its project) in one sheet. Read only — items are
+ * edited in their own lot's Excel (click a lot no or archive code).
+ *
+ * Spreadsheet tools: a filter row under the column names, server-side sorting and paging, a column
+ * picker, per-column menus (sort, hide, pin, move, resize), row selection, copy to paste into Excel,
+ * Excel / CSV export of what is shown, row height and wrapping, full screen, filter chips, and saved
+ * views. How the sheet looks is remembered per format on this device.
  */
 
 const BANDS = [{ id: 'lot', label: 'Lot' }, ...DEPARTMENTS] as const;
-type BandId = (typeof BANDS)[number]['id'];
 const EXPORT_CAP = 20_000;
 const EXPORT_PAGE = 200;
+const SELECT_W = 40;
+const NUM_W = 52;
+const SORTABLE = new Set(MASTER_SORTABLE_IDS);
 
 const inputCls =
   'h-7 w-full min-w-0 rounded-[4px] border border-line bg-surface px-1.5 text-[12px] text-ink placeholder:text-ink-4';
+
+const clamp = (n: number) => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(n)));
 
 function FilterCell({
   filter,
@@ -60,7 +68,9 @@ function FilterCell({
         className={inputCls}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Filter"
+        placeholder="Filter…"
+        name={`filter-${filter.param}`}
+        autoComplete="off"
         aria-label={`Filter ${label}`}
       />
     );
@@ -100,17 +110,34 @@ function ListFilterSelect({ list, value, onChange, label }: { list: string; valu
   );
 }
 
+function download(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const csvCell = (s: string) => `"${s.replace(/"/g, '""')}"`;
+const tsvCell = (s: string) => s.replace(/[\t\r\n]+/g, ' ');
+
 export function MasterExcel() {
   const toast = useToast();
   const format = useFormatContext();
   const stages = useReferenceList('stage');
   const dataTypes = useReferenceList('dataType');
+  const { view, setView, saved, saveView, deleteView } = useMasterView(format ?? 'all');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [applied, setApplied] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
-  const [shown, setShown] = useState<BandId[]>(() => BANDS.map((b) => b.id));
   const [exporting, setExporting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [full, setFull] = useState(false);
+  const allBox = useRef<HTMLInputElement>(null);
 
   // Filters apply after a short pause in typing, from page 1.
   useEffect(() => {
@@ -121,6 +148,14 @@ export function MasterExcel() {
     return () => clearTimeout(t);
   }, [filters]);
   useEffect(() => setPage(1), [format]);
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFull(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [full]);
 
   const optionsFor = (f: MasterFilter): { value: string; label: string }[] => {
     if (f.type !== 'select') return [];
@@ -133,31 +168,29 @@ export function MasterExcel() {
   const { lists: refLists } = useReferenceLists();
   const refLabel = useCallback((list: string, v: string | null) => refLabelOf(refLists, list, v), [refLists]);
 
+  const sort = view.sort && SORTABLE.has(view.sort) ? view.sort : '';
   const params = useMemo(() => {
-    const p: Record<string, string | number | undefined> = { ...applied, format, page, pageSize };
+    const p: Record<string, string | number | undefined> = { ...applied, format, page, pageSize, sort: sort || undefined, dir: sort ? view.dir : undefined };
     return p;
-  }, [applied, format, page, pageSize]);
+  }, [applied, format, page, pageSize, sort, view.dir]);
   const key = JSON.stringify(params);
   const list = useQuery({
     queryKey: queryKeys.master.list(key),
     queryFn: () => masterApi.list(params),
     placeholderData: keepPreviousData,
   });
+  const data = list.data;
+  // A new page of rows starts with nothing selected.
+  useEffect(() => setSelected(new Set()), [key]);
 
   // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
   // every format has — a format's own columns need that format picked (and Export writes a sheet each).
-  const columns = useMemo(
-    () => {
-      const inBands = MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId));
-      return format ? forFormat(inBands, format) : inBands.filter(isCommonColumn);
-    },
-    [shown, format],
-  );
-  // Only the department tick boxes that have a column in the current view (Removal exists only for Prasadi).
-  const visibleBands = useMemo(() => {
-    const view = format ? forFormat(MASTER_COLUMNS, format) : MASTER_COLUMNS.filter(isCommonColumn);
-    return BANDS.filter((b) => b.id === 'lot' || view.some((c) => c.dept === b.id));
-  }, [format]);
+  const viewCols = useMemo(() => (format ? forFormat(MASTER_COLUMNS, format) : MASTER_COLUMNS.filter(isCommonColumn)), [format]);
+  const shownDepts = view.depts ?? BANDS.map((b) => b.id);
+  const baseColumns = useMemo(() => viewCols.filter((c) => shownDepts.includes(c.dept)), [viewCols, shownDepts]);
+  const columns = useMemo(() => applyView(baseColumns, view), [baseColumns, view]);
+  const visibleBands = useMemo(() => BANDS.filter((b) => b.id === 'lot' || viewCols.some((c) => c.dept === b.id)), [viewCols]);
+
   const bands = useMemo(() => {
     const out: { id: string; label: string; span: number }[] = [];
     for (const c of columns) {
@@ -167,51 +200,127 @@ export function MasterExcel() {
     }
     return out;
   }, [columns]);
-  const activeFilters = Object.values(filters).filter(Boolean).length;
-  const data = list.data;
 
-  const exportAll = async () => {
+  // Pinned columns stay put while the sheet scrolls sideways: each sits after the selection / row-number columns and the pins before it.
+  const widthOf = (c: ColumnSpec) => view.widths[c.id] ?? c.width ?? 140;
+  const pinLeft = useMemo(() => {
+    const out = new Map<string, number>();
+    let left = SELECT_W + NUM_W;
+    for (const c of columns) {
+      if (!view.pinned.includes(c.id)) break;
+      out.set(c.id, left);
+      left += view.widths[c.id] ?? c.width ?? 140;
+    }
+    return out;
+  }, [columns, view.pinned, view.widths]);
+
+  const activeFilters = Object.values(filters).filter(Boolean).length;
+  const rows = data?.rows ?? [];
+
+  /* ------------------------------------------------------------------- filter chips */
+  const paramInfo = useMemo(() => {
+    const m = new Map<string, ColumnSpec>();
+    for (const c of MASTER_COLUMNS) {
+      const f = MASTER_FILTERS[c.id];
+      if (f) m.set(f.param, c);
+    }
+    return m;
+  }, []);
+  const chipValue = (param: string, v: string): string => {
+    const c = paramInfo.get(param);
+    if (c?.refList) return refLabel(c.refList, v);
+    if (param === 'stage') return stages.data?.items.find((i) => i.value === v)?.label ?? v;
+    if (param === 'dataType') return dataTypes.data?.items.find((i) => i.value === v)?.label ?? v;
+    return v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v === 'blank' ? 'Blank' : v;
+  };
+
+  /* ---------------------------------------------------------------------- selection */
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  useEffect(() => {
+    if (allBox.current) allBox.current.indeterminate = selected.size > 0 && !allSelected;
+  }, [selected, allSelected]);
+  const toggleRow = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /* --------------------------------------------------------------- copy and export */
+  const copyRows = async (which: MasterRow[]) => {
+    if (which.length === 0) return;
+    const head = columns.map((c) => tsvCell(c.label)).join('\t');
+    const body = which.map((r) => columns.map((c) => tsvCell(cellText(r, c, refLabel))).join('\t'));
+    try {
+      await navigator.clipboard.writeText([head, ...body].join('\n'));
+      toast.success('Copied', `${num(which.length)} ${which.length === 1 ? 'row' : 'rows'}: paste into Excel or Sheets.`);
+    } catch {
+      toast.error('Could not copy', 'Your browser did not allow clipboard access.');
+    }
+  };
+
+  const fetchAll = async (): Promise<MasterRow[]> => {
+    const out: MasterRow[] = [];
+    for (let p = 1; out.length < EXPORT_CAP; p += 1) {
+      const res = await masterApi.list({ ...applied, format, sort: sort || undefined, dir: sort ? view.dir : undefined, page: p, pageSize: EXPORT_PAGE });
+      out.push(...res.rows);
+      if (out.length >= res.total || res.rows.length === 0) break;
+    }
+    return out;
+  };
+
+  const exportRows = async (kind: 'xlsx' | 'csv', scope: 'all' | 'selected') => {
     setExporting(true);
     try {
-      const rows: MasterRow[] = [];
-      for (let p = 1; rows.length < EXPORT_CAP; p += 1) {
-        const res = await masterApi.list({ ...applied, format, page: p, pageSize: EXPORT_PAGE });
-        rows.push(...res.rows);
-        if (rows.length >= res.total || res.rows.length === 0) break;
-      }
-      if (rows.length === 0) {
-        toast.info('Nothing to export', 'No items match the filters.');
+      const picked = scope === 'selected' ? rows.filter((r) => selected.has(r.id)) : await fetchAll();
+      if (picked.length === 0) {
+        toast.info('Nothing to export', scope === 'selected' ? 'Tick some rows first.' : 'No items match the filters.');
         return;
       }
-      // One format: one sheet. All formats: one sheet per format, each with that format's own columns.
-      const shownCols = MASTER_COLUMNS.filter((c) => shown.includes(c.dept as BandId));
-      const byFormat = new Map<string, MasterRow[]>();
-      for (const r of rows) byFormat.set(r.format, [...(byFormat.get(r.format) ?? []), r]);
-      const sheets = format
-        ? [{ name: 'Master', rows, columns }]
-        : [...byFormat.entries()].map(([f, fr]) => ({
-            name: FORMAT_LABELS[f as Format] ?? f,
-            rows: fr,
-            columns: forFormat(shownCols, f),
-          }));
-      const wb = await buildItemsWorkbook({ sheets, columns, refLabel });
-      const buf = await wb.xlsx.writeBuffer();
-      const url = URL.createObjectURL(
-        new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-      );
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `master-excel${format ? `-${format}` : ''}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Exported', `${num(rows.length)} items${data && rows.length < data.total ? ` (first ${num(EXPORT_CAP)})` : ''}.`);
+      const stem = `master-excel${format ? `-${format}` : ''}`;
+      if (kind === 'csv') {
+        const head = columns.map((c) => csvCell(c.label)).join(',');
+        const body = picked.map((r) => columns.map((c) => csvCell(cellText(r, c, refLabel))).join(','));
+        download(new Blob([`﻿${[head, ...body].join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `${stem}.csv`);
+      } else {
+        // One format: one sheet, the columns as shown. All formats: one sheet per format, each with that format's own columns.
+        const shownCols = MASTER_COLUMNS.filter((c) => shownDepts.includes(c.dept) && !view.hidden.includes(c.id));
+        const byFormat = new Map<string, MasterRow[]>();
+        for (const r of picked) byFormat.set(r.format, [...(byFormat.get(r.format) ?? []), r]);
+        const sheets = format
+          ? [{ name: 'Master', rows: picked, columns }]
+          : [...byFormat.entries()].map(([f, fr]) => ({ name: FORMAT_LABELS[f as Format] ?? f, rows: fr, columns: forFormat(shownCols, f) }));
+        const wb = await buildItemsWorkbook({ sheets, columns, refLabel });
+        const buf = await wb.xlsx.writeBuffer();
+        download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `${stem}.xlsx`);
+      }
+      toast.success('Exported', `${num(picked.length)} items${scope === 'all' && data && picked.length < data.total ? ` (first ${num(EXPORT_CAP)})` : ''}.`);
     } catch (e) {
       toast.error('Could not export', e instanceof ApiRequestError ? e.message : undefined);
     } finally {
       setExporting(false);
     }
+  };
+
+  /* ---------------------------------------------------------------- header actions */
+  const cycleSort = (id: string) =>
+    setView((v) => (v.sort !== id ? { sort: id, dir: 'asc' } : v.dir === 'asc' ? { dir: 'desc' } : { sort: '', dir: 'asc' }));
+
+  const startResize = (e: ReactPointerEvent<HTMLElement>, c: ColumnSpec) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.currentTarget;
+    const startX = e.clientX;
+    const startW = target.parentElement?.getBoundingClientRect().width ?? widthOf(c);
+    target.setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => setView((v) => ({ widths: { ...v.widths, [c.id]: clamp(startW + ev.clientX - startX) } }));
+    const up = () => {
+      target.removeEventListener('pointermove', move);
+      target.removeEventListener('pointerup', up);
+    };
+    target.addEventListener('pointermove', move);
+    target.addEventListener('pointerup', up);
   };
 
   const cell = (row: MasterRow, c: ColumnSpec) => {
@@ -237,111 +346,237 @@ export function MasterExcel() {
     return text || <span className="text-ink-4">—</span>;
   };
 
+  const resetView = () => {
+    setView({ ...DEFAULT_VIEW });
+    setFilters({});
+  };
+
+  const headTop = view.filterRow ? ['top-0', 'top-7', 'top-16'] : ['top-0', 'top-7'];
+  const first = (page - 1) * pageSize;
+
   return (
-    <div className="flex flex-col gap-3 min-h-0">
+    <div className={`flex min-h-0 flex-col gap-3 ${full ? 'fixed inset-0 z-[90] overflow-auto bg-bg p-4' : ''}`}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h1 className="m-0 text-[18px] font-semibold tracking-[-0.015em] text-ink">
-          Master Excel{format ? ` · ${FORMAT_LABELS[format as Format]}` : ''}
-        </h1>
-        <span className="text-[12.5px] text-ink-3 tabular-nums">
+        <h1 className="m-0 text-[18px] font-semibold tracking-[-0.015em] text-ink">Master Excel{format ? ` · ${FORMAT_LABELS[format as Format]}` : ''}</h1>
+        <span className="text-[12.5px] tabular-nums text-ink-3" aria-live="polite">
           {data ? `${num(data.total)} ${data.total === 1 ? 'item' : 'items'}` : ''}
         </span>
-        <div role="group" aria-label="Departments" className="flex flex-wrap gap-x-3 text-[12px] text-ink-2 sm:ml-auto">
-          {visibleBands.map((b) => (
-            <label key={b.id} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-accent"
-                checked={shown.includes(b.id)}
-                onChange={(e) =>
-                  setShown((prev) => (e.target.checked ? BANDS.map((x) => x.id).filter((x) => x === b.id || prev.includes(x)) : prev.filter((x) => x !== b.id)))
-                }
-              />
-              {b.label}
-            </label>
-          ))}
-        </div>
-        {activeFilters > 0 ? (
-          <GhostButton onClick={() => setFilters({})}>Clear filters ({activeFilters})</GhostButton>
-        ) : null}
-        <GhostButton onClick={() => void exportAll()} disabled={exporting || !data || data.total === 0}>
-          {exporting ? 'Exporting…' : 'Export'}
-        </GhostButton>
       </div>
+
+      <div role="toolbar" aria-label="Sheet tools" className="flex flex-wrap items-center gap-2">
+        <ViewsMenu
+          saved={saved}
+          onApply={(s) => {
+            setView({ ...DEFAULT_VIEW, ...s.view });
+            setFilters(s.filters);
+          }}
+          onSave={(name) => saveView(name, filters)}
+          onDelete={deleteView}
+          onReset={resetView}
+        />
+        <ColumnsMenu
+          columns={viewCols}
+          view={view}
+          setView={setView}
+          depts={visibleBands.map((b) => ({ id: b.id, label: b.label }))}
+          shownDepts={shownDepts}
+          onToggleDept={(id, on) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) })}
+        />
+        <DisplayMenu view={view} setView={setView} />
+        <button type="button" className={toolbarButton} onClick={() => void list.refetch()} disabled={list.isFetching} title="Reload the items">
+          {list.isFetching ? 'Refreshing…' : 'Refresh'}
+        </button>
+        <button type="button" className={toolbarButton} onClick={() => setFull((f) => !f)} aria-pressed={full} title="Full screen (Esc to leave)">
+          {full ? 'Exit full screen' : 'Full screen'}
+        </button>
+        <span className="flex items-center gap-2 sm:ml-auto">
+          <button type="button" className={toolbarButton} onClick={() => void copyRows(selected.size > 0 ? rows.filter((r) => selected.has(r.id)) : rows)} disabled={rows.length === 0} title="Copy as tab-separated text, ready to paste into Excel">
+            {selected.size > 0 ? `Copy ${selected.size} selected` : 'Copy this page'}
+          </button>
+          <ExportMenu exporting={exporting} selected={selected.size} total={data?.total ?? 0} onExport={(k, s) => void exportRows(k, s)} />
+        </span>
+      </div>
+
+      {activeFilters > 0 || sort ? (
+        <div className="flex flex-wrap items-center gap-2" aria-label="Active filters and sort">
+          {Object.entries(filters)
+            .filter(([, v]) => v)
+            .map(([param, v]) => (
+              <span key={param} className="inline-flex max-w-[260px] items-center overflow-hidden rounded-full border border-line-strong bg-surface text-[12px] text-ink-2">
+                <span className="truncate pl-2.5">
+                  <span className="font-semibold">{paramInfo.get(param)?.label ?? param}</span>: {chipValue(param, v)}
+                </span>
+                <button type="button" aria-label={`Remove filter ${paramInfo.get(param)?.label ?? param}`} onClick={() => setFilters((prev) => ({ ...prev, [param]: '' }))} className="h-6 w-6 cursor-pointer border-0 bg-transparent text-ink-3 hover:text-danger">
+                  ×
+                </button>
+              </span>
+            ))}
+          {sort ? (
+            <span className="inline-flex items-center overflow-hidden rounded-full border border-line-strong bg-surface text-[12px] text-ink-2">
+              <span className="pl-2.5">
+                Sorted by <span className="font-semibold">{MASTER_COLUMNS.find((c) => c.id === sort)?.label ?? sort}</span> {view.dir === 'asc' ? 'A → Z' : 'Z → A'}
+              </span>
+              <button type="button" aria-label="Clear sort" onClick={() => setView({ sort: '', dir: 'asc' })} className="h-6 w-6 cursor-pointer border-0 bg-transparent text-ink-3 hover:text-danger">
+                ×
+              </button>
+            </span>
+          ) : null}
+          {activeFilters > 0 ? (
+            <button type="button" onClick={() => setFilters({})} className="cursor-pointer border-0 bg-transparent p-0 text-[12px] text-accent">
+              Clear all filters
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {selected.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[8px] border border-line bg-accent-soft px-3 py-1.5 text-[12.5px] text-ink-2" role="status">
+          <span className="font-semibold tabular-nums">{selected.size} selected</span>
+          <button type="button" onClick={() => setSelected(new Set())} className="cursor-pointer border-0 bg-transparent p-0 text-accent">
+            Clear selection
+          </button>
+        </div>
+      ) : null}
 
       {list.isError ? (
         <Panel>
-          <ErrorState
-            message={list.error instanceof ApiRequestError ? list.error.message : "Couldn't load the items."}
-            onRetry={() => void list.refetch()}
-          />
+          <ErrorState message={list.error instanceof ApiRequestError ? list.error.message : "Couldn't load the items."} onRetry={() => void list.refetch()} />
         </Panel>
       ) : (
-        <Panel className="min-h-0 flex flex-col overflow-hidden">
-          <div className="overflow-auto max-h-[calc(100dvh-250px)]">
-            <table className="border-separate border-spacing-0 text-[12.5px] text-ink-2 min-w-full">
+        <Panel className="flex min-h-0 flex-col overflow-hidden">
+          <div className={`overflow-auto overscroll-contain ${full ? 'max-h-[calc(100dvh-210px)]' : 'max-h-[calc(100dvh-290px)]'}`}>
+            <table className="min-w-full border-separate border-spacing-0 text-[12.5px] text-ink-2">
               <thead>
                 <tr>
-                  {bands.map((b) => (
-                    <th
-                      key={b.id}
-                      colSpan={b.span}
-                      className="sticky top-0 z-20 h-7 bg-surface-sunken border-b border-l border-line-soft px-2 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3"
-                    >
+                  <th colSpan={2} style={{ left: 0 }} className={`sticky ${headTop[0]} z-30 h-7 border-b border-line-soft bg-surface-sunken`} />
+                  {bands.map((b, i) => (
+                    <th key={`${b.id}-${i}`} colSpan={b.span} className={`sticky ${headTop[0]} z-20 h-7 border-b border-l border-line-soft bg-surface-sunken px-2 text-left text-[11px] font-semibold uppercase tracking-[0.05em] text-ink-3`}>
                       {b.label}
                     </th>
                   ))}
                 </tr>
                 <tr>
-                  {columns.map((c) => (
-                    <th
-                      key={c.id}
-                      style={{ minWidth: c.width }}
-                      className="sticky top-7 z-20 h-9 bg-surface border-b border-line-soft px-2 text-left text-[12px] font-semibold text-ink-3 whitespace-nowrap"
-                      title={c.hint}
-                    >
-                      {c.label}
-                    </th>
-                  ))}
+                  <th style={{ left: 0, width: SELECT_W, minWidth: SELECT_W }} className={`sticky ${headTop[1]} z-30 h-9 border-b border-line-soft bg-surface px-2 text-center`}>
+                    <input ref={allBox} type="checkbox" aria-label="Select every row on this page" className="h-4 w-4 accent-accent" checked={allSelected} onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())} />
+                  </th>
+                  <th style={{ left: SELECT_W, width: NUM_W, minWidth: NUM_W }} className={`sticky ${headTop[1]} z-30 h-9 border-b border-line-soft bg-surface px-2 text-right text-[11px] font-semibold text-ink-4`} aria-label="Row number">
+                    #
+                  </th>
+                  {columns.map((c, i) => {
+                    const pinned = pinLeft.has(c.id);
+                    const sortable = SORTABLE.has(c.id);
+                    const dir = sort === c.id ? view.dir : null;
+                    const fixed = pinned || view.widths[c.id] !== undefined;
+                    const w = widthOf(c);
+                    return (
+                      <th
+                        key={c.id}
+                        aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
+                        style={{ ...(fixed ? { width: w, minWidth: w, maxWidth: w } : { minWidth: c.width }), ...(pinned ? { left: pinLeft.get(c.id) } : {}) }}
+                        className={`sticky ${headTop[1]} ${pinned ? 'z-30' : 'z-20'} h-9 border-b border-line-soft bg-surface px-2 text-left text-[12px] font-semibold text-ink-3`}
+                        title={c.hint}
+                      >
+                        <div className="flex min-w-0 items-center gap-0.5">
+                          {sortable ? (
+                            <button type="button" onClick={() => cycleSort(c.id)} className="flex min-w-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-left text-[12px] font-semibold text-ink-3 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
+                              <span className="truncate">{c.label}</span>
+                              <span aria-hidden className="text-[10px] text-accent">{dir === 'asc' ? '▲' : dir === 'desc' ? '▼' : ''}</span>
+                            </button>
+                          ) : (
+                            <span className="truncate">{c.label}</span>
+                          )}
+                          <span className="ml-auto shrink-0">
+                            <HeaderMenu
+                              column={c}
+                              sortable={sortable}
+                              sorted={dir}
+                              pinned={pinned}
+                              canMoveLeft={i > 0 && pinned === pinLeft.has(columns[i - 1]!.id)}
+                              canMoveRight={i < columns.length - 1 && pinned === pinLeft.has(columns[i + 1]!.id)}
+                              actions={{
+                                sort: (d) => setView(d ? { sort: c.id, dir: d } : { sort: '', dir: 'asc' }),
+                                hide: () => setView((v) => ({ hidden: [...v.hidden, c.id] })),
+                                showOnly: () => setView({ hidden: baseColumns.filter((x) => x.id !== c.id).map((x) => x.id) }),
+                                pin: () => setView((v) => ({ pinned: v.pinned.includes(c.id) ? v.pinned.filter((x) => x !== c.id) : [...v.pinned, c.id] })),
+                                move: (step) => setView((v) => ({ order: moveColumn(baseColumns, v, c.id, step) })),
+                                resetWidth: () => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== c.id)) })),
+                              }}
+                            />
+                          </span>
+                        </div>
+                        <span
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={`Resize ${c.label}`}
+                          title="Drag to resize, double-click to reset"
+                          onPointerDown={(e) => startResize(e, c)}
+                          onDoubleClick={() => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== c.id)) }))}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize touch-none hover:bg-accent/40"
+                        />
+                      </th>
+                    );
+                  })}
                 </tr>
-                <tr>
-                  {columns.map((c) => (
-                    <th key={c.id} className="sticky top-16 z-20 bg-surface border-b border-line px-1.5 py-1 font-normal">
-                      <FilterCell
-                        filter={MASTER_FILTERS[c.id]}
-                        value={filters[MASTER_FILTERS[c.id]?.param ?? ''] ?? ''}
-                        onChange={(v) => {
-                          const f = MASTER_FILTERS[c.id];
-                          if (f) setFilters((prev) => ({ ...prev, [f.param]: v }));
-                        }}
-                        options={MASTER_FILTERS[c.id] ? optionsFor(MASTER_FILTERS[c.id]!) : []}
-                        label={c.label}
-                      />
-                    </th>
-                  ))}
-                </tr>
+                {view.filterRow ? (
+                  <tr>
+                    <th style={{ left: 0 }} colSpan={2} className={`sticky ${headTop[2]} z-30 border-b border-line bg-surface`} />
+                    {columns.map((c) => (
+                      <th key={c.id} style={pinLeft.has(c.id) ? { left: pinLeft.get(c.id) } : undefined} className={`sticky ${headTop[2]} ${pinLeft.has(c.id) ? 'z-30' : 'z-20'} border-b border-line bg-surface px-1.5 py-1 font-normal`}>
+                        <FilterCell
+                          filter={MASTER_FILTERS[c.id]}
+                          value={filters[MASTER_FILTERS[c.id]?.param ?? ''] ?? ''}
+                          onChange={(v) => {
+                            const f = MASTER_FILTERS[c.id];
+                            if (f) setFilters((prev) => ({ ...prev, [f.param]: v }));
+                          }}
+                          options={MASTER_FILTERS[c.id] ? optionsFor(MASTER_FILTERS[c.id]!) : []}
+                          label={c.label}
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                ) : null}
               </thead>
               <tbody>
                 {list.isPending
                   ? Array.from({ length: 8 }).map((_, i) => (
                       <tr key={i}>
-                        <td colSpan={columns.length} className="px-2 py-1.5">
+                        <td colSpan={columns.length + 2} className="px-2 py-1.5">
                           <Skeleton className="h-5 w-full" />
                         </td>
                       </tr>
                     ))
-                  : (data?.rows ?? []).map((row) => (
-                      <tr key={row.id} className="hover:bg-accent-soft">
-                        {columns.map((c) => (
-                          <td key={c.id} className="border-b border-line-soft px-2 py-1.5 align-middle whitespace-nowrap max-w-[320px] truncate">
-                            {cell(row, c)}
+                  : rows.map((row, ri) => {
+                      const isSel = selected.has(row.id);
+                      const rowBg = isSel ? 'bg-accent-soft' : 'bg-surface';
+                      return (
+                        <tr key={row.id} className="group">
+                          <td style={{ left: 0, width: SELECT_W, minWidth: SELECT_W }} className={`sticky z-10 border-b border-line-soft px-2 text-center align-middle group-hover:bg-accent-soft ${rowBg}`}>
+                            <input type="checkbox" aria-label={`Select ${row.code}`} className="h-4 w-4 accent-accent" checked={isSel} onChange={() => toggleRow(row.id)} />
                           </td>
-                        ))}
-                      </tr>
-                    ))}
-                {data && data.rows.length === 0 ? (
+                          <td style={{ left: SELECT_W, width: NUM_W, minWidth: NUM_W }} className={`sticky z-10 border-b border-line-soft px-2 text-right align-middle text-[11px] tabular-nums text-ink-4 group-hover:bg-accent-soft ${rowBg}`}>
+                            {first + ri + 1}
+                          </td>
+                          {columns.map((c) => {
+                            const pinned = pinLeft.has(c.id);
+                            const fixed = pinned || view.widths[c.id] !== undefined;
+                            const w = widthOf(c);
+                            return (
+                              <td
+                                key={c.id}
+                                style={{ ...(fixed ? { width: w, minWidth: w, maxWidth: w } : {}), ...(pinned ? { left: pinLeft.get(c.id) } : {}) }}
+                                className={`border-b border-line-soft px-2 align-middle group-hover:bg-accent-soft ${ROW_PADDING[view.density]} ${pinned ? `sticky z-10 ${rowBg}` : isSel ? 'bg-accent-soft' : ''} ${view.wrap ? 'whitespace-normal break-words' : 'truncate whitespace-nowrap'} ${fixed ? '' : 'max-w-[320px]'}`}
+                              >
+                                {cell(row, c)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                {data && rows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} className="px-3 py-8 text-center text-ink-3">
+                    <td colSpan={columns.length + 2} className="px-3 py-8 text-center text-ink-3">
                       No items match these filters.
                     </td>
                   </tr>

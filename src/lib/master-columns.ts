@@ -20,6 +20,14 @@ export const MASTER_COLUMNS: ColumnSpec[] = [
   ...BUILTIN_COLUMNS.flatMap((c) => (c.id === 'decisionRemark' ? [c, RESULT_COLUMN] : [c])),
 ];
 
+/** Columns the sheet can be sorted by on the server (the item's own columns; lot columns keep the lot order). */
+export const MASTER_SORTABLE_IDS: readonly string[] = [
+  ...BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => c.id),
+  'code', 'senderCode', 'place', 'nameOnTape', 'nameOnCase', 'physicalSource', 'remarks', 'itemName', 'description', 'event', 'itemCondition',
+  'dateRange', 'fileName', 'phyStorageLoc', 'storageRemark', 'photo', 'recheckWeeks', 'nextCheckDue', 'lastCheckedAt', 'loggedAt', 'loggerName',
+  'digital', 'redigital', 'discard', 'decisionRemark',
+];
+
 /** How a column is filtered: the API query parameter and the kind of input. */
 export type MasterFilter =
   | { param: string; type: 'text' }

@@ -28,6 +28,36 @@ const MAX_LOT_IDS = 100_000;
 
 type Filter = Record<string, unknown>;
 
+/** Item columns the sheet can be sorted by, and where each lives. Lot-level columns keep the lot order. */
+export const SORT_PATHS: Record<string, string> = {
+  ...Object.fromEntries(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [c.id, `attrs.${c.id}`])),
+  code: 'code',
+  senderCode: 'senderCode',
+  place: 'place',
+  nameOnTape: 'nameOnTape',
+  nameOnCase: 'nameOnCase',
+  physicalSource: 'physicalSource',
+  remarks: 'remarks',
+  itemName: 'name',
+  description: 'description',
+  event: 'event',
+  itemCondition: 'itemCondition',
+  dateRange: 'dateFrom',
+  fileName: 'fileName',
+  phyStorageLoc: 'phyStorageLoc',
+  storageRemark: 'storageRemark',
+  photo: 'imageCount',
+  recheckWeeks: 'recheckWeeks',
+  nextCheckDue: 'nextCheckDue',
+  lastCheckedAt: 'lastCheckedAt',
+  loggedAt: 'loggedAt',
+  loggerName: 'loggerName',
+  digital: 'decision.digital',
+  redigital: 'decision.redigital',
+  discard: 'decision.discard',
+  decisionRemark: 'decision.remark',
+};
+
 /** Yes / No / blank on a three-state boolean (blank = unanswered, i.e. null or missing). */
 function tri(f: Filter, path: string, v: string | undefined) {
   if (v === 'yes') f[path] = true;
@@ -152,8 +182,13 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   }
 
   const skip = (query.page - 1) * query.pageSize;
+  const sortPath = query.sort ? SORT_PATHS[query.sort] : undefined;
+  const lotOrder = { lot: 1, lineIndex: 1, sortOrder: 1, groupNo: 1, itemNo: 1 } as const;
   const [docs, total] = await Promise.all([
-    LotItem.find(f).sort({ lot: 1, lineIndex: 1, sortOrder: 1, groupNo: 1, itemNo: 1 }).skip(skip).limit(query.pageSize).lean(),
+    (sortPath
+      ? LotItem.find(f).sort({ [sortPath]: query.dir === 'desc' ? -1 : 1, ...lotOrder }).collation({ locale: 'en', strength: 2, numericOrdering: true })
+      : LotItem.find(f).sort(lotOrder)
+    ).skip(skip).limit(query.pageSize).lean(),
     LotItem.countDocuments(f),
   ]);
   const items = docs as ItemLean[];

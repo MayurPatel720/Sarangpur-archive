@@ -16,6 +16,9 @@ export const masterQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   /** Media format; also bounded by the caller's `format:*` grants. */
   format: text,
+  /** Column to sort by (an item column id, see MASTER_SORT_PATHS) and its direction. Default: lot order. */
+  sort: text,
+  dir: z.enum(['asc', 'desc']).optional(),
   // Lot / project
   lot: text,
   project: text,
