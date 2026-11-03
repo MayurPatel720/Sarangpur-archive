@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-packager . \"Sarangpur Archive\" --platform=win32 --arch=x64 --icon=assets/icon.ico --out=dist --overwrite --prune=true --ignore=^/dist --ignore=^/make-icon --ignore=^/README.md",
-    "dist:installer": "electron-builder --win portable"
+    "installer": "npm run dist && electron-builder --win nsis --prepackaged \"dist/Sarangpur Archive-win32-x64\""
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
@@ -17,16 +17,23 @@
   "build": {
     "appId": "org.sarangpur.archive.desktop",
     "productName": "Sarangpur Archive",
-    "files": [
-      "main.js",
-      "preload.js",
-      "package.json",
-      "assets/**"
-    ],
-    "icon": "assets/icon.ico",
+    "directories": {
+      "output": "dist-installer"
+    },
+    "artifactName": "Sarangpur-Archive-Setup.${ext}",
     "win": {
-      "target": "portable",
-      "icon": "assets/icon.ico"
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
     }
   }
 }

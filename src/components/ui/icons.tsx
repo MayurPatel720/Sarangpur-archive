@@ -105,6 +105,14 @@ export const IconClock = (p: IconProps) => (
   </Icon>
 );
 
+export const IconDownload = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 4v11" />
+    <path d="M7.5 11l4.5 4.5 4.5-4.5" />
+    <path d="M4.5 19.5h15" />
+  </Icon>
+);
+
 export const IconSearch = (p: IconProps) => (
   <Icon strokeWidth={1.9} {...p}>
     <circle cx="10.8" cy="10.8" r="6.8" />

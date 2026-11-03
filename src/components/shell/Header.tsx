@@ -8,6 +8,7 @@ import { THEME_OPTIONS, useTheme } from '@/hooks/useTheme';
 import {
   IconBell,
   IconChevronDown,
+  IconDownload,
   IconLogout,
   IconMenu,
   IconRefresh,
@@ -18,6 +19,8 @@ import { useDrawer } from '@/components/shell/drawer-context';
 import { NotificationBell } from '@/components/shell/NotificationBell';
 import { SearchOverlay } from '@/components/shell/SearchOverlay';
 import { Kbd } from '@/components/ui/Kbd';
+import { DESKTOP_DOWNLOAD_URL } from '@/lib/desktop-app';
+import { isDesktopApp } from '@/lib/file-path';
 import { FormatSwitcher } from '@/components/shell/FormatSwitcher';
 
 /** 'lead_reviewer' → 'Lead reviewer'. Session only carries the key, not the label. */
@@ -64,6 +67,11 @@ export function Header({ page }: { page: string }) {
   const roleLabel = me ? prettifyRoleKey(me.roleKey) : '';
   const initials = me ? initialsOf(me.name) : '';
 
+  // Offer the Windows app to Windows browsers only, and never inside the app itself. Decided after mount so the server and first client render match.
+  const [canInstallApp, setCanInstallApp] = useState(false);
+  useEffect(() => {
+    setCanInstallApp(/Windows/i.test(navigator.userAgent) && !isDesktopApp());
+  }, []);
   const showSettings =
     me !== undefined &&
     (me.grants.includes('settings:manage') ||
@@ -255,6 +263,21 @@ export function Header({ page }: { page: string }) {
                   </div>
                 </div>
                 <div className="h-px bg-line mx-1.5 my-1" />
+                {canInstallApp && (
+                  <a
+                    role="menuitem"
+                    href={DESKTOP_DOWNLOAD_URL}
+                    download
+                    onClick={() => setMenuOpen(false)}
+                    className="flex items-start gap-2 px-2.5 py-2 rounded-[6px] text-[12.5px] font-medium text-ink hover:bg-surface-sunken cursor-pointer no-underline"
+                  >
+                    <IconDownload size={15} className="mt-px text-ink-4" />
+                    <span className="flex flex-col gap-px">
+                      Install desktop app
+                      <span className="text-[10.5px] font-normal text-ink-4">Windows · saves full file paths</span>
+                    </span>
+                  </a>
+                )}
                 {showSettings && (
                   <a
                     role="menuitem"
