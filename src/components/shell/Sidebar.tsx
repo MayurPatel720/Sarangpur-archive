@@ -41,10 +41,10 @@ type NavItem = { icon: React.ElementType; label: string; href: string };
 const WORKFLOW_ITEMS = [
   { icon: IconBox, label: 'Main dashboard', href: '/dashboard', perm: 'dashboard:view' },
   { icon: IconDashboard, label: 'Dashboard', href: '/dashboard', perm: 'dashboard:view' },
-  { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
-  { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconClipboardList, label: 'Master List', href: '/register', perm: 'lot:view' },
   { icon: IconDatabase, label: 'Master Excel', href: '/master', perm: 'lot:view' },
+  { icon: IconPlus, label: 'New project', href: '/projects/new', perm: 'project:create' },
+  { icon: IconIntake, label: 'New Intake', href: '/register/new', perm: 'lot:create' },
   { icon: IconUser, label: 'My lots', href: '/register?assignee=me', perm: 'lot:view' },
   { icon: IconCheckCircle, label: 'My to-do', href: '/todos', perm: 'task:view' },
   { icon: IconCheckCircle, label: 'Tasks', href: '/tasks', perm: 'task:view' },

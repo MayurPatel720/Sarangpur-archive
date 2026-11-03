@@ -201,6 +201,7 @@ async function main() {
         dateReceived: new Date().toISOString(),
         originSource: sample.originSource!,
         owner: { name: 'Verify Owner' },
+        locationReceiver: { name: 'Verify Receiver' },
         pointsOfContact: [],
         mediaLines: [{ format: 'photo', dataType: sample.dataType, mediaSubtype: sample.mediaSubtype, quantity }],
       },
@@ -347,6 +348,7 @@ async function main() {
       dateReceived: new Date().toISOString(),
       originSource: sample.originSource!,
       owner: { name: 'Verify Owner' },
+        locationReceiver: { name: 'Verify Receiver' },
       pointsOfContact: [],
       mediaLines: [photoLine],
     };
@@ -656,6 +658,7 @@ async function main() {
         dateReceived: new Date().toISOString(),
         originSource: sample.originSource!,
         owner: { name: 'Verify Owner' },
+        locationReceiver: { name: 'Verify Receiver' },
         pointsOfContact: [],
         mediaLines: [{ format: 'prasadi', dataType: 'physical', mediaSubtype: 'Prasadi', quantity: 2 }],
       },

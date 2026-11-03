@@ -269,6 +269,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
       dateReceived: new Date(`${dmyToIso(draft.dateReceived)}T00:00:00`).toISOString(),
       originSource: draft.originSource,
       owner: shared.owner!,
+      locationReceiver: shared.locationReceiver!,
       pointsOfContact: shared.pointsOfContact ?? [],
       mediaLines: buildMediaLines(draft),
       ...(draft.digitalFilePath.trim() ? { digitalFilePath: draft.digitalFilePath.trim() } : {}),

@@ -16,7 +16,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <ToastProvider>
       <DrawerProvider>
-        <div className="h-screen flex bg-canvas text-ink">
+        {/* The shell never scrolls: each page's <main> does. overflow-clip (not hidden) also stops focus / scrollIntoView from shifting the shell.
+            `relative` makes it the containing block of absolutely placed bits (sr-only labels, hidden inputs) so they cannot stretch the page. */}
+        <div className="relative h-dvh flex overflow-clip bg-canvas text-ink">
           <Suspense fallback={null}>
             <Sidebar />
           </Suspense>

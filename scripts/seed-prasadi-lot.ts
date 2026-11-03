@@ -229,6 +229,7 @@ async function main() {
       dateReceived: new Date().toISOString(),
       originSource: sample.originSource,
       owner: { name: 'Ramanbhai Patel', phone: '+91 98250 12345', email: 'ramanbhai.patel@example.org', address: 'Tajpur, Gujarat' },
+      locationReceiver: { name: 'Archive Receiver', phone: '+91 98250 00000' },
       pointsOfContact: [{ name: 'P. Vedantpriya Swami', phone: '+91 98250 54321' }],
       referencePeople: [{ name: 'Pujya Narayancharan Swami', phone: '+91 98250 00111' }],
       facilitator: { name: 'Hasmukhbhai Shah', phone: '+91 98250 77889' },

@@ -42,6 +42,7 @@ export const LOT_PATCH_SHARED_KEYS = [
   'pointsOfContact',
   'referencePeople',
   'facilitator',
+  'locationReceiver',
   'conditionNotes',
   'conditionPhotoUrl',
   'reasonForSending',
@@ -66,6 +67,7 @@ export function applySharedToLot(lot: Lot, patch: ProjectSharedPatch): void {
     lot.referencePeople = ((p.referencePeople as unknown) ?? []) as typeof lot.referencePeople;
   }
   if ('facilitator' in p) lot.facilitator =((p.facilitator as unknown) ?? null) as typeof lot.facilitator;
+  if ('locationReceiver' in p) lot.locationReceiver = ((p.locationReceiver as unknown) ?? null) as typeof lot.locationReceiver;
   if ('conditionPhotoUrl' in p) {
     lot.conditionPhotoUrl = (p.conditionPhotoUrl as string | null) ?? undefined;
   }
@@ -165,6 +167,7 @@ export function lotSharedPatch(
     pointsOfContact?: unknown[] | null;
     referencePeople?: unknown[] | null;
     facilitator?: unknown;
+    locationReceiver?: unknown;
     rights?: unknown;
     return?: { requested?: boolean; format?: string; durationText?: string | null; dueAt?: Date | null } | null;
   } & Record<string, unknown>,
@@ -190,6 +193,9 @@ export function lotSharedPatch(
         break;
       case 'facilitator':
         patch.facilitator = clean(lot.facilitator as Record<string, unknown> | null);
+        break;
+      case 'locationReceiver':
+        patch.locationReceiver = clean(lot.locationReceiver as Record<string, unknown> | null);
         break;
       case 'rights': {
         const r = clean(lot.rights as Record<string, unknown> | null);

@@ -142,7 +142,7 @@ async function main() {
   const lotIds: string[] = [];
   for (const s of standalone) {
     const lot = await createIntake(
-      { dateReceived: now, originSource: s.origin, owner: owner(s.owner), pointsOfContact: [], mediaLines: s.lines },
+      { dateReceived: now, originSource: s.origin, owner: owner(s.owner), locationReceiver: owner('Archive Receiver'), pointsOfContact: [], mediaLines: s.lines },
       admin,
     );
     lotIds.push(lot.id);

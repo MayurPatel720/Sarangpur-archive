@@ -106,6 +106,7 @@ export const lotCreateBodySchema = z
     pointsOfContact: z.array(contactSchema).max(5).default([]),
     referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE).default([]),
     facilitator: contactSchema.nullable().optional(),
+    locationReceiver: contactSchema,
     /**
      * Expandable media table — one row per format/sub-type. The server derives
      * the legacy top-level fields from these (primary = first line, quantities
@@ -285,6 +286,14 @@ const lotDetailSchema = z.object({
       address: z.string().nullable(),
     })
     .nullable(),
+  locationReceiver: z
+    .object({
+      name: z.string(),
+      phone: z.string().nullable(),
+      email: z.string().nullable(),
+      address: z.string().nullable(),
+    })
+    .nullable(),
   format: z.string(),
   dataType: z.string(),
   mediaSubtype: z.string(),
@@ -399,6 +408,7 @@ export const lotPatchBodySchema = z
     pointsOfContact: z.array(contactSchema).max(5).optional(),
     referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE).optional(),
     facilitator: contactSchema.nullable().optional(),
+    locationReceiver: contactSchema.optional(),
     mediaSubtype: z.string().trim().min(1).max(120).optional(),
     quantityToDigitize: z.number().int().min(0).optional(),
     quantityRemarks: z.string().trim().max(1000).nullable().optional(),

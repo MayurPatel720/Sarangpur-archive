@@ -150,6 +150,7 @@ async function main() {
         dateReceived: new Date().toISOString(),
         originSource,
         owner: { name: 'Someone Else' },
+        locationReceiver: { name: 'Verify Receiver' },
         pointsOfContact: [],
         mediaLines: [{ ...photo, quantity: 1 }],
       },

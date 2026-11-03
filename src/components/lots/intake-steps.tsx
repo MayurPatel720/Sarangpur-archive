@@ -57,6 +57,8 @@ export interface IntakeDraft {
   referencePeople: ReferencePersonRow[];
   /** `null` = no facilitator (the row IS the toggle). */
   facilitator: ContactRow | null;
+  /** Who took the lot from the facilitator at the location (required for a lot). */
+  locationReceiver: ContactRow;
   lines: MediaLineForm[];
   conditionNotes: string;
   conditionPhotoUrl: string;
@@ -98,6 +100,7 @@ export function emptyDraft(seedLine: Omit<MediaLineForm, 'id'>, today: string): 
     pocs: [],
     referencePeople: [],
     facilitator: null,
+    locationReceiver: { ...EMPTY_CONTACT, id: 'recv' },
     lines: [{ ...seedLine, id: 'r0' }],
     conditionNotes: '',
     conditionPhotoUrl: '',
@@ -197,6 +200,10 @@ export function validateOrigin(d: IntakeDraft, mode: IntakeMode): FieldErrors {
     if (!d.dateReceived.trim()) add('dateReceived', 'Date received is required.');
     if (!d.originSource) add('originSource', 'Origin source is required.');
     if (!d.owner.name.trim()) add('owner.name', 'Owner name is required.');
+    if (!d.locationReceiver.name.trim()) add('recv.name', 'Receiver name is required.');
+  }
+  if (!d.locationReceiver.name.trim() && (d.locationReceiver.phone || d.locationReceiver.email || d.locationReceiver.address)) {
+    add('recv.name', 'Receiver name is required once other receiver details are filled.');
   }
   if (d.dateReceived.trim() && !dmyToIso(d.dateReceived)) {
     add('dateReceived', 'Date received must be dd/mm/yyyy (e.g. 23/09/2026).');
@@ -257,6 +264,7 @@ export function buildSharedFields(d: IntakeDraft) {
       ? { referencePeople: cleanReferencePeople(d.referencePeople) }
       : {}),
     ...(d.facilitator ? { facilitator: cleanContact(d.facilitator) } : {}),
+    ...(d.locationReceiver.name.trim() ? { locationReceiver: cleanContact(d.locationReceiver) } : {}),
     ...(d.conditionNotes.trim() ? { conditionNotes: d.conditionNotes.trim() } : {}),
     ...(d.conditionPhotoUrl.trim() ? { conditionPhotoUrl: d.conditionPhotoUrl.trim() } : {}),
     ...(d.reasonForSending.trim() ? { reasonForSending: d.reasonForSending.trim() } : {}),
@@ -323,6 +331,10 @@ export function OriginContactsStep({
     patch({ facilitator: (prev) => (prev && prev.id === id ? { ...prev, ...p } : prev) });
     clearPrefix(`${id}.`);
   };
+  const updateRecv = (_id: string, p: Partial<ContactRow>) => {
+    patch({ locationReceiver: (prev) => ({ ...prev, ...p }) });
+    clearPrefix('recv.');
+  };
   const updateOwner = (_id: string, p: Partial<ContactRow>) => {
     patch({ owner: (prev) => ({ ...prev, ...p }) });
     clearPrefix('owner.');
@@ -330,6 +342,7 @@ export function OriginContactsStep({
   const ownerColumns = makeContactColumns(updateOwner, { nameRequired: req });
   const pocColumns = makeContactColumns(updatePoc);
   const facColumns = makeContactColumns(updateFac);
+  const recvColumns = makeContactColumns(updateRecv, { nameRequired: req });
 
   return (
     <StepBlocks>
@@ -417,7 +430,7 @@ export function OriginContactsStep({
 
       <FormSection
         legend="Facilitator"
-        description="Volunteer or sevak who collected and facilitated this lot."
+        description="The person who took charge of this lot and makes sure it reaches the receiver: a trusted go-between, like a mediator."
       >
         <EditableTable
           columns={facColumns}
@@ -431,6 +444,24 @@ export function OriginContactsStep({
           addLabel="Add facilitator"
           rowName={() => 'Facilitator'}
           emptyMessage="No facilitator added."
+        />
+      </FormSection>
+
+      <FormSection legend="Receiver" description={`The person who took this lot from the facilitator when it arrived at the location.${optional}`}>
+        <EditableTable
+          columns={recvColumns}
+          rows={[draft.locationReceiver]}
+          getRowId={(r) => r.id}
+          onChange={(next) => {
+            patch({ locationReceiver: next[0] ?? draft.locationReceiver });
+            clearPrefix('recv.');
+          }}
+          errors={errors}
+          minRows={1}
+          maxRows={1}
+          allowDelete={false}
+          rowName={() => 'Receiver'}
+          emptyMessage="Receiver is required."
         />
       </FormSection>
     </StepBlocks>
@@ -854,6 +885,7 @@ export function ReviewSummary({
           }
         />
         <SummaryRow label="Facilitator" value={d.facilitator ? contactLine(d.facilitator) : 'None'} />
+        <SummaryRow label="Receiver" value={d.locationReceiver.name.trim() ? contactLine(d.locationReceiver) : 'None'} />
       </SummarySection>
 
       <SummarySection title="Condition & notes" stepIndex={steps.condition} onEdit={() => onJump(steps.condition)}>
@@ -909,6 +941,7 @@ export function draftFromShared(
     pointsOfContact?: LotContactInput[];
     referencePeople?: { name: string; phone: string }[];
     facilitator?: LotContactInput | null;
+    locationReceiver?: LotContactInput;
     conditionNotes?: string;
     conditionPhotoUrl?: string;
     reasonForSending?: string;
@@ -935,6 +968,7 @@ export function draftFromShared(
     pocs: (shared.pointsOfContact ?? []).map((c, i) => withId(c, `p${i}`)),
     referencePeople: (shared.referencePeople ?? []).map((c, i) => ({ ...c, id: `rp${i}` })),
     facilitator: shared.facilitator ? withId(shared.facilitator, 'fac') : null,
+    locationReceiver: shared.locationReceiver ? withId(shared.locationReceiver, 'recv') : base.locationReceiver,
     // Only the formats matter here (they decide whether photo metadata shows).
     lines: formats.map((f, i) => ({ ...EMPTY_LINE, format: f, id: `f${i}` })),
     conditionNotes: shared.conditionNotes ?? '',

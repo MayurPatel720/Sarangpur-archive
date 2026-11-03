@@ -474,6 +474,7 @@ function PeopleSection({ lot }: { lot: LotDetail }) {
             <ContactCard key={`${p.name}-${i}`} role={`Contact ${i + 1}`} contact={p} />
           ))}
           {lot.facilitator ? <ContactCard role="Facilitator" contact={lot.facilitator} /> : null}
+          <ContactCard role="Receiver" contact={lot.locationReceiver ?? { name: 'Not added yet', phone: null, email: null, address: null }} />
           <ContactCard role="Received by" contact={{ name: lot.receiver.name, phone: null, email: null, address: null }} />
         </div>
         {lot.referencePeople.length > 0 ? (
@@ -688,6 +689,8 @@ function LotDetailInner({ lotId }: { lotId: string }) {
   const [refErrors, setRefErrors] = useState<Record<string, string>>({});
   /** `null` = no facilitator; `id` is always `'fac'` (single row). */
   const [facilitator, setFacilitator] = useState<ContactRow | null>(null);
+  /** Who took the lot from the facilitator at the location; always present, required. */
+  const [locationReceiver, setLocationReceiver] = useState<ContactRow>({ ...EMPTY_CONTACT, id: 'recv' });
   const editRowN = useRef(0);
   const newEditRowId = () => `e${editRowN.current++}`;
   const [mediaSubtype, setMediaSubtype] = useState('');
@@ -760,6 +763,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     setRefPeople(lot.referencePeople.map((p) => ({ ...p, id: newEditRowId() })));
     setRefErrors({});
     setFacilitator(lot.facilitator ? { ...contactToInput(lot.facilitator), id: 'fac' } : null);
+    setLocationReceiver(lot.locationReceiver ? { ...contactToInput(lot.locationReceiver), id: 'recv' } : { ...EMPTY_CONTACT, id: 'recv' });
     setMediaSubtype(lot.mediaSubtype);
     setQuantityToDigitize(String(lot.quantityToDigitize));
     setQuantityRemarks(lot.quantityRemarks ?? '');
@@ -800,6 +804,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     if (facilitator && !facilitator.name.trim()) {
       return setFormError('Facilitator name is required once a facilitator is added.');
     }
+    if (!locationReceiver.name.trim()) return setFormError('Receiver name is required.');
 
     const body: Record<string, unknown> = { version: lot.version };
     const newDateIso = dateReceived.trim() ? dmyToIso(dateReceived) : null;
@@ -821,6 +826,9 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     const initialFac = lot.facilitator ? contactToInput(lot.facilitator) : null;
     if (JSON.stringify(initialFac ? cleanContact(initialFac) : null) !== JSON.stringify(facilitator ? cleanContact(facilitator) : null)) {
       body.facilitator = facilitator ? cleanContact(facilitator) : null;
+    }
+    if (!lot.locationReceiver || !sameContact(contactToInput(lot.locationReceiver), locationReceiver)) {
+      body.locationReceiver = cleanContact(locationReceiver);
     }
     if (lot.mediaSubtype !== mediaSubtype.trim()) body.mediaSubtype = mediaSubtype.trim();
     if (lot.quantityToDigitize !== qtd) body.quantityToDigitize = qtd;
@@ -884,11 +892,14 @@ function LotDetailInner({ lotId }: { lotId: string }) {
     setPocs((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const updateFac = (id: string, patch: Partial<ContactRow>) =>
     setFacilitator((prev) => (prev && prev.id === id ? { ...prev, ...patch } : prev));
+  const updateRecv = (_id: string, patch: Partial<ContactRow>) =>
+    setLocationReceiver((prev) => ({ ...prev, ...patch }));
   const updateOwner = (_id: string, patch: Partial<ContactRow>) =>
     setOwner((prev) => ({ ...prev, ...patch }));
   const ownerColumns = makeContactColumns(updateOwner);
   const pocColumns = makeContactColumns(updatePoc);
   const facColumns = makeContactColumns(updateFac);
+  const recvColumns = makeContactColumns(updateRecv, { nameRequired: true });
 
   if (editing) {
     return (
@@ -981,7 +992,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
                 }
               />
 
-              <FormSection legend="Facilitator">
+              <FormSection legend="Facilitator" description="The person who took charge of this lot and makes sure it reaches the receiver: a trusted go-between, like a mediator.">
                 <EditableTable
                   columns={facColumns}
                   rows={facilitator ? [facilitator] : []}
@@ -993,6 +1004,20 @@ function LotDetailInner({ lotId }: { lotId: string }) {
                   addLabel="Add facilitator"
                   rowName={() => 'Facilitator'}
                   emptyMessage="No facilitator added."
+                />
+              </FormSection>
+
+              <FormSection legend="Receiver" description="The person who took this lot from the facilitator when it arrived at the location.">
+                <EditableTable
+                  columns={recvColumns}
+                  rows={[locationReceiver]}
+                  getRowId={(r) => r.id}
+                  onChange={(next) => setLocationReceiver(next[0] ?? locationReceiver)}
+                  minRows={1}
+                  maxRows={1}
+                  allowDelete={false}
+                  rowName={() => 'Receiver'}
+                  emptyMessage="Receiver is required."
                 />
               </FormSection>
 

@@ -54,6 +54,8 @@ const archiveLotSchema = new Schema(
     owner: { type: contactSchema, default: undefined },
     pointsOfContact: { type: [contactSchema], default: [] },
     facilitator: { type: contactSchema, default: null },
+    /** Who took the lot from the facilitator at the location. Not the logging user (`receiver`). Old docs have none. */
+    locationReceiver: { type: contactSchema, default: null },
     /** Info-only: people who know about this media (call and ask). Old docs have none. */
     referencePeople: {
       type: [new Schema({ name: { type: String, required: true, trim: true }, phone: { type: String, required: true, trim: true } }, { _id: false })],

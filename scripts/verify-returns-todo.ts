@@ -60,6 +60,7 @@ async function main() {
         dateReceived: new Date().toISOString(),
         originSource: origin,
         owner: { name: 'Receiver Test Owner', phone: '+91 9000000000' },
+        locationReceiver: { name: 'Verify Receiver' },
         pointsOfContact: [],
         mediaLines: [
           { format: 'video', dataType: 'both', mediaSubtype: 'DVD', quantity: 2 },

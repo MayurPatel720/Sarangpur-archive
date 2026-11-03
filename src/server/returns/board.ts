@@ -51,6 +51,7 @@ interface LotLite {
   owner?: { name?: string; phone?: string | null; email?: string | null; address?: string | null } | null;
   pointsOfContact?: { name: string; phone?: string | null; email?: string | null; address?: string | null }[];
   facilitator?: { name: string; phone?: string | null; email?: string | null; address?: string | null } | null;
+  locationReceiver?: { name: string; phone?: string | null; email?: string | null; address?: string | null } | null;
   assigneeName?: string | null;
   stageEnteredAt?: Date;
   return?: {
@@ -67,7 +68,7 @@ interface LotLite {
 }
 
 const LOT_FIELDS =
-  'lotReference namingCode format quantity owner pointsOfContact facilitator assigneeName stageEnteredAt return';
+  'lotReference namingCode format quantity owner pointsOfContact facilitator locationReceiver assigneeName stageEnteredAt return';
 
 function contactsOf(lot: LotLite): ReturnContact[] {
   const out: ReturnContact[] = [];
@@ -77,6 +78,7 @@ function contactsOf(lot: LotLite): ReturnContact[] {
   push('Owner', lot.owner);
   (lot.pointsOfContact ?? []).forEach((c, i) => push(i === 0 ? 'Point of contact' : `Point of contact ${i + 1}`, c));
   push('Facilitator', lot.facilitator);
+  push('Receiver', lot.locationReceiver);
   return out;
 }
 
