@@ -21,15 +21,16 @@ import { num } from '@/lib/format';
 import type { MasterRow } from '@/types/master';
 import { buildItemsWorkbook } from '@/components/lots/excel-io';
 import { applyView, DEFAULT_VIEW, MAX_WIDTH, MIN_WIDTH, moveColumn, ROW_PADDING, useMasterView } from '@/components/master/master-view';
+import { MasterPathCell } from '@/components/master/MasterPathCell';
 import { ColumnsMenu, DisplayMenu, ExportMenu, HeaderMenu, ViewsMenu, toolbarButton } from '@/components/master/MasterMenus';
 
 /**
- * The Master Excel: every item of every lot (and its project) in one sheet. Read only — items are
- * edited in their own lot's Excel (click a lot no or archive code).
+ * The Master Excel: every item of every lot (and its project) in one sheet. Read only, except the File
+ * path cell — items are edited in their own lot's Excel (click a lot no or archive code).
  *
  * Spreadsheet tools: a filter row under the column names, server-side sorting and paging, a column
  * picker, per-column menus (sort, hide, pin, move, resize), row selection, copy to paste into Excel,
- * Excel / CSV export of what is shown, row height and wrapping, full screen, filter chips, and saved
+ * Excel / CSV export of what is shown, a File path cell that takes a pasted or dropped path, row height and wrapping, full screen, filter chips, and saved
  * views. How the sheet looks is remembered per format on this device.
  */
 
@@ -358,6 +359,8 @@ export function MasterExcel() {
         </Link>
       );
     }
+    // The one editable cell: a file path is pasted in long after intake (see MasterPathCell).
+    if (c.id === 'fileName') return <MasterPathCell row={row} />;
     if (c.kind === 'photo') {
       return row.coverUrl ? (
         <Link href={`/register/${row.lotId}?tab=items`} className="inline-flex items-center gap-1.5 no-underline">
