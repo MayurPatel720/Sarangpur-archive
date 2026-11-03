@@ -1,8 +1,10 @@
-// Archive Tracker desktop window: the same website, in its own app, so a dropped file or folder gives
+// Sarangpur Archive desktop window: the same website, in its own app, so a dropped file or folder gives
 // its real full path (see preload.js). Pick which server it opens from the Server menu; the choice is kept.
 const { app, BrowserWindow, Menu, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
+
+app.setName('Sarangpur Archive');
 
 const SERVERS = {
   production: { label: 'Production (vercel.app)', url: 'https://sarangpur-archive.vercel.app' },
@@ -65,7 +67,8 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#0e1116',
-    title: 'Archive Tracker',
+    title: 'Sarangpur Archive',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

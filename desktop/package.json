@@ -1,21 +1,32 @@
 {
-  "name": "archive-tracker-desktop",
+  "name": "sarangpur-archive-desktop",
   "version": "1.0.0",
   "private": true,
-  "description": "Archive Tracker in its own window. Dropping a file or folder fills in its full path.",
+  "description": "Sarangpur Archive in its own window. Dropping a file or folder fills in its full path.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-packager . \"Sarangpur Archive\" --platform=win32 --arch=x64 --icon=assets/icon.ico --out=dist --overwrite --prune=true --ignore=^/dist --ignore=^/make-icon --ignore=^/README.md",
+    "dist:installer": "electron-builder --win portable"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8"
   },
   "build": {
     "appId": "org.sarangpur.archive.desktop",
-    "productName": "Archive Tracker",
-    "files": ["main.js", "preload.js", "package.json"],
-    "win": { "target": "portable" }
+    "productName": "Sarangpur Archive",
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "assets/**"
+    ],
+    "icon": "assets/icon.ico",
+    "win": {
+      "target": "portable",
+      "icon": "assets/icon.ico"
+    }
   }
 }

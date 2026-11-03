@@ -1,4 +1,4 @@
-# Archive Tracker desktop
+# Sarangpur Archive desktop
 
 The same website in its own Windows app. The one thing it adds: **drop a file or folder into a File path
 cell and the real full path is saved** (for example `E:\saranpur archive\docs`). A normal browser can only
