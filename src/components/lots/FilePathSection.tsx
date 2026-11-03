@@ -8,6 +8,7 @@ import { Field, FormError, PrimaryButton, TextInput } from '@/components/ui/Form
 import { Badge, Definition, EmptyValue, Panel, PanelHeader } from '@/components/ui/primitives';
 import { useMe } from '@/hooks/useCan';
 import { cleanPath, loadBaseFolder, readDrop } from '@/lib/file-path';
+import { LocateFolderDialog } from './LocateFolderDialog';
 
 type DetailLot = LotDetailResponse['lot'];
 
@@ -26,6 +27,8 @@ export function FilePathSection({ lot, onChanged }: { lot: DetailLot; onChanged:
   const [physicalLabel, setPhysicalLabel] = useState(lot.physicalLabelApplied);
   const [containerLabel, setContainerLabel] = useState(lot.containerLabelApplied);
   const [error, setError] = useState<string | null>(null);
+  /** A dropped item that only gave its name, with no base folder known yet. */
+  const [locateName, setLocateName] = useState<string | null>(null);
 
   const saveMut = useMutation({
     mutationFn: () => {
@@ -83,7 +86,7 @@ export function FilePathSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                   e.preventDefault();
                   const d = readDrop(e.dataTransfer, loadBaseFolder());
                   if (d.path) setFilePath(d.path);
-                  else if (d.name) setFilePath(d.name);
+                  else if (d.name) setLocateName(d.name);
                 }}
                 name="digitalFilePath"
                 autoComplete="off"
@@ -91,6 +94,7 @@ export function FilePathSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                 placeholder="e.g. /archive/2026/LOT-2026-1285 (paste or drop a folder)"
               />
             </Field>
+            {locateName ? <LocateFolderDialog name={locateName} onDone={setFilePath} onClose={() => setLocateName(null)} /> : null}
             <label className="flex items-center gap-2 text-[13px] text-ink-2 min-h-[44px]">
               <input type="checkbox" checked={physicalLabel} onChange={(e) => setPhysicalLabel(e.target.checked)} className="h-4 w-4 accent-accent" />
               Physical label applied

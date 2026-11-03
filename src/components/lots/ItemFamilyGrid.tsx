@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   CellValueChangedEvent,
   ColDef,
@@ -22,6 +22,7 @@ import { ITEM_STATUS_LABELS, isInactive, itemStatus, missingRequired } from '@/l
 import { Badge } from '@/components/ui/primitives';
 import { photoMediumUrl } from '@/lib/project-photos';
 import { cleanPath, loadBaseFolder, readDrop } from '@/lib/file-path';
+import { LocateFolderDialog } from './LocateFolderDialog';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
 
@@ -42,8 +43,10 @@ export const PHOTO_ROW_PX = 168;
  * the base folder saved from "Set path for all". Typing or pasting works too, and quotes from
  * Windows "Copy as path" are removed when the cell is saved.
  */
-function PathCell({ p, onNote }: { p: ICellRendererParams<GridItem>; onNote: (message: string) => void }) {
+function PathCell({ p }: { p: ICellRendererParams<GridItem> }) {
   const value = p.data?.fileName ?? '';
+  /** A dropped item that only gave its name and no base folder is known yet: ask where it lives. */
+  const [locate, setLocate] = useState<string | null>(null);
   return (
     <span
       className="block h-full w-full truncate rounded-[4px] data-[over=true]:bg-accent-soft data-[over=true]:ring-2 data-[over=true]:ring-accent"
@@ -59,13 +62,11 @@ function PathCell({ p, onNote }: { p: ICellRendererParams<GridItem>; onNote: (me
         e.currentTarget.dataset.over = 'false';
         const d = readDrop(e.dataTransfer, loadBaseFolder());
         if (d.path) p.node.setDataValue('fileName', d.path);
-        else if (d.name) {
-          p.node.setDataValue('fileName', d.name);
-          onNote('The browser only shared the name. Use "Set path for all" to save a base folder, or paste the full path.');
-        }
+        else if (d.name) setLocate(d.name);
       }}
     >
       {value || <span className="text-ink-4">Type, paste or drop a path</span>}
+      {locate ? <LocateFolderDialog name={locate} onDone={(path) => p.node.setDataValue('fileName', path)} onClose={() => setLocate(null)} /> : null}
     </span>
   );
 }
@@ -246,7 +247,7 @@ export function ItemFamilyGrid({
             p.data.fileName = next === '' ? null : next;
             return true;
           },
-          cellRenderer: (p: ICellRendererParams<GridItem>) => <PathCell p={p} onNote={onInvalid} />,
+          cellRenderer: (p: ICellRendererParams<GridItem>) => <PathCell p={p} />,
         };
       }
 
