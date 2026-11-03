@@ -58,7 +58,7 @@ export function Tabs({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className="flex gap-0.5 overflow-x-auto border-b border-line-soft -mx-0 px-0"
+      className="flex gap-0.5 overflow-x-auto overflow-y-hidden border-b border-line-soft -mx-0 px-0"
     >
       {tabs.map((t) => {
         const active = t.id === value;

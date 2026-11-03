@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { lotsApi, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
+import { scopedHref } from '@/lib/dashboard-links';
 import { TabPanel, Tabs } from '@/components/ui/primitives';
 import { ProjectsManager } from '@/components/projects/ProjectsManager';
 import { RegisterManager } from './RegisterManager';
@@ -41,6 +43,7 @@ export function RegisterTabs({
   const me = useMe();
   const canLots = me.data ? me.data.grants.includes('lot:view') : false;
   const canProjects = me.data ? me.data.grants.includes('project:view') : false;
+  const canCreateProject = me.data ? me.data.grants.includes('project:create') : false;
 
   const raw = searchParams.get('tab');
   const tab: RegisterTab = raw === 'projects' ? 'projects' : 'lots';
@@ -84,7 +87,26 @@ export function RegisterTabs({
 
   return (
     <div className="flex flex-col gap-4 md:gap-5">
-      <Tabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Register sections" />
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <Tabs tabs={tabs} value={tab} onChange={setTab} ariaLabel="Register sections" />
+        </div>
+        {tab === 'lots' ? (
+          <Link
+            href={scopedHref('/register/new', initialFormat)}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-[6px] border border-accent bg-accent px-4 text-[13px] font-semibold text-white no-underline shadow-accent"
+          >
+            New intake
+          </Link>
+        ) : canCreateProject ? (
+          <Link
+            href="/projects/new"
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-[6px] border border-accent bg-accent px-4 text-[13px] font-semibold text-white no-underline shadow-accent"
+          >
+            New project
+          </Link>
+        ) : null}
+      </div>
       <TabPanel id="lots" active={tab === 'lots'}>
         <RegisterManager
           initialStage={initialStage}

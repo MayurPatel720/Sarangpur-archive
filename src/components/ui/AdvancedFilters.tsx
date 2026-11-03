@@ -53,7 +53,18 @@ function writeSaved(entity: FilterEntity, list: Saved[]) {
 
 const blankRule = (field: FilterField): FilterRule => ({ field: field.id, op: opsFor(field)[0]!.id, value: '', value2: '' });
 
-export function AdvancedFilterButton({ entity, value, onChange }: { entity: FilterEntity; value: string; onChange: (value: string) => void }) {
+export function AdvancedFilterButton({
+  entity,
+  value,
+  onChange,
+  label = 'Filters',
+}: {
+  entity: FilterEntity;
+  value: string;
+  onChange: (value: string) => void;
+  /** The button's text (the lot list calls it "Advanced" because its filter bar already has "+ Filter"). */
+  label?: string;
+}) {
   const fields = FILTER_FIELDS[entity];
   const [open, setOpen] = useState(false);
   const count = activeRules(parseAdvanced(value), fields).length;
@@ -65,7 +76,7 @@ export function AdvancedFilterButton({ entity, value, onChange }: { entity: Filt
         className="inline-flex items-center gap-2"
         aria-haspopup="dialog"
       >
-        Filters
+        {label}
         {count > 0 ? (
           <span className="inline-flex min-w-[20px] items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-white">{count}</span>
         ) : null}

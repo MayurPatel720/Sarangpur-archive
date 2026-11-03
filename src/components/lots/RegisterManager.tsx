@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { lotsApi } from '@/lib/api-client';
@@ -236,29 +235,6 @@ export function RegisterManager({
 
   return (
     <div className="flex flex-col gap-4 md:gap-5">
-      <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
-        <div className="flex flex-col gap-1.5 min-w-0">
-          <h1 className="m-0 text-[18px] sm:text-[22px] font-semibold tracking-[-0.022em] text-ink">
-            Lot register
-          </h1>
-          <p className="m-0 text-[12.5px] text-ink-3">
-            {isMine
-              ? 'Lots assigned to you.'
-              : query.data
-                ? `${query.data.total} lots on record.`
-                : 'Every lot from intake onward.'}
-          </p>
-        </div>
-        <div className="sm:ml-auto">
-          <Link
-            href={scopedHref('/register/new', lockedFormat)}
-            className="inline-flex items-center justify-center h-10 px-4 bg-accent border border-accent rounded-[6px] shadow-accent text-white text-[13px] font-semibold no-underline"
-          >
-            New intake
-          </Link>
-        </div>
-      </div>
-
       <RegisterFilters filters={filters} onChange={applyFilters} lockedFormat={lockedFormat} />
 
       {isMine && me.data?.id ? (
