@@ -226,7 +226,7 @@ export function RegisterFilters({
   };
 
   return (
-    <section aria-label="Filter lots" className="flex flex-col gap-3 rounded-[8px] border border-line bg-surface p-3 md:p-4">
+    <section aria-label="Filter lots" className="sticky -top-4 md:-top-[22px] z-30 flex flex-col gap-3 rounded-[8px] border border-line bg-surface p-3 md:p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex min-w-[220px] flex-1 basis-[320px]">
           <SearchBox

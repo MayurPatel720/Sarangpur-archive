@@ -142,7 +142,7 @@ export function ProjectFilters({
   };
 
   return (
-    <section aria-label="Filter projects" className="flex flex-col gap-3 rounded-[8px] border border-line bg-surface p-3 md:p-4">
+    <section aria-label="Filter projects" className="sticky -top-4 md:-top-[22px] z-30 flex flex-col gap-3 rounded-[8px] border border-line bg-surface p-3 md:p-4">
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex min-w-[220px] flex-1 basis-[320px]">
           <SearchBox value={search} onChange={onSearch} placeholder="Search by project code or name…" label="Search projects" />
