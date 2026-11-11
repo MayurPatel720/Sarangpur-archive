@@ -173,7 +173,7 @@ export function RegisterFilters({
     },
     {
       id: 'scanning',
-      label: 'In scanning',
+      label: 'In digitalization',
       active: filters.stage === 'scanning',
       onApply: () => onChange({ ...filters, stage: filters.stage === 'scanning' ? '' : 'scanning' }),
     },

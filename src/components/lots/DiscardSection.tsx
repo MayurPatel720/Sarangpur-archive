@@ -56,7 +56,7 @@ export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: 
     mutationFn: () => lotsApi.reverseDiscard(lot.id, lot.version),
     onSuccess: () => {
       setFormError(null);
-      toast.success('Discard reversed', `${lot.lotReference} returned to metadata.`);
+      toast.success('Discard reversed', `${lot.lotReference} returned to Data entry.`);
       onChanged();
     },
     onError: (e) => {
@@ -84,7 +84,7 @@ export function DiscardSection({ lot, onChanged }: { lot: DetailLot; onChanged: 
           canReverse ? (
             <div>
               <GhostButton onClick={() => reverse.mutate()} disabled={reverse.isPending}>
-                {reverse.isPending ? 'Reversing…' : 'Reverse discard (back to metadata)'}
+                {reverse.isPending ? 'Reversing…' : 'Reverse discard (back to Data entry)'}
               </GhostButton>
             </div>
           ) : null

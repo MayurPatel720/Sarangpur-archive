@@ -35,8 +35,8 @@ function guardVersion(lot: { __v?: number }, version: number): void {
 }
 
 /**
- * PATCH scan — records who scanned a metadata lot and where the files live.
- * First scan advances metadata → scanning (the digitize queue reads that stage).
+ * PATCH scan — records who scanned a lot in digitalization and where the files live.
+ * (The digitize queue reads the scanning stage, which a decided lot enters by itself.)
  */
 export async function recordScan(lotId: string, body: ScanBody, ctx: MutationContext) {
   await assertActive('scanStatus', body.scanStatus);
@@ -49,14 +49,13 @@ export async function recordScan(lotId: string, body: ScanBody, ctx: MutationCon
       if (!lot.decision) throw new HttpError(500, 'Lot decision block is missing.');
       guardVersion(lot, body.version);
       guardTerminal(lot, ctx);
-      if (lot.stage !== 'metadata' && lot.stage !== 'scanning') {
-        throw new HttpError(400, 'Only metadata lots can be scanned. Decide the intake first.');
+      if (lot.stage !== 'scanning') {
+        throw new HttpError(400, 'Only lots in digitalization can be scanned. Decide the lot first.');
       }
       lot.set('digitization.scanStatus', body.scanStatus);
       lot.set('digitization.scannedBy', new Types.ObjectId(ctx.userId));
       lot.set('digitization.scanDate', body.scanDate ? new Date(body.scanDate) : new Date());
       if (body.folderPath !== undefined) lot.set('digitization.folderPath', body.folderPath);
-      if (lot.stage === 'metadata') lot.stage = 'scanning';
       await bumpUsage('scanStatus', body.scanStatus, session ?? undefined);
       return {
         id: String(lot._id),
@@ -81,7 +80,7 @@ export async function runReconcile(lotId: string, ctx: MutationContext) {
   const lot = await ArchiveLot.findById(lotId).lean();
   if (!lot) throw new HttpError(404, 'Lot not found.');
   if (lot.stage !== 'scanning' && lot.stage !== 'mls_tag' && lot.stage !== 'storage') {
-    throw new HttpError(400, 'Only scanning lots can be reconciled.');
+    throw new HttpError(400, 'Only lots in digitalization can be reconciled.');
   }
 
   const [selected, indexed] = await Promise.all([
@@ -296,8 +295,8 @@ export async function confirmDiscard(lotId: string, body: DiscardBody, ctx: Muta
 }
 
 /**
- * DELETE discard — admin-only reversal. Returns the lot to metadata for
- * re-review (the previous working stage is not tracked, so metadata is the
+ * DELETE discard — admin-only reversal. Returns the lot to data entry for
+ * re-review (the previous working stage is not tracked, so data entry is the
  * honest restart point). The discard block is cleared; history stays in audit.
  */
 export async function reverseDiscard(lotId: string, version: number, ctx: MutationContext) {

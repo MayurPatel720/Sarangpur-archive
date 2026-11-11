@@ -32,7 +32,7 @@ export const MASTER_SORTABLE_IDS: readonly string[] = [
 export type MasterFilter =
   | { param: string; type: 'text' }
   | { param: string; type: 'yesno' }
-  | { param: string; type: 'select'; options: { value: string; label: string }[] | 'stage' | 'dataType' | 'physicalSource' | { list: string } };
+  | { param: string; type: 'select'; options: { value: string; label: string }[] | 'stage' | 'mediaSubtype' | 'physicalSource' | { list: string } };
 
 /** Query parameter of a format-specific (`attr`) column filter — generated from the registry. */
 export const attrParam = (columnId: string) => `a_${columnId}`;
@@ -62,7 +62,7 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
     ],
   },
   lotStage: { param: 'stage', type: 'select', options: 'stage' },
-  mediaType: { param: 'dataType', type: 'select', options: 'dataType' },
+  mediaType: { param: 'mediaSubtype', type: 'select', options: 'mediaSubtype' },
   code: { param: 'code', type: 'text' },
   senderCode: { param: 'senderCode', type: 'text' },
   dateRange: { param: 'date', type: 'text' },
@@ -104,6 +104,5 @@ export const MASTER_FILTERS: Record<string, MasterFilter> = {
   },
   taggedInMls: { param: 'taggedInMls', type: 'yesno' },
   storageRemark: { param: 'storageRemark', type: 'text' },
-  logged: { param: 'logged', type: 'yesno' },
   loggerName: { param: 'loggerName', type: 'text' },
 };

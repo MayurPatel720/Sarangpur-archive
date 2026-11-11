@@ -10,7 +10,7 @@ const btn =
   'inline-flex h-9 touch-manipulation cursor-pointer sm:h-8 items-center gap-1.5 rounded-[6px] border border-line-strong bg-surface px-2.5 text-[12.5px] font-semibold text-ink-2 shadow-control transition-colors hover:bg-accent-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-50';
 export const toolbarButton = btn;
 
-const item =
+export const menuItem =
   'flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[12.5px] text-ink-2 hover:bg-accent-soft hover:text-ink disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent';
 
 /** A button that opens a floating panel (fixed, so a scrolling table never clips it). */
@@ -239,13 +239,13 @@ export function ViewsMenu({
     <Menu label="Saved views" width={280} trigger="Views">
       {(close) => (
         <>
-          <button type="button" className={item} onClick={() => { onReset(); close(); }}>
+          <button type="button" className={menuItem} onClick={() => { onReset(); close(); }}>
             Standard view
           </button>
           {saved.length > 0 ? <Heading>Saved views</Heading> : null}
           {saved.map((s) => (
             <div key={s.name} className="flex items-center hover:bg-accent-soft">
-              <button type="button" className={`${item} flex-1 min-w-0`} onClick={() => { onApply(s); close(); }}>
+              <button type="button" className={`${menuItem} flex-1 min-w-0`} onClick={() => { onApply(s); close(); }}>
                 <span className="truncate">{s.name}</span>
               </button>
               <button type="button" aria-label={`Delete view ${s.name}`} className="h-8 w-8 cursor-pointer border-0 bg-transparent text-ink-3 hover:text-danger" onClick={() => onDelete(s.name)}>
@@ -304,17 +304,17 @@ export function ExportMenu({
       {(close) => (
         <>
           <Heading>Everything that matches</Heading>
-          <button type="button" className={item} disabled={exporting || total === 0} onClick={() => { onExport('xlsx', 'all'); close(); }}>
+          <button type="button" className={menuItem} disabled={exporting || total === 0} onClick={() => { onExport('xlsx', 'all'); close(); }}>
             Excel file (.xlsx)
           </button>
-          <button type="button" className={item} disabled={exporting || total === 0} onClick={() => { onExport('csv', 'all'); close(); }}>
+          <button type="button" className={menuItem} disabled={exporting || total === 0} onClick={() => { onExport('csv', 'all'); close(); }}>
             CSV file (.csv)
           </button>
           <Heading>Only the selected rows</Heading>
-          <button type="button" className={item} disabled={exporting || selected === 0} onClick={() => { onExport('xlsx', 'selected'); close(); }}>
+          <button type="button" className={menuItem} disabled={exporting || selected === 0} onClick={() => { onExport('xlsx', 'selected'); close(); }}>
             Excel file ({selected})
           </button>
-          <button type="button" className={item} disabled={exporting || selected === 0} onClick={() => { onExport('csv', 'selected'); close(); }}>
+          <button type="button" className={menuItem} disabled={exporting || selected === 0} onClick={() => { onExport('csv', 'selected'); close(); }}>
             CSV file ({selected})
           </button>
         </>
@@ -365,37 +365,37 @@ export function HeaderMenu({
           <>
             {sortable ? (
               <>
-                <button type="button" className={item} onClick={run(() => actions.sort('asc'))}>
+                <button type="button" className={menuItem} onClick={run(() => actions.sort('asc'))}>
                   {sorted === 'asc' ? '✓ ' : ''}Sort A → Z
                 </button>
-                <button type="button" className={item} onClick={run(() => actions.sort('desc'))}>
+                <button type="button" className={menuItem} onClick={run(() => actions.sort('desc'))}>
                   {sorted === 'desc' ? '✓ ' : ''}Sort Z → A
                 </button>
                 {sorted ? (
-                  <button type="button" className={item} onClick={run(() => actions.sort(null))}>
+                  <button type="button" className={menuItem} onClick={run(() => actions.sort(null))}>
                     Clear sort
                   </button>
                 ) : null}
                 <div className="my-1 border-t border-line-soft" />
               </>
             ) : null}
-            <button type="button" className={item} onClick={run(actions.pin)}>
+            <button type="button" className={menuItem} onClick={run(actions.pin)}>
               {pinned ? 'Unpin column' : 'Pin to the left'}
             </button>
-            <button type="button" className={item} disabled={!canMoveLeft} onClick={run(() => actions.move(-1))}>
+            <button type="button" className={menuItem} disabled={!canMoveLeft} onClick={run(() => actions.move(-1))}>
               Move left
             </button>
-            <button type="button" className={item} disabled={!canMoveRight} onClick={run(() => actions.move(1))}>
+            <button type="button" className={menuItem} disabled={!canMoveRight} onClick={run(() => actions.move(1))}>
               Move right
             </button>
-            <button type="button" className={item} onClick={run(actions.resetWidth)}>
+            <button type="button" className={menuItem} onClick={run(actions.resetWidth)}>
               Reset width
             </button>
             <div className="my-1 border-t border-line-soft" />
-            <button type="button" className={item} onClick={run(actions.hide)}>
+            <button type="button" className={menuItem} onClick={run(actions.hide)}>
               Hide column
             </button>
-            <button type="button" className={item} onClick={run(actions.showOnly)}>
+            <button type="button" className={menuItem} onClick={run(actions.showOnly)}>
               Show only this column
             </button>
           </>

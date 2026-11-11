@@ -90,7 +90,8 @@ async function summarise(lotId: Types.ObjectId): Promise<ItemsSummary> {
     { $match: { lot: lotId } },
     {
       $project: {
-        decided: { $and: [isBool('$decision.digital'), isBool('$decision.redigital'), isBool('$decision.discard')] },
+        // One answer (Yes or No) in any of the three columns is enough to count the item as decided.
+        decided: { $or: [isBool('$decision.digital'), isBool('$decision.redigital'), isBool('$decision.discard')] },
         digitize: { $or: [{ $eq: ['$decision.digital', true] }, { $eq: ['$decision.redigital', true] }] },
         discard: { $eq: ['$decision.discard', true] },
       },
@@ -123,7 +124,7 @@ interface LotGate {
 
 /** Item decisions are open before the lot is decided, or again after an approved override. */
 const decisionOpen = (lot: LotGate) =>
-  ((lot.stage === 'intake' || lot.stage === 'decision') && (lot.decision?.status ?? 'pending') === 'pending') ||
+  ((lot.stage === 'intake' || lot.stage === 'metadata' || lot.stage === 'decision') && (lot.decision?.status ?? 'pending') === 'pending') ||
   (lot.decision?.overrideStatus === 'approved' && !gridLocked(lot.stage));
 
 function blockedBy(lot: LotGate, summary: ItemsSummary): string[] {
@@ -592,36 +593,34 @@ export async function applyItemEdits(
 
 /**
  * Keeps an archived lot's stage in step with its items, so nobody has to press a stage
- * button: first capture ⇒ scanning · every item to digitize captured ⇒ mls_tag · all of
- * those tagged in MLS and every row logged ⇒ storage. Moves backwards too when a tick is
- * undone. Only lots decided "archive" and not yet returned / discarded are touched.
+ * button: a decided lot waits in digitalization (scanning) · every item to digitize captured ⇒
+ * mls_tag · all of those tagged in MLS ⇒ storage. Moves backwards too when a tick is undone.
+ * Only lots decided "archive" and not yet returned / discarded are touched.
  */
 export async function syncLotStage(lotId: string, ctx: MutationContext): Promise<void> {
   await connectToDatabase();
   const lot = await ArchiveLot.findById(lotId).select('stage decision.status').lean();
   if (!lot || lot.decision?.status !== 'archive') return;
-  if (!['metadata', 'scanning', 'mls_tag', 'storage'].includes(lot.stage)) return;
+  if (!['scanning', 'mls_tag', 'storage'].includes(lot.stage)) return;
 
-  const [row] = await LotItem.aggregate<{ total: number; logged: number; dig: number; captured: number; tagged: number }>([
+  const [row] = await LotItem.aggregate<{ total: number; dig: number; captured: number; tagged: number }>([
     { $match: { lot: new Types.ObjectId(lotId) } },
     {
       $project: {
-        logged: { $cond: [{ $eq: ['$logged', true] }, 1, 0] },
         dig: { $cond: [{ $eq: ['$selectedForDigitization', true] }, 1, 0] },
         captured: { $cond: [{ $and: [{ $eq: ['$selectedForDigitization', true] }, { $eq: ['$digitized', true] }] }, 1, 0] },
         tagged: { $cond: [{ $and: [{ $eq: ['$selectedForDigitization', true] }, { $eq: ['$taggedInMls', true] }] }, 1, 0] },
       },
     },
-    { $group: { _id: null, total: { $sum: 1 }, logged: { $sum: '$logged' }, dig: { $sum: '$dig' }, captured: { $sum: '$captured' }, tagged: { $sum: '$tagged' } } },
+    { $group: { _id: null, total: { $sum: 1 }, dig: { $sum: '$dig' }, captured: { $sum: '$captured' }, tagged: { $sum: '$tagged' } } },
   ]);
   if (!row || row.total === 0) return;
 
   let target = lot.stage;
   if (row.dig > 0) {
-    if (row.captured === row.dig && row.tagged === row.dig && row.logged === row.total) target = 'storage';
+    if (row.captured === row.dig && row.tagged === row.dig) target = 'storage';
     else if (row.captured === row.dig) target = 'mls_tag';
-    else if (row.captured > 0) target = 'scanning';
-    else target = 'metadata';
+    else target = 'scanning';
   } else {
     // Nothing to digitize: the lot sits in storage (physical items are kept / returned / discarded one by one).
     target = 'storage';
@@ -633,7 +632,7 @@ export async function syncLotStage(lotId: string, ctx: MutationContext): Promise
     actor: auditActor(ctx),
     kind: 'items_updated',
     title: `Stage updated from the Excel — ${target}`,
-    detail: `Items to digitize ${row.dig}, digitalized ${row.captured}, tagged ${row.tagged}, logged ${row.logged} of ${row.total}.`,
+    detail: `Items to digitize ${row.dig}, digitalized ${row.captured}, tagged ${row.tagged} of ${row.total}.`,
     mutate: async (l) => {
       if (l.stage !== lot.stage) return null; // someone else moved it meanwhile
       l.stage = target as typeof l.stage;

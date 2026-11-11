@@ -41,7 +41,7 @@ export function defaultStageGraph(): StageGraph {
     inFlight: [...IN_FLIGHT_STAGES],
     terminal: [...TERMINAL_STAGES],
     board: [...STAGES],
-    discardable: ['metadata', 'scanning', 'mls_tag', 'storage'],
+    discardable: ['scanning', 'mls_tag', 'storage'],
     decision: ['decision'],
     scan: ['scanning'],
     mlsTag: ['mls_tag'],

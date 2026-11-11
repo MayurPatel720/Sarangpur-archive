@@ -120,11 +120,11 @@ individually, and the 16MB document ceiling would eventually be hit.
 | `dateFrom` / `dateTo` | Date (UTC midnight) | Details **Date** — one day has from = to. Typed as `dd/mm/yyyy - dd/mm/yyyy` (also `mm/yyyy`, `yyyy`); `src/lib/date-range.ts` |
 | `physicalSource` | String | Admin list `physicalSource` |
 | `duplicateCode` | String, indexed | Code of the ORIGINAL this item duplicates (any lot). The original's row shows "Duplicated by …" on read; it is never written to |
-| `decision.digital` / `redigital` / `discard` / `remark` | Boolean \| null / String | Decision. Decided once all three are answered: digital or redigital Yes → digitize (discard may also be Yes = digitize, then throw the physical copy away); discard only → discard; all No → keep physical only (`src/lib/item-decision.ts`) |
+| `decision.digital` / `redigital` / `discard` / `remark` | Boolean \| null / String | Decision. Decided once any one of the three is answered (Yes or No): digital or redigital Yes → digitize (discard may also be Yes = digitize, then throw the physical copy away); discard Yes only → discard; answered with no Yes → keep physical only (`src/lib/item-decision.ts`) |
 | `decision.disposition` | `return` \| `discard` \| null | Excel **Return / discard** — the physical item's final fate; kept in step with Decision discard |
 | `dispositionStatus` | `pending` \| `done` \| null | Pending while a return / discard is chosen; `done` once marked in the Returns / Discards queue (for items being digitized, only after capture) |
 | `digitalSource` / `phyStorageLoc` / `storageRemark` | String | Dig source (a place, e.g. Mumbai) · where the physical item is kept · remark |
-| `logged` / `loggedAt` / `loggerName` | Boolean / Date / String | Logging. Ticking Status stamps today and the signed-in user; stays editable |
+| `logged` / `loggedAt` / `loggerName` | Boolean / Date / String | Logging date / logger. `logged` is no longer a sheet column (hidden); `taggedInMls` now sits in the Logging band |
 | `custom` | Mixed | Values of the lot's added columns, by column key (`ArchiveLot.customColumns`) |
 | `decision.verdict` | `archive` \| `return_or_discard` \| null | Legacy mirror of the result, written so old guards ("items already decided") keep working |
 | `name`, `description`, `event`, `people`, `year`, `month`, `itemCondition`, `decision.existsInMls` … | | Retired from the Excel; old values stay in the database |
@@ -133,15 +133,17 @@ individually, and the 16MB document ceiling would eventually be hit.
 Indexes: `{ lot, groupNo, itemNo }` · `{ lot, digitized }` ·
 `{ selectedForDigitization, notDigitizedReason }` · `{ decision.disposition, dispositionStatus }`
 
+**Stage order:** Intake → Data entry (`metadata`) → Decision → Digitalization (`scanning`) → MLS tag → Storage. Stored stage values are unchanged; only the labels and the order moved.
+
 **The lot's Excel decides the lot.** When every item has a result (`finalizeItemDecisions`),
-the lot is decided automatically: any item to digitize → lot archived, stage `metadata`,
+the lot is decided automatically: any item to digitize → lot archived, stage `scanning` (Digitalization),
 naming code issued, only those items selected for digitization; nothing to digitize → lot
 archived straight to `storage`. Lots never take a lot-level return or discard — each item's
 Return / discard is handled item by item in the Returns / Discards queues.
 
 After that the stage follows the Excel (`syncLotStage`, in `src/server/lots/item-grid.ts`):
-first **Captured** → `scanning` · every item to digitize captured → `mls_tag` · all of them
-**MLS tagged** and every row **logged** → `storage`. A lot with nothing to digitize becomes
+a decided lot waits in `scanning` (Digitalization) · every item to digitize captured → `mls_tag` · all of them
+**MLS tagged** → `storage`. A lot with nothing to digitize becomes
 `returned` / `discarded` once every item has been marked done in the queues.
 
 **Per-lot Excel setup** lives on the lot: `hiddenColumns[]` (column ids, shared by everyone on

@@ -1,7 +1,7 @@
 import { Types } from 'mongoose';
 import type { MutationContext } from '@/lib/api';
 import { connectToDatabase } from '@/lib/mongo';
-import { FORMATS, dataTypesMatching } from '@/lib/domain';
+import { FORMATS } from '@/lib/domain';
 import { parseDateRange } from '@/lib/date-range';
 import { BUILTIN_COLUMNS, PRASADI_FORMAT } from '@/lib/item-columns';
 import { requiredColumns } from '@/lib/item-status';
@@ -86,7 +86,8 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   const lotFilter: Filter = {};
   if (query.lot) lotFilter.lotReference = contains(query.lot);
   if (query.stage) lotFilter.stage = query.stage;
-  if (query.dataType) lotFilter['mediaLines.dataType'] = { $in: dataTypesMatching(query.dataType) };
+  // Media type: lots with a media line of that sub-type (older lots keep it on the lot itself); the item filter below narrows to that line.
+  if (query.mediaSubtype) lotFilter.$or = [{ 'mediaLines.mediaSubtype': query.mediaSubtype }, { mediaSubtype: query.mediaSubtype }];
   // "Project no" matches the code or the name; "Project name" matches the name only. Both may be set.
   const projectConds: Filter[] = [];
   for (const [value, match] of [
@@ -99,8 +100,17 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   }
   if (projectConds.length > 0) lotFilter.$and = projectConds;
   if (Object.keys(lotFilter).length > 0) {
-    const lots = await ArchiveLot.find(lotFilter).select('_id').limit(MAX_LOT_IDS).lean();
+    const lots = await ArchiveLot.find(lotFilter).select('_id mediaLines').limit(MAX_LOT_IDS).lean();
     f.lot = { $in: lots.map((l) => l._id) };
+    if (query.mediaSubtype) {
+      // A lot may mix media (Mini DVs and 120 Film): keep only the items of the matching line.
+      const perLot = lots.map((l) => {
+        const lines = (l.mediaLines ?? []) as { mediaSubtype: string }[];
+        const idx = lines.flatMap((ln, i) => (ln.mediaSubtype === query.mediaSubtype ? [i] : []));
+        return idx.length > 0 ? { lot: l._id, lineIndex: { $in: idx } } : { lot: l._id };
+      });
+      f.$and = [...((f.$and as Filter[] | undefined) ?? []), { $or: perLot.length > 0 ? perLot : [{ lot: { $in: [] } }] }];
+    }
   }
 
   // ---- item filters
@@ -166,19 +176,24 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   else if (query.disposition) f['decision.disposition'] = query.disposition;
 
   const answered = { $in: [true, false] };
+  // Decided = at least one of the three answered (Yes or No). Undecided = none answered.
+  const notYes = { $ne: true };
   if (query.result === 'undecided') {
-    f.$or = [
-      { 'decision.digital': { $nin: [true, false] } },
-      { 'decision.redigital': { $nin: [true, false] } },
-      { 'decision.discard': { $nin: [true, false] } },
+    Object.assign(f, {
+      'decision.digital': { $nin: [true, false] },
+      'decision.redigital': { $nin: [true, false] },
+      'decision.discard': { $nin: [true, false] },
+    });
+  } else if (query.result === 'archive') {
+    f.$or = [{ 'decision.digital': true }, { 'decision.redigital': true }];
+  } else if (query.result === 'discard') {
+    Object.assign(f, { 'decision.digital': notYes, 'decision.redigital': notYes, 'decision.discard': true });
+  } else if (query.result === 'physical') {
+    Object.assign(f, { 'decision.digital': notYes, 'decision.redigital': notYes, 'decision.discard': notYes });
+    f.$and = [
+      ...((f.$and as Filter[] | undefined) ?? []),
+      { $or: [{ 'decision.digital': answered }, { 'decision.redigital': answered }, { 'decision.discard': answered }] },
     ];
-  } else if (query.result) {
-    f['decision.digital'] ??= answered;
-    f['decision.redigital'] ??= answered;
-    f['decision.discard'] ??= answered;
-    if (query.result === 'archive') f.$or = [{ 'decision.digital': true }, { 'decision.redigital': true }];
-    if (query.result === 'discard') Object.assign(f, { 'decision.digital': false, 'decision.redigital': false, 'decision.discard': true });
-    if (query.result === 'physical') Object.assign(f, { 'decision.digital': false, 'decision.redigital': false, 'decision.discard': false });
   }
 
   const skip = (query.page - 1) * query.pageSize;

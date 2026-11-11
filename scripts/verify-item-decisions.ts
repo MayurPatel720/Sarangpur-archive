@@ -75,7 +75,10 @@ function pureChecks() {
   check('discard only', itemResultOf({ digital: false, redigital: false, discard: true }) === 'discard');
   check('digital + discard = digitize first', itemResultOf({ digital: true, redigital: false, discard: true }) === 'archive');
   check('redigital digitizes', itemResultOf({ digital: false, redigital: true, discard: false }) === 'archive');
-  check('unanswered = undecided', itemResultOf({ digital: true, redigital: null, discard: false }) === null);
+  check('one answer is enough: Digital = Yes alone digitizes', itemResultOf({ digital: true, redigital: null, discard: null }) === 'archive');
+  check('one answer is enough: a lone No keeps the item physical', itemResultOf({ digital: false, redigital: null, discard: null }) === 'physical');
+  check('one answer is enough: Discard = Yes alone discards', itemResultOf({ digital: null, redigital: null, discard: true }) === 'discard');
+  check('nothing answered = undecided', itemResultOf({ digital: null, redigital: null, discard: null }) === null);
   const p = parseItemCodeParts('ALB-surat-0001-R-000');
   check('item code parses', p?.abbr1 === 'ALB' && p.abbr2 === 'surat' && p.no === 1 && p.kind === 'R' && p.copy === 0, p);
   check('item code round-trips', p ? buildItemCode(p) === 'ALB-surat-0001-R-000' : false);
@@ -157,7 +160,7 @@ async function excelRoundTrip() {
   const ids = (formats: string[], custom: Parameters<typeof bulkFieldsFor>[1] = []) => bulkFieldsFor(formats, custom).map((f) => f.id);
   const photoBulk = ids(['photo']);
   const prasadiBulk = ids(['prasadi']);
-  check('bulk: photo rows get the photo fields', ['senderCode', 'nameOnTape', 'digital', 'captured', 'taggedInMls', 'logged', 'disposition', 'physicalSource'].every((i) => photoBulk.includes(i)), photoBulk);
+  check('bulk: photo rows get the photo fields', ['senderCode', 'nameOnTape', 'digital', 'captured', 'taggedInMls', 'disposition', 'physicalSource'].every((i) => photoBulk.includes(i)), photoBulk);
   check('bulk: photo rows get no Prasadi fields', !photoBulk.some((i) => ['blessedBy', 'stickerApplied', 'recheckWeeks', 'itemName'].includes(i)), photoBulk);
   check('bulk: Prasadi rows get the Prasadi fields', ['itemName', 'category', 'subcategory', 'blessedBy', 'usedOn', 'usedArea', 'description', 'quantity', 'history', 'receivedBy', 'itemCondition', 'room', 'cabinet', 'shelf', 'stickerApplied', 'recheckWeeks'].every((i) => prasadiBulk.includes(i)) && !['event', 'relatedMedia', 'taggedInMls', 'senderCode'].some((i) => prasadiBulk.includes(i)) && !prasadiBulk.includes('phyStorageLoc') && !prasadiBulk.includes('photo'), prasadiBulk);
   check('bulk: Prasadi rows get no tape / case / Decision / Captured fields', !prasadiBulk.some((i) => ['nameOnTape', 'nameOnCase', 'digitalSource', 'digital', 'redigital', 'discard', 'decisionRemark', 'captured'].includes(i)), prasadiBulk);
@@ -238,7 +241,7 @@ async function main() {
     const r2 = await bulkUpdateItems(lot.id, { itemIds: [c], set: { digital: false, redigital: false, discard: true } }, admin);
     check('three decided, lot not yet', r2.summary.decided === 3 && r2.finalized === null, r2.summary);
     const r3 = await bulkUpdateItems(lot.id, { itemIds: [d], set: { digital: false, redigital: true, discard: false } }, admin);
-    check('last decision finalises the lot as archive', r3.finalized?.decision === 'archive' && r3.finalized.stage === 'metadata', r3.finalized);
+    check('last decision finalises the lot as archive', r3.finalized?.decision === 'archive' && r3.finalized.stage === 'scanning', r3.finalized);
     const kept = await LotItem.countDocuments({ lot: lot.id, selectedForDigitization: true });
     check('only items to digitize stay selected', kept === 2, kept);
 
@@ -260,12 +263,8 @@ async function main() {
     await bulkUpdateItems(lot.id, { itemIds: [d], set: { captured: true } }, admin);
     check('all captured → mls_tag', (await ArchiveLot.findById(lot.id).lean())?.stage === 'mls_tag');
     await bulkUpdateItems(lot.id, { itemIds: [a, d], set: { taggedInMls: true } }, admin);
-    check('tagged but not logged stays mls_tag', (await ArchiveLot.findById(lot.id).lean())?.stage === 'mls_tag');
-    await bulkUpdateItems(lot.id, { itemIds: [a, b, c, d], set: { logged: true } }, admin);
-    const gl = await grid(lot.id);
-    const logged = gl.items[0]!;
-    check('logging stamps date and name', logged.logged && logged.loggedAt !== '' && logged.loggerName === admin.userName, logged);
-    check('every row logged → storage', (await ArchiveLot.findById(lot.id).lean())?.stage === 'storage');
+    check('every item to digitize tagged → storage (no Status column to wait for)', (await ArchiveLot.findById(lot.id).lean())?.stage === 'storage');
+    check('the Status (logged) column is gone from the sheet', !allColumns([]).some((c) => c.id === 'logged') && allColumns([]).find((c) => c.id === 'taggedInMls')?.dept === 'logging');
     const del = await markItemDispositionsDone({ kind: 'discard', itemIds: [a] }, admin);
     check('captured item can now be discarded', del.updated === 1, del);
     const lotAfter = await ArchiveLot.findById(lot.id).lean();
@@ -444,7 +443,7 @@ async function main() {
     const digitalPhoto = await mk('photo', 'digital', sample.mediaSubtype);
     const dpItems = (await grid(digitalPhoto.id)).items;
     check('digital photo items start with Decision Digital = Yes', dpItems.length === 2 && dpItems.every((i) => i.digital === true), dpItems.map((i) => i.digital));
-    check('Redigital and Discard stay blank, so the item is still undecided', dpItems.every((i) => i.redigital === null && i.discard === null && i.result === null));
+    check('Redigital and Discard stay blank; the Digital = Yes alone already counts as decided (digitize)', dpItems.every((i) => i.redigital === null && i.discard === null && i.result === 'archive'));
     const physPhoto = await mk('photo', 'physical', sample.mediaSubtype);
     const bothPhoto = await mk('photo', 'both', sample.mediaSubtype);
     check('physical photo items are left blank', (await grid(physPhoto.id)).items.every((i) => i.digital === null));

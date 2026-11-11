@@ -334,7 +334,7 @@ export function ProjectWizard() {
             ) : (
               <>
                 <GhostButton disabled={busy} onClick={() => setShowReview((v) => !v)}>
-                  {showReview ? 'Hide review' : 'View review'}
+                  {showReview ? 'Hide review' : 'Review'}
                 </GhostButton>
                 <PrimaryButton disabled={busy} onClick={submit}>
                   {uploadingPhotos ? 'Uploading photos…' : create.isPending ? 'Creating…' : 'Create project'}

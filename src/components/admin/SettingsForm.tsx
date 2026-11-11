@@ -124,7 +124,7 @@ function SettingsFields({
         <Field label="Decision pending alert (days)" hint="Lots waiting on a decision longer than this raise an alert.">
           <TextInput type="number" min={1} step={1} value={decisionPendingDays} onChange={(e) => setDecisionPendingDays(Number(e.target.value))} required />
         </Field>
-        <Field label="Scan stuck alert (days)" hint="Digitize scans idle longer than this raise an alert.">
+        <Field label="Digitalization stuck alert (days)" hint="Lots idle in digitalization longer than this raise an alert.">
           <TextInput type="number" min={1} step={1} value={scanStuckDays} onChange={(e) => setScanStuckDays(Number(e.target.value))} required />
         </Field>
         <Field label="Return grace period (days)" hint="Days after the due date before a return counts as overdue.">

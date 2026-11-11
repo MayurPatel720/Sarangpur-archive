@@ -517,7 +517,7 @@ export const overrideResponseSchema = z.object({
 });
 export type OverrideResponse = z.output<typeof overrideResponseSchema>;
 
-/** POST /api/lots/[lotId]/submit — intake → decision. Empty body. */
+/** POST /api/lots/[lotId]/submit — intake → data entry, then data entry → decision. Empty body. */
 export const submitResponseSchema = z.object({
   id: z.string(),
   lotReference: z.string(),

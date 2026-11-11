@@ -130,7 +130,7 @@ reconcile runs **inline** returning `200` with counts (no BullMQ yet, so no fake
 
 | Method | Path | Role | Effect |
 |---|---|---|---|
-| POST | `/api/lots/[lotId]/submit` | `lot:edit` | `intake → decision` + `submitted_for_decision` audit |
+| POST | `/api/lots/[lotId]/submit` | `lot:edit` | `intake → data entry (metadata)`, then `data entry → decision`; each step writes a `submitted_for_decision` audit |
 | POST | `/api/lots/[lotId]/decision` | reviewer+ | Records the checklist. Sets `decision.*`, allocates `namingCode` on archive, moves stage to `metadata` / `returned` / `discarded` |
 | POST | `/api/lots/[lotId]/override` | reviewer+ | `overrideStatus = 'requested'` + justification |
 | PATCH | `/api/lots/[lotId]/override` | lead_reviewer, admin | `approved` or `rejected` |

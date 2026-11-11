@@ -7,6 +7,8 @@ import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
 import { refOptions, type RefLists } from '@/lib/ref-lists';
 import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
+import { Dialog } from '@/components/ui/Dialog';
+import { Tabs } from '@/components/ui/primitives';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 
 const SEARCH_FROM = 12;
@@ -25,6 +27,7 @@ export function BulkEditBar({
   pending,
   onApply,
   onClear,
+  onClose,
 }: {
   items: GridItem[];
   customColumns: CustomColumn[];
@@ -34,6 +37,8 @@ export function BulkEditBar({
   pending: boolean;
   onApply: (set: ItemsBulkSet) => void;
   onClear: () => void;
+  /** Close the dialog (the selection stays). */
+  onClose: () => void;
 }) {
   const count = items.length;
   const formats = useMemo(() => [...new Set(items.map((i) => i.format))], [items]);
@@ -45,7 +50,7 @@ export function BulkEditBar({
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
-  const [open, setOpen] = useState<Set<DeptId>>(() => new Set<DeptId>(['details']));
+  const [tab, setTab] = useState<DeptId>('details');
 
   const setValue = (id: string, v: string) => {
     setValues((p) => ({ ...p, [id]: v }));
@@ -59,15 +64,17 @@ export function BulkEditBar({
   const q = query.trim().toLowerCase();
   const visible = q ? fields.filter((f) => f.label.toLowerCase().includes(q)) : fields;
   const groups = DEPARTMENTS.map((d) => ({ dept: d, fields: visible.filter((f) => f.dept === d.id) })).filter((g) => g.fields.length > 0);
+  /** The tab shown: the chosen one, or the first that still has a field (a search can empty a tab). */
+  const activeGroup = groups.find((g) => g.dept.id === tab) ?? groups[0];
   const filled = (list: BulkField[]) => list.filter((f) => (values[f.id] ?? '') !== '').length;
 
   const apply = () => {
     const { set, errors: errs } = buildBulkSet(fields, values);
     setErrors(errs);
     if (Object.keys(errs).length > 0) {
-      // Open the sections that hold a problem.
-      const bad = new Set(fields.filter((f) => errs[f.id]).map((f) => f.dept));
-      setOpen((prev) => new Set([...prev, ...bad]));
+      // Jump to the first tab that holds a problem.
+      const bad = fields.find((f) => errs[f.id]);
+      if (bad) setTab(bad.dept);
       return;
     }
     if (Object.keys(set).length === 0) return;
@@ -165,19 +172,17 @@ export function BulkEditBar({
   const clearable = (f: BulkField) => f.input === 'text' || f.input === 'date' || f.input === 'number' || f.input === 'weeks' || f.input === 'select';
 
   return (
-    <section aria-label="Bulk edit selected items" className="rounded-[8px] border border-accent bg-accent-soft p-3 flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold text-ink">
-          Set for {count} selected {count === 1 ? 'item' : 'items'}
-        </span>
-        <span className="text-[12px] text-ink-3">
+    <Dialog
+      onClose={onClose}
+      title={`Set for ${count} selected ${count === 1 ? 'item' : 'items'}`}
+      subtitle={
+        <>
           {formats.length > 1 ? `${formats.map((f) => FORMAT_LABELS[f as Format] ?? f).join(' + ')} — fields that fit only some of them apply to those rows. ` : ''}
           Blank fields are left as they are.
-        </span>
-        <GhostButton onClick={onClear} className="sm:ml-auto">
-          Clear selection
-        </GhostButton>
-      </div>
+        </>
+      }
+    >
+    <div aria-label="Bulk edit selected items" className="flex flex-col gap-3">
 
       {fields.length >= SEARCH_FROM ? (
         <TextInput
@@ -189,75 +194,67 @@ export function BulkEditBar({
         />
       ) : null}
 
-      <div className="flex flex-col gap-2">
-        {groups.map((g) => {
-          const isOpen = Boolean(q) || open.has(g.dept.id);
-          const n = filled(g.fields);
-          return (
-            <div key={g.dept.id} className="rounded-[6px] border border-line bg-surface">
-              <button
-                type="button"
-                aria-expanded={isOpen}
-                onClick={() =>
-                  setOpen((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(g.dept.id)) next.delete(g.dept.id);
-                    else next.add(g.dept.id);
-                    return next;
-                  })
-                }
-                className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-2 text-left"
-              >
-                <span aria-hidden className="w-3 text-[12px] text-ink-3">
-                  {isOpen ? '▾' : '▸'}
-                </span>
-                <span className="text-[13px] font-semibold text-ink">{g.dept.label}</span>
-                <span className="text-[12px] text-ink-3">
-                  {g.fields.length} {g.fields.length === 1 ? 'field' : 'fields'}
-                  {n > 0 ? ` · ${n} to change` : ''}
-                </span>
-              </button>
-              {isOpen ? (
-                <div className="grid grid-cols-1 gap-3 border-t border-line-soft p-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {g.fields.map((f) => (
-                    <Field
-                      key={f.id}
-                      label={f.label}
-                      error={errors[f.id]}
-                      hint={f.onlyFor ? `${f.onlyFor.map((x) => FORMAT_LABELS[x as Format] ?? x).join(' / ')} rows only` : undefined}
-                    >
-                      <div className="flex flex-col gap-1">
-                        {control(f)}
-                        {clearable(f) ? (
-                          <button
-                            type="button"
-                            onClick={() => setValue(f.id, values[f.id] === CLEAR ? '' : CLEAR)}
-                            className="w-fit cursor-pointer border-0 bg-transparent p-0 text-[11.5px] font-medium text-accent hover:underline"
-                          >
-                            {values[f.id] === CLEAR ? 'Undo clear' : 'Clear this field'}
-                          </button>
-                        ) : null}
-                      </div>
-                    </Field>
-                  ))}
-                </div>
-              ) : null}
+      {groups.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <Tabs
+            ariaLabel="Field groups"
+            value={activeGroup?.dept.id ?? ''}
+            onChange={(id) => setTab(id as DeptId)}
+            tabs={groups.map((g) => {
+              const n = filled(g.fields);
+              return { id: g.dept.id, label: n > 0 ? `${g.dept.label} · ${n}` : g.dept.label };
+            })}
+          />
+          {activeGroup ? (
+            <div role="tabpanel" aria-label={activeGroup.dept.label} className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+              {activeGroup.fields.map((f) => (
+                <Field
+                  key={f.id}
+                  label={f.label}
+                  error={errors[f.id]}
+                  hint={f.onlyFor ? `${f.onlyFor.map((x) => FORMAT_LABELS[x as Format] ?? x).join(' / ')} rows only` : undefined}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <div className="min-w-0 flex-1">{control(f)}</div>
+                    {clearable(f) ? (
+                      <button
+                        type="button"
+                        aria-label={values[f.id] === CLEAR ? `Undo clearing ${f.label}` : `Clear ${f.label} on the selected items`}
+                        title={values[f.id] === CLEAR ? 'Undo clear' : 'Blank this field on the selected items'}
+                        aria-pressed={values[f.id] === CLEAR}
+                        onClick={() => setValue(f.id, values[f.id] === CLEAR ? '' : CLEAR)}
+                        className={`inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border text-[15px] leading-none ${
+                          values[f.id] === CLEAR ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface text-ink-3 hover:bg-accent-soft'
+                        }`}
+                      >
+                        <span aria-hidden>×</span>
+                      </button>
+                    ) : null}
+                  </div>
+                </Field>
+              ))}
             </div>
-          );
-        })}
-        {groups.length === 0 ? <p className="m-0 text-[12.5px] text-ink-3">No field matches “{query}”.</p> : null}
-      </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="m-0 text-[12.5px] text-ink-3">No field matches “{query}”.</p>
+      )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
         <PrimaryButton disabled={pending} onClick={apply}>
           {pending ? 'Saving…' : `Apply to ${count}`}
         </PrimaryButton>
+        <GhostButton onClick={onClose}>Close</GhostButton>
+        <GhostButton onClick={onClear} className="sm:ml-auto">
+          Clear selection
+        </GhostButton>
         {Object.keys(errors).length > 0 ? (
           <span role="alert" className="text-[12.5px] font-medium text-danger">
             Fix the highlighted {Object.keys(errors).length === 1 ? 'field' : 'fields'} first.
           </span>
         ) : null}
       </div>
-    </section>
+    </div>
+    </Dialog>
   );
 }

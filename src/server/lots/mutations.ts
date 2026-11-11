@@ -626,38 +626,45 @@ export async function patchLot(
   return { id, lotReference, version: fresh?.__v ?? 0 };
 }
 
-/** Moves an intake lot into the decision queue. Route permission: `lot:edit`. */
+/**
+ * Moves a lot one step along the front of the pipeline: Intake → Data entry, then Data entry →
+ * Decision. Route permission: `lot:edit`.
+ */
 export async function submitForDecision(
   lotId: string,
   ctx: MutationContext,
-): Promise<{ id: string; lotReference: string; stage: 'decision'; version: number }> {
+): Promise<{ id: string; lotReference: string; stage: 'metadata' | 'decision'; version: number }> {
+  await connectToDatabase();
+  const current = await ArchiveLot.findById(lotId).select('stage').lean();
+  const from = current?.stage === 'metadata' ? 'metadata' : 'intake';
+  const to = from === 'intake' ? 'metadata' : 'decision';
   const { id, lotReference } = await withAudit({
     lotId,
     actor: auditActor(ctx),
     kind: 'submitted_for_decision',
-    title: 'Submitted for decision',
+    title: to === 'metadata' ? 'Submitted for data entry' : 'Submitted for decision',
     mutate: async (lot) => {
       if (!lot.decision) throw new HttpError(500, 'Lot decision block is missing.');
-      if (lot.stage !== 'intake') {
-        throw new HttpError(400, 'Only intake lots can be submitted for decision.');
+      if (lot.stage !== from) {
+        throw new HttpError(400, 'Only intake or data entry lots can be submitted.');
       }
       const missing = intakeMissing(lot);
       if (missing.length > 0) {
         throw new HttpError(
           400,
-          `Fill in ${missing.join(', ')} before sending this lot to decision.`,
+          `Fill in ${missing.join(', ')} before sending this lot on.`,
         );
       }
       if (lot.decision.status !== 'pending') {
         throw new HttpError(409, 'This lot already has a recorded decision.');
       }
-      lot.stage = 'decision';
+      lot.stage = to;
       return { id: String(lot._id), lotReference: lot.lotReference };
     },
   });
 
   const fresh = await ArchiveLot.findById(id).select('__v').lean();
-  return { id, lotReference, stage: 'decision' as const, version: fresh?.__v ?? 0 };
+  return { id, lotReference, stage: to, version: fresh?.__v ?? 0 };
 }
 
 /**
@@ -740,9 +747,10 @@ async function writeDecision(
       const decided = lot.decision.status !== 'pending';
       const consumingApproval = lot.decision.overrideStatus === 'approved';
       // An approved override reopens the decision on any unfinished stage
-      // (e.g. metadata after an archive verdict). Finished lots stay locked.
+      // (e.g. digitalization after an archive verdict). Finished lots stay locked.
       const stageOpen =
         lot.stage === 'intake' ||
+        lot.stage === 'metadata' ||
         lot.stage === 'decision' ||
         (consumingApproval && !isTerminalStage(lot.stage));
       if (!stageOpen) {
@@ -770,7 +778,7 @@ async function writeDecision(
           stage = body.disposition === 'return' ? 'returned' : 'discarded';
         } else {
           status = 'archive';
-          stage = body.keepPhysical ? 'storage' : 'metadata';
+          stage = body.keepPhysical ? 'storage' : 'scanning';
           namingCode = await generateNamingCode(
             await namingPrefix(format, mediaSubtype),
             originSource,
@@ -994,24 +1002,23 @@ export async function recordTriageDecision(
 export async function finalizeItemDecisions(lotId: string, ctx: MutationContext): Promise<DecisionResponse> {
   const lotObjectId = new Types.ObjectId(lotId);
   const [digitize, discard, physical, total] = await Promise.all([
+    // One answer in any of the three columns is enough (see `itemResultOf`).
     LotItem.countDocuments({
       lot: lotObjectId,
       $or: [{ 'decision.digital': true }, { 'decision.redigital': true }],
-      'decision.discard': { $in: [true, false] },
-      'decision.digital': { $in: [true, false] },
-      'decision.redigital': { $in: [true, false] },
     }),
     LotItem.countDocuments({
       lot: lotObjectId,
-      'decision.digital': false,
-      'decision.redigital': false,
+      'decision.digital': { $ne: true },
+      'decision.redigital': { $ne: true },
       'decision.discard': true,
     }),
     LotItem.countDocuments({
       lot: lotObjectId,
-      'decision.digital': false,
-      'decision.redigital': false,
-      'decision.discard': false,
+      'decision.digital': { $ne: true },
+      'decision.redigital': { $ne: true },
+      'decision.discard': { $ne: true },
+      $or: [{ 'decision.digital': false }, { 'decision.redigital': false }, { 'decision.discard': false }],
     }),
     LotItem.countDocuments({ lot: lotObjectId }),
   ]);

@@ -112,7 +112,7 @@ const lotItemSchema = new Schema(
      * return_or_discard. The drop reason reuses `notDigitizedReason`.
      */
     decision: {
-      /** Excel Decision columns. An item is decided once all three are answered. */
+      /** Excel Decision columns. An item is decided once any one of the three is answered. */
       digital: { type: Boolean, default: null },
       redigital: { type: Boolean, default: null },
       discard: { type: Boolean, default: null },

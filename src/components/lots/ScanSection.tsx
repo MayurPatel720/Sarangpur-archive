@@ -36,7 +36,7 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
       setError(null);
       onChanged();
     },
-    onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not record the scan.'),
+    onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not record the digitalization.'),
   });
 
   const reconcileMut = useMutation({
@@ -51,12 +51,12 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
 
   return (
     <Panel>
-      <PanelHeader title="Scanning & reconciliation" />
+      <PanelHeader title="Digitalization & reconciliation" />
       <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-5 gap-y-3.5">
           <Definition label="Status">{prettyEnum(lot.ops.scanStatus)}</Definition>
-          <Definition label="Scanned by">{lot.ops.scannedByName ?? <EmptyValue />}</Definition>
-          <Definition label="Scan date">{lot.ops.scanDate ? date(lot.ops.scanDate) : <EmptyValue />}</Definition>
+          <Definition label="Digitalized by">{lot.ops.scannedByName ?? <EmptyValue />}</Definition>
+          <Definition label="Digitalization date">{lot.ops.scanDate ? date(lot.ops.scanDate) : <EmptyValue />}</Definition>
           <Definition label="Folder">{lot.ops.folderPath ?? <EmptyValue />}</Definition>
           <Definition label="Expected / found">
             {lot.ops.expectedFileCount} / {lot.ops.foundFileCount}
@@ -70,7 +70,7 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
 
         {canScan ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Scan status">
+            <Field label="Digitalization status">
               <Select value={scanStatus} onChange={(e) => setScanStatus(e.target.value)}>
                 {(scanStatuses.data?.items ?? []).map((s) => (
                   <option key={s.value} value={s.value}>
@@ -82,7 +82,7 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
                 ) : null}
               </Select>
             </Field>
-            <Field label="Folder path" hint="Where the scanned files live on the file server.">
+            <Field label="Folder path" hint="Where the digitalized files live on the file server.">
               <TextInput
                 value={folderPath}
                 onChange={(e) => setFolderPath(e.target.value)}
@@ -91,7 +91,7 @@ export function ScanSection({ lot, onChanged }: { lot: DetailLot; onChanged: () 
             </Field>
             <div>
               <PrimaryButton disabled={scanMut.isPending} onClick={() => scanMut.mutate()}>
-                {scanMut.isPending ? 'Saving…' : 'Save scan state'}
+                {scanMut.isPending ? 'Saving…' : 'Save digitalization state'}
               </PrimaryButton>
             </div>
           </div>

@@ -85,7 +85,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   const markDone = (index: number, done: boolean) =>
     setStepsDone((prev) => (prev[index] === done ? prev : prev.map((v, k) => (k === index ? done : v))));
   const [formError, setFormError] = useState<string | null>(null);
-  /** The review summary stays hidden until asked for ("View review"), like the project wizard. */
+  /** The review summary stays hidden until asked for ("Review"), like the project wizard. */
   const [showReview, setShowReview] = useState(false);
 
   // Photos of the physical items: kept in state and uploaded once the lot exists.
@@ -367,7 +367,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
             ) : (
               <>
                 <GhostButton disabled={busy} onClick={() => setShowReview((v) => !v)}>
-                  {showReview ? 'Hide review' : 'View review'}
+                  {showReview ? 'Hide review' : 'Review'}
                 </GhostButton>
                 <PrimaryButton disabled={busy} onClick={submit}>
                   {uploadingPhotos ? 'Uploading photos…' : create.isPending ? 'Registering…' : 'Register lot'}

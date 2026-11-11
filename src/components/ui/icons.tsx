@@ -105,6 +105,16 @@ export const IconClock = (p: IconProps) => (
   </Icon>
 );
 
+/** Two opposite arrows: bring a sheet in, send it out. */
+export const IconImportExport = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 19V6" />
+    <path d="M4.5 9.5L8 6l3.5 3.5" />
+    <path d="M16 5v13" />
+    <path d="M12.5 14.5L16 18l3.5-3.5" />
+  </Icon>
+);
+
 export const IconDownload = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 4v11" />

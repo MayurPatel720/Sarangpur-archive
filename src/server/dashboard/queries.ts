@@ -192,9 +192,9 @@ export function shapeSummary(
       },
       {
         key: 'in_digitization',
-        label: 'In digitization',
+        label: 'In digitalization',
         value: stageCountMany(window.stages?.scan ?? ['scanning']) || stageCount(scanKey),
-        note: `${scanExpected.toLocaleString('en-IN')} items · ${scanPercent}% scanned`,
+        note: `${scanExpected.toLocaleString('en-IN')} items · ${scanPercent}% digitalized`,
         noteSeverity: 'neutral',
       },
       {
@@ -283,10 +283,10 @@ export function shapeAlerts(facet: LotFacetResult, window: DashboardWindow, pras
     },
     {
       key: 'scan_stuck',
-      title: `Stuck in digitize queue beyond ${scanDays} days`,
+      title: `Stuck in digitalization beyond ${scanDays} days`,
       detail: scanOverdue
-        ? `Scan team notified · ${scanOverdue.itemsOutstanding.toLocaleString('en-IN')} items affected`
-        : 'Scan team notified',
+        ? `Digitalization team notified · ${scanOverdue.itemsOutstanding.toLocaleString('en-IN')} items affected`
+        : 'Digitalization team notified',
       count: scanOverdue?.n ?? 0,
       severity: 'warning',
       href: '/digitize',

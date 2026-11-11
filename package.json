@@ -22,6 +22,7 @@
     "db:seed-prasadi-lot": "tsx scripts/seed-prasadi-lot.ts",
     "db:backfill-born-digital": "tsx scripts/backfill-born-digital.ts",
     "db:sync-prasadi-lists": "tsx scripts/sync-prasadi-lists.ts",
+    "db:sync-stage-flow": "tsx scripts/sync-stage-flow.ts",
     "db:backfill-digital-yes": "tsx scripts/backfill-digital-yes.ts",
     "db:backfill-format-grants": "tsx scripts/backfill-format-grants.ts",
     "db:backfill-system-grants": "tsx scripts/backfill-system-grants.ts",

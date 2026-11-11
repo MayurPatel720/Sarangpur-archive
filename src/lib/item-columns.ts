@@ -9,8 +9,8 @@
  *                           Name on case · Phy source · Details remark · Duplicate code
  *   Decision                digital · redigital · discard · Decision remark
  *   Digitalization & Storage  Digitalized · Dig source · File path · Phy storage loc. · Return / discard ·
- *                           MLS tagged · Storage remark
- *   Logging                 Status · Logging date · Logger's name
+ *                           Storage remark
+ *   Logging                 MLS tagged · Logging date · Logger's name
  *
  * Users can add their own columns to a lot's Excel (`lot.customColumns`) — each one belongs
  * to one of the departments above and is stored per item under `custom[key]`.
@@ -110,7 +110,7 @@ export const appliesToFormat = (c: FormatRule, format: string | null): boolean =
 export const SHEET_HIDDEN: Record<string, readonly string[]> = {
   prasadi: [
     'mediaType', 'event', 'receivedFrom', 'relatedMedia', 'senderCode', 'physicalSource', 'remarks', 'fileName', 'storageRemark', 'taggedInMls',
-    'logged', 'loggedAt', 'loggerName',
+    'loggedAt', 'loggerName',
     'removedOn', 'sentBy', 'sentFrom', 'requestedBy', 'newLocation', 'sentTo', 'receivedAtNewOn', 'requestHistory',
   ],
 };
@@ -228,10 +228,9 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'nextCheckDue', label: 'Next check due', dept: 'storage', kind: 'info', width: 140, formats: PRASADI },
   { id: 'lastCheckedAt', label: 'Last checked', dept: 'storage', kind: 'info', width: 130, formats: PRASADI },
   { id: 'disposition', label: 'Return / discard', dept: 'storage', kind: 'disposition', field: 'disposition', width: 150 },
-  { id: 'taggedInMls', label: 'MLS tagged', dept: 'storage', kind: 'flag', field: 'taggedInMls', width: 120 },
   { id: 'storageRemark', label: 'Storage remark', aliases: ['Remark'], dept: 'storage', kind: 'text', field: 'storageRemark', width: 190 },
   // Logging
-  { id: 'logged', label: 'Status', dept: 'logging', kind: 'flag', field: 'logged', width: 100, hint: 'Yes = this row has been logged.' },
+  { id: 'taggedInMls', label: 'MLS tagged', dept: 'logging', kind: 'flag', field: 'taggedInMls', width: 120 },
   { id: 'loggedAt', label: 'Logging date', dept: 'logging', kind: 'date', field: 'loggedAt', width: 140 },
   { id: 'loggerName', label: "Logger's name", dept: 'logging', kind: 'text', field: 'loggerName', width: 160 },
   // Removal — filled in when a Prasadi item is taken out of the archive (Status → Inactive).

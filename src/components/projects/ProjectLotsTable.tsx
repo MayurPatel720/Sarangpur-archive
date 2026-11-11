@@ -166,7 +166,7 @@ export function ProjectLotsTable({
       header: 'Progress',
       render: (r) => r.locked ? dash : (
         <div className="flex flex-col gap-1">
-          <MiniBar label="Scanned" have={r.scanned} of={r.scanTarget} />
+          <MiniBar label="Digitalized" have={r.scanned} of={r.scanTarget} />
           <MiniBar label="Tagged" have={r.tagged} of={r.quantity} />
         </div>
       ),

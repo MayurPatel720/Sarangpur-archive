@@ -97,7 +97,7 @@ export function AddItemDialog({ lotId, onClose }: { lotId: string; onClose: () =
             </Select>
           </Field>
         ) : null}
-        <Field label="File name" hint="Optional — usually filled at scan time.">
+        <Field label="File name" hint="Optional — usually filled at digitalization time.">
           <TextInput
             value={fileName}
             onChange={(e) => setFileName(e.target.value)}

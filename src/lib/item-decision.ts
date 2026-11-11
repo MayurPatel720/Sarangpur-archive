@@ -4,11 +4,11 @@
  *
  *   digital / redigital / discard — each Yes, No or unanswered (null).
  *
- *   undecided   any of the three still unanswered
+ *   undecided   none of the three answered yet. One answer (Yes or No) is enough to count as decided
  *   archive     digital or redigital = Yes — the item is digitized. discard may ALSO be Yes:
  *               digitize first, then the physical copy is thrown out
  *   discard     discard = Yes with neither digital nor redigital — discarded, never digitized
- *   physical    all three No — keep the physical item only
+ *   physical    answered, but no Yes anywhere — keep the physical item only
  */
 
 export type Tri = boolean | null;
@@ -21,7 +21,7 @@ export interface ItemAnswers {
 }
 
 export function itemResultOf(a: ItemAnswers): ItemResult | null {
-  if (a.digital === null || a.redigital === null || a.discard === null) return null;
+  if (a.digital === null && a.redigital === null && a.discard === null) return null;
   if (a.digital || a.redigital) return 'archive';
   if (a.discard) return 'discard';
   return 'physical';
@@ -48,8 +48,8 @@ export function autoDecisionFields(format: string): {
 /**
  * A digital copy already exists, so the Decision "Digital" answer starts as Yes: Photo / Video lines
  * entered as Data type "Digital", and any line entered as "Physical + Digital". Redigital and Discard
- * stay blank: they are still the team's call, and an item counts as decided only once all three are
- * answered. "Physical" lines, Audio / Documents lines entered as "Digital", and the physical-only
+ * stay blank: they are still the team's call, though one answer is enough for the item to count as
+ * decided. "Physical" lines, Audio / Documents lines entered as "Digital", and the physical-only
  * formats (Prasadi) are left alone.
  */
 export const BORN_DIGITAL_FORMATS: readonly string[] = ['photo', 'video'];

@@ -142,7 +142,22 @@ export function MasterExcel() {
   const toast = useToast();
   const format = useFormatContext();
   const stages = useReferenceList('stage');
-  const dataTypes = useReferenceList('dataType');
+  const photoSubtypes = useReferenceList('mediaSubtype.photo');
+  const videoSubtypes = useReferenceList('mediaSubtype.video');
+  const audioSubtypes = useReferenceList('mediaSubtype.audio');
+  /** Every media sub-type across the formats (the Media type column shows these), each value once. */
+  const subtypeOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const l of [photoSubtypes, videoSubtypes, audioSubtypes]) {
+      for (const i of l.data?.items ?? []) {
+        if (seen.has(i.value)) continue;
+        const code = (i.meta as { codePrefix?: string } | undefined)?.codePrefix;
+        // "Mini DVs · MDV": the name, and the code the archive codes start with.
+        seen.set(i.value, code && code !== i.label ? `${i.label} · ${code}` : i.label);
+      }
+    }
+    return [...seen].map(([value, label]) => ({ value, label }));
+  }, [photoSubtypes.data, videoSubtypes.data, audioSubtypes.data]);
   const { view, setView, saved, saveView, deleteView } = useMasterView(format ?? 'all');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [applied, setApplied] = useState<Record<string, string>>({});
@@ -186,7 +201,7 @@ export function MasterExcel() {
   const optionsFor = (f: MasterFilter): { value: string; label: string }[] => {
     if (f.type !== 'select') return [];
     if (f.options === 'stage') return (stages.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
-    if (f.options === 'dataType') return (dataTypes.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
+    if (f.options === 'mediaSubtype') return subtypeOptions;
     if (f.options === 'physicalSource') return [];
     if (!Array.isArray(f.options)) return []; // a { list } filter loads its own options
     return f.options;
@@ -257,7 +272,7 @@ export function MasterExcel() {
     const c = paramInfo.get(param);
     if (c?.refList) return refLabel(c.refList, v);
     if (param === 'stage') return stages.data?.items.find((i) => i.value === v)?.label ?? v;
-    if (param === 'dataType') return dataTypes.data?.items.find((i) => i.value === v)?.label ?? v;
+    if (param === 'mediaSubtype') return subtypeOptions.find((i) => i.value === v)?.label ?? v;
     return v === 'yes' ? 'Yes' : v === 'no' ? 'No' : v === 'blank' ? 'Blank' : v;
   };
 

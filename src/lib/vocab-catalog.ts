@@ -451,9 +451,9 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
     metaSchema: STAGE_META_SCHEMA,
     items: items([
       { value: 'intake', label: 'Intake', meta: { terminal: false, board: true, inFlight: true, alertRole: '', discardable: false } },
+      { value: 'metadata', label: 'Data entry', meta: { terminal: false, board: true, inFlight: true, alertRole: '', discardable: false } },
       { value: 'decision', label: 'Decision', meta: { terminal: false, board: true, inFlight: true, alertRole: 'decision', discardable: false } },
-      { value: 'metadata', label: 'Metadata', meta: { terminal: false, board: true, inFlight: true, alertRole: '', discardable: true } },
-      { value: 'scanning', label: 'Scanning', meta: { terminal: false, board: true, inFlight: true, alertRole: 'scan', discardable: true } },
+      { value: 'scanning', label: 'Digitalization', meta: { terminal: false, board: true, inFlight: true, alertRole: 'scan', discardable: true } },
       { value: 'mls_tag', label: 'MLS tag', meta: { terminal: false, board: true, inFlight: true, alertRole: 'mls', discardable: true } },
       { value: 'storage', label: 'Storage', meta: { terminal: true, board: true, inFlight: false, alertRole: '', discardable: true } },
       { value: 'returned', label: 'Returned', meta: { terminal: true, board: true, inFlight: false, alertRole: '', discardable: false } },

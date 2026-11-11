@@ -206,7 +206,7 @@ check('storage meter', [summary.storage.usedTb, summary.storage.capacityTb], [5,
 const kpi = (k: string) => summary.kpis.find((x) => x.key === k);
 check('KPI received value/note', [kpi('received')?.value, kpi('received')?.note], [6, '+4 vs previous 30 days']);
 check('KPI awaiting decision', [kpi('awaiting_decision')?.value, kpi('awaiting_decision')?.note], [3, '2 past the 5-day threshold']);
-check('KPI in digitization', [kpi('in_digitization')?.value, kpi('in_digitization')?.note], [2, '300 items · 80% scanned']);
+check('KPI in digitization', [kpi('in_digitization')?.value, kpi('in_digitization')?.note], [2, '300 items · 80% digitalized']);
 check('KPI awaiting MLS tag', [kpi('awaiting_mls_tag')?.value, kpi('awaiting_mls_tag')?.note], [1, '2 duplicates flagged for review']);
 check('KPI returns overdue', [kpi('returns_overdue')?.value, kpi('returns_overdue')?.note], [1, 'of 2 returns pending']);
 check('KPI returns pending', [kpi('returns_pending')?.value, kpi('returns_pending')?.note], [2, '1 overdue']);
@@ -262,7 +262,7 @@ check('board draws eight columns', board.stages.length, 8);
 check(
   'counts per column',
   Object.fromEntries(board.stages.map((s) => [s.stage, s.count])),
-  { intake: 2, decision: 3, metadata: 0, scanning: 2, mls_tag: 1, storage: 1, returned: 1, discarded: 0 },
+  { intake: 2, metadata: 0, decision: 3, scanning: 2, mls_tag: 1, storage: 1, returned: 1, discarded: 0 },
 );
 check('totalActive counts only in-flight stages', board.totalActive, 8);
 check(
@@ -324,7 +324,7 @@ check('video summary: storage meter', [summaryVid.storage.usedTb, summaryVid.sto
 const kpiVid = (k: string) => summaryVid.kpis.find((x) => x.key === k);
 check('video KPI received', [kpiVid('received')?.value, kpiVid('received')?.note], [1, 'Unchanged vs previous 30 days']);
 check('video KPI awaiting decision', [kpiVid('awaiting_decision')?.value, kpiVid('awaiting_decision')?.note], [0, 'All within the review threshold']);
-check('video KPI in digitization', [kpiVid('in_digitization')?.value, kpiVid('in_digitization')?.note], [1, '200 items · 100% scanned']);
+check('video KPI in digitization', [kpiVid('in_digitization')?.value, kpiVid('in_digitization')?.note], [1, '200 items · 100% digitalized']);
 check('video KPI awaiting MLS', [kpiVid('awaiting_mls_tag')?.value], [1]);
 check('video KPI returns pending/overdue', [kpiVid('returns_pending')?.value, kpiVid('returns_overdue')?.value], [1, 0]);
 
@@ -341,7 +341,7 @@ check('video board: matches Zod contract', pipelineResponseSchema.safeParse(boar
 check(
   'video board: counts per column',
   Object.fromEntries(boardVid.stages.map((s) => [s.stage, s.count])),
-  { intake: 0, decision: 0, metadata: 0, scanning: 1, mls_tag: 1, storage: 0, returned: 0, discarded: 0 },
+  { intake: 0, metadata: 0, decision: 0, scanning: 1, mls_tag: 1, storage: 0, returned: 0, discarded: 0 },
 );
 check('video board: totalActive', boardVid.totalActive, 2);
 check(

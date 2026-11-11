@@ -11,7 +11,8 @@ import { ITEM_STATUSES, ITEM_STATUS_LABELS, itemStatus, type ItemStatus } from '
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { IconPlus } from '@/components/ui/icons';
+import { IconChevronDown, IconImportExport, IconPlus } from '@/components/ui/icons';
+import { Menu, menuItem } from '@/components/master/MasterMenus';
 import { useToast } from '@/components/ui/Toast';
 import { allColumns, BUILTIN_COLUMNS, forFormat, shownOnSheet, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
@@ -23,7 +24,6 @@ import { BulkEditBar } from './BulkEditBar';
 import { ItemPhotosDialog } from './ItemPhotosDialog';
 import { ItemStatusDialog } from './ItemStatusDialog';
 import { ItemPhotoViewer } from './ItemPhotoViewer';
-import { TagSheet } from './TagSheet';
 import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
 import { SetPathDialog } from './SetPathDialog';
@@ -64,6 +64,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [selectedBy, setSelectedBy] = useState<Record<number, string[]>>(SELECTION_CLEAR);
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  /** The "N selected" dialog (bulk edit of the ticked rows). */
+  const [showBulk, setShowBulk] = useState(false);
   const [showAddColumn, setShowAddColumn] = useState(false);
   const [columnError, setColumnError] = useState<string | null>(null);
   const [codeFor, setCodeFor] = useState<GridItem | null>(null);
@@ -78,7 +80,6 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [statusFor, setStatusFor] = useState<GridItem | null>(null);
   /** Prasadi lots: which status to show. */
   const [statusFilter, setStatusFilter] = useState<'all' | ItemStatus>('all');
-  const [showTags, setShowTags] = useState(false);
   /** View only: which departments' columns are showing (not saved). */
   const [shownDepts, setShownDepts] = useState<DeptId[]>(() => DEPARTMENTS.map((d) => d.id));
   const onlyDept: DeptId | null = shownDepts.length === 1 ? shownDepts[0]! : null;
@@ -257,7 +258,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   };
 
   // Full screen: lock page scroll; Escape exits (unless a dialog or a cell editor/popup is using it).
-  const dialogOpen = showAdd || showImport || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
+  useEffect(() => {
+    if (selected.length === 0) setShowBulk(false);
+  }, [selected.length]);
+  const dialogOpen = showAdd || showImport || showBulk || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
   useEffect(() => {
     if (!fullscreen) return;
     const prev = document.body.style.overflow;
@@ -304,6 +308,40 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, rowPx > ROW_PX ? 780 : 560)}px`;
   };
 
+  /** Look of a GhostButton, for the buttons that open a menu. */
+  const ghostMenu =
+    'inline-flex h-10 items-center gap-1.5 px-4 bg-surface border border-line-strong rounded-[6px] shadow-control text-[13px] font-semibold text-ink-2 cursor-pointer disabled:opacity-60';
+
+  /** Full screen as one split button; its arrow lists Full screen, Expand all and Collapse all as three separate choices. */
+  const viewControls = (
+    <span className="inline-flex">
+      <GhostButton onClick={() => setFullscreen(!fullscreen)} className="!rounded-r-none">
+        {fullscreen ? 'Exit full screen' : 'Full screen'}
+      </GhostButton>
+      <Menu
+        label="View options"
+        width={200}
+        align="right"
+        className={`${ghostMenu} !rounded-l-none border-l-0 !px-2.5`}
+        trigger={<IconChevronDown size={14} />}
+      >
+        {(close) => (
+          <>
+            <button type="button" role="menuitem" className={menuItem} onClick={() => { setFullscreen(!fullscreen); close(); }}>
+              {fullscreen ? 'Exit full screen' : 'Full screen'}
+            </button>
+            <button type="button" role="menuitem" className={menuItem} disabled={single} onClick={() => { setAll(true); close(); }}>
+              Expand all
+            </button>
+            <button type="button" role="menuitem" className={menuItem} disabled={single} onClick={() => { setAll(false); close(); }}>
+              Collapse all
+            </button>
+          </>
+        )}
+      </Menu>
+    </span>
+  );
+
   const iconBtn =
     'inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-line bg-surface text-ink-2 cursor-pointer hover:bg-accent-soft disabled:opacity-50';
 
@@ -311,7 +349,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     <Panel>
       <PanelHeader title={`Items (${s.total})`}>
         <span className="ml-auto flex items-center gap-2">
-          <GhostButton onClick={() => setFullscreen(true)}>Full screen</GhostButton>
+          {viewControls}
           {canAdd && canDetails ? <GhostButton onClick={() => setShowAdd(true)}>Add item</GhostButton> : null}
         </span>
       </PanelHeader>
@@ -366,9 +404,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           {fullscreen ? (
             <div className="flex items-center gap-2">
               <h2 className="m-0 text-[15px] font-semibold text-ink">Items ({s.total})</h2>
-              <GhostButton onClick={() => setFullscreen(false)} className="ml-auto">
-                Exit full screen
-              </GhostButton>
+              <span className="ml-auto">{viewControls}</span>
             </div>
           ) : null}
 
@@ -426,25 +462,34 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 </label>
               ))}
             </div>
-            {!single ? (
-              <div role="group" aria-label="Sheets" className="flex gap-1.5">
-                <GhostButton onClick={() => setAll(true)}>Expand all</GhostButton>
-                <GhostButton onClick={() => setAll(false)}>Collapse all</GhostButton>
-              </div>
-            ) : null}
-            <div role="toolbar" aria-label="Excel tools" className="flex items-center gap-1.5 sm:ml-auto">
+            <div role="toolbar" aria-label="Excel tools" className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+              {selected.length > 0 && canDetails ? (
+                <button
+                  type="button"
+                  onClick={() => setShowBulk(true)}
+                  title="Set the same values on the ticked rows"
+                  className="inline-flex h-10 cursor-pointer items-center rounded-[6px] border border-accent bg-accent-soft px-4 text-[13px] font-semibold text-accent"
+                >
+                  {selected.length} selected
+                </button>
+              ) : null}
               {canDetails && pathItems.length > 0 ? (
                 <GhostButton onClick={() => setShowPath(true)} title="Fill the File path column from one parent folder">Set path</GhostButton>
               ) : null}
-              {canDetails ? (
-                <GhostButton onClick={() => setShowImport(true)}>Import</GhostButton>
-              ) : null}
-              <GhostButton onClick={() => void exportExcel()} disabled={s.total === 0}>
-                Export
-              </GhostButton>
-              <GhostButton onClick={() => setShowTags(true)} disabled={selectedItems.length === 0} title="Tick rows first, then print their tags">
-                Print tags{selectedItems.length > 0 ? ` (${selectedItems.length})` : ''}
-              </GhostButton>
+              <Menu label="Import / Export" width={200} align="right" className={iconBtn} trigger={<IconImportExport size={16} />}>
+                {(close) => (
+                  <>
+                    {canDetails ? (
+                      <button type="button" role="menuitem" className={menuItem} onClick={() => { setShowImport(true); close(); }}>
+                        Import from Excel
+                      </button>
+                    ) : null}
+                    <button type="button" role="menuitem" className={menuItem} disabled={s.total === 0} onClick={() => { void exportExcel(); close(); }}>
+                      Export to Excel
+                    </button>
+                  </>
+                )}
+              </Menu>
               {canDetails ? (
                 <button
                   type="button"
@@ -463,8 +508,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
             </div>
           </div>
 
-          {selected.length > 0 && canDetails ? (
+          {showBulk && selected.length > 0 && canDetails ? (
             <BulkEditBar
+              onClose={() => setShowBulk(false)}
               items={selectedItems}
               customColumns={data.customColumns}
               lists={refLists}
@@ -477,6 +523,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                     onSuccess: (res) => {
                       toast.success(`Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`);
                       deselectAll();
+                      setShowBulk(false);
                     },
                   },
                 )
@@ -588,7 +635,6 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           onChanged={refresh}
         />
       ) : null}
-      {showTags ? <TagSheet items={selectedItems} lots={refLists} onClose={() => setShowTags(false)} /> : null}
       {showAdd ? (
         <AddItemDialog
           lotId={lotId}

@@ -25,7 +25,8 @@ export const masterQuerySchema = z.object({
   /** Project name only (`project` matches the code or the name). */
   projectName: text,
   stage: text,
-  dataType: text,
+  /** Media type: a media sub-type value such as "Mini DVs" (matches the item's own media line). */
+  mediaSubtype: text,
   // Details
   code: text,
   senderCode: text,

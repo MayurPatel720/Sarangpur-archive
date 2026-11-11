@@ -53,9 +53,9 @@ function returnSeverity(lot: ArchiveLotDoc): 'neutral' | 'info' | 'good' | 'warn
  */
 const STAGE_ENTRY_KINDS: Record<string, string[]> = {
   intake: ['intake_created'],
+  metadata: ['submitted_for_decision'],
   decision: ['submitted_for_decision'],
-  metadata: ['decision_recorded'],
-  scanning: ['scan_started'],
+  scanning: ['decision_recorded', 'scan_started'],
   mls_tag: ['scan_completed'],
   storage: ['mls_tagged'],
   returned: ['return_completed', 'return_recorded', 'decision_recorded'],

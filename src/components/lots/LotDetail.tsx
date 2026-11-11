@@ -328,14 +328,14 @@ function ProgressSection({ lot }: { lot: LotDetail }) {
               <div className="flex items-center gap-2 flex-wrap text-[13px]">
                 <Badge severity={SCAN_SEVERITY[ops.scanStatus] ?? 'neutral'}>{prettyEnum(ops.scanStatus)}</Badge>
                 <span className="text-ink-2">
-                  Scan · {num(ops.foundFileCount)} of {num(ops.expectedFileCount)} files
+                  Digitalization · {num(ops.foundFileCount)} of {num(ops.expectedFileCount)} files
                   {ops.scannedByName ? ` · by ${ops.scannedByName}` : ''}
                   {ops.scanDate ? ` · ${dateTime12(ops.scanDate)}` : ''}
                 </span>
                 {ops.folderPath ? <span className="font-mono text-[11.5px] text-ink-4 break-all">{ops.folderPath}</span> : null}
               </div>
             ) : (
-              <QuietRow>Scan not yet started.</QuietRow>
+              <QuietRow>Digitalization not yet started.</QuietRow>
             )}
             {mlsActive ? (
               <div className="flex items-center gap-2 flex-wrap text-[13px]">
@@ -406,7 +406,7 @@ function journeyEvents(lot: LotDetail, stageLabel: string): JourneyEvent[] {
     dd.overrideStatus === 'rejected'
       ? sortable(dd.decidedAt ?? lot.stageEnteredAt, 'Override rejected', `by ${dd.overrideApprovedByName ?? 'Unknown'}`, 'neutral')
       : null,
-    sortable(ops.scanDate, `Scan recorded by ${ops.scannedByName ?? 'Unknown'}`, undefined, 'good'),
+    sortable(ops.scanDate, `Digitalization recorded by ${ops.scannedByName ?? 'Unknown'}`, undefined, 'good'),
     sortable(ops.returnedAt, `Returned — ${ops.returnHandledByName ?? 'Unknown'}`, ops.returnMethod ? prettyEnum(ops.returnMethod) : undefined, 'info'),
     sortable(ops.discardedAt, `Discarded — ${ops.discardedByName ?? 'Unknown'}`, ops.discardReason ? prettyEnum(ops.discardReason) : undefined, 'critical'),
   ];

@@ -10,9 +10,9 @@
 /** The eight stages a lot moves through, in pipeline order. */
 export const STAGES = [
   'intake',
+  'metadata', // shown as "Data entry"
   'decision',
-  'metadata',
-  'scanning',
+  'scanning', // shown as "Digitalization"
   'mls_tag',
   'storage',
   'returned',
@@ -22,9 +22,9 @@ export type Stage = (typeof STAGES)[number];
 
 export const STAGE_LABELS: Record<Stage, string> = {
   intake: 'Intake',
+  metadata: 'Data entry',
   decision: 'Decision',
-  metadata: 'Metadata',
-  scanning: 'Scanning',
+  scanning: 'Digitalization',
   mls_tag: 'MLS tag',
   storage: 'Storage',
   returned: 'Returned',
@@ -37,8 +37,8 @@ export const STAGE_LABELS: Record<Stage, string> = {
  */
 export const IN_FLIGHT_STAGES: Stage[] = [
   'intake',
-  'decision',
   'metadata',
+  'decision',
   'scanning',
   'mls_tag',
 ];
@@ -320,9 +320,9 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  */
 export const STAGE_ACTION_LABELS: Record<string, string> = {
   intake: 'Finish intake',
+  metadata: 'Do data entry',
   decision: 'Decide',
-  metadata: 'Add metadata',
-  scanning: 'Scan',
+  scanning: 'Digitalize',
   mls_tag: 'Tag',
 };
 export const WORK_ON_LOT_VERB = 'Work on';

@@ -136,7 +136,9 @@ async function main() {
     );
     check('quantity now 10 with 10 items', (await LotItem.countDocuments({ lot: photoLot.id })) === 10);
     await submitForDecision(photoLot.id, volA);
-    check('assignee can now send to decision', (await getLotDetail(photoLot.id)).lot.stage === 'decision');
+    check('assignee can now send to data entry', (await getLotDetail(photoLot.id)).lot.stage === 'metadata');
+    await submitForDecision(photoLot.id, volA);
+    check('and then on to decision', (await getLotDetail(photoLot.id)).lot.stage === 'decision');
     await rejects('other volunteer still blocked', () => patchLot(photoLot.id, { version: 99, conditionNotes: 'y' }, volB), 403);
 
     console.log('\nAdmin: add media, reassign, attach/detach');

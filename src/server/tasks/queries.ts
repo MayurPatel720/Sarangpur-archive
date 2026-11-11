@@ -220,7 +220,7 @@ function pickGroup(
 /** What a stage asks of the lot's assignee. Role flags on the stage graph beat the static map. */
 export function stageAction(stage: string, graph: StageGraph): string {
   if (graph.decision.includes(stage)) return 'Decide';
-  if (graph.scan.includes(stage)) return 'Scan';
+  if (graph.scan.includes(stage)) return 'Digitalize';
   if (graph.mlsTag.includes(stage)) return 'Tag';
   return STAGE_ACTION_LABELS[stage] ?? WORK_ON_LOT_VERB;
 }

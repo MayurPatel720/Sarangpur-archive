@@ -33,7 +33,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
       setError(null);
       onChanged();
     },
-    onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not submit for decision.'),
+    onError: (e) => setError(e instanceof ApiRequestError ? e.message : 'Could not submit this lot.'),
   });
 
   const requestMut = useMutation({
@@ -57,7 +57,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
   });
 
   const showChecklist =
-    !terminal && (lot.stage === 'decision' || lot.decisionDetail.overrideStatus === 'approved');
+    !terminal && (lot.stage === 'metadata' || lot.stage === 'decision' || lot.decisionDetail.overrideStatus === 'approved');
   const canRevisit =
     recorded && !terminal && lot.decisionDetail.overrideStatus === 'approved';
   const showRequest =
@@ -72,18 +72,19 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
       <div className="p-3 md:p-4 flex flex-col gap-4">
         <FormError message={error} />
 
-        {lot.stage === 'intake' ? (
+        {lot.stage === 'intake' || lot.stage === 'metadata' ? (
           <div className="flex flex-col gap-2">
             {lot.intakeMissing.length > 0 ? (
               <div role="note" className="rounded-[6px] border border-line bg-surface-sunken px-3 py-2.5 text-[12.5px] text-ink-2">
-                <span className="font-semibold text-ink">Not ready for decision.</span> Still to fill in:{' '}
+                <span className="font-semibold text-ink">Not ready to move on.</span> Still to fill in:{' '}
                 {lot.intakeMissing.join(', ')}. Use Edit on this record
                 {lot.syncProject ? ' (it syncs to the whole project)' : ''}.
               </div>
             ) : (
               <p className="m-0 text-[13px] text-ink-2">
-                Intake is complete. Sending this lot to the decision queue locks nothing —
-                the record stays editable until a decision is recorded.
+                {lot.stage === 'intake'
+                  ? 'Intake is complete. Sending this lot to data entry locks nothing — the record stays editable until a decision is recorded.'
+                  : 'Data entry done? Sending this lot to the decision queue locks nothing — the record stays editable until a decision is recorded.'}
               </p>
             )}
             {canSubmit ? (
@@ -92,7 +93,7 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
                   disabled={submitMut.isPending || lot.intakeMissing.length > 0}
                   onClick={() => submitMut.mutate()}
                 >
-                  {submitMut.isPending ? 'Submitting…' : 'Submit for decision'}
+                  {submitMut.isPending ? 'Submitting…' : lot.stage === 'intake' ? 'Submit for data entry' : 'Submit for decision'}
                 </PrimaryButton>
               </div>
             ) : (
@@ -133,12 +134,12 @@ export function DecisionSection({ lot, onChanged }: { lot: DetailLot; onChanged:
             ) : null}
           </div>
         ) : (
-          lot.stage !== 'intake' ? (
+          lot.stage !== 'intake' && lot.stage !== 'metadata' ? (
             <p className="m-0 text-[13px] text-ink-2">No decision recorded yet — the checklist below writes the first one.</p>
           ) : null
         )}
 
-        {showChecklist || lot.stage === 'intake' ? (
+        {showChecklist || lot.stage === 'intake' || lot.stage === 'metadata' ? (
           <div className="flex flex-col gap-2 border-t border-line-soft pt-4">
             <p className="m-0 text-[13px] text-ink-2">
               Decisions are made item by item. Open the <a href="?tab=items" className="text-accent font-semibold no-underline hover:underline">Items</a>{' '}
