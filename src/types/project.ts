@@ -133,7 +133,6 @@ export const projectRowSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   lotCount: z.number(),
-  coordinatorName: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -166,8 +165,6 @@ export const projectListQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   /** Only projects where this user is the assignee of at least one child lot ("My lots"). */
   assignee: objectIdSchema.optional(),
-  /** The project's coordinator. */
-  coordinator: objectIdSchema.optional(),
   /** Projects with a lot of this format / at this stage. */
   format: z.string().trim().min(1).max(40).optional(),
   stage: z.string().trim().min(1).max(40).optional(),
@@ -189,29 +186,10 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 
 /* -------------------------------------------------------------------- create */
 
-export const projectCreateBodySchema = z
-  .object({
-    name: z.string().trim().min(1).max(160),
-    description: z.string().trim().max(2000).optional(),
-    coordinatorId: objectIdSchema.optional(),
-    /** Intake details every child lot will share. All optional — assignees fill gaps later. */
-    shared: projectSharedSchema.default({}),
-    /** Mandatory: the quantities. One child lot is created per distinct format. */
-    mediaLines: z
-      .array(mediaLineInputSchema)
-      .min(1, 'Add at least one media line.')
-      .max(20, 'No more than 20 media lines.'),
-    /** Per-format assignee. A format with no entry (or null) starts unassigned (admin-only). */
-    assignments: z.array(projectAssignmentSchema).max(20).default([]),
-    /** Optional per-format tasks, created in the same transaction as the project and its lots. */
-    tasks: z.array(projectTaskInputSchema).max(20).default([]),
-    /** The caller's local calendar day, used to reject past due dates. Defaults to the server's UTC day. */
-    today: isoDaySchema.optional(),
-  })
-  .refine((b) => b.mediaLines.reduce((sum, l) => sum + l.quantity, 0) <= 20000, {
-    message: 'Total quantity across media lines cannot exceed 20000.',
-    path: ['mediaLines'],
-  });
+export const projectCreateBodySchema = z.object({
+  name: z.string().trim().min(1, 'Give the project a name.').max(160),
+  description: z.string().trim().max(2000).optional(),
+});
 export type ProjectCreateBody = z.infer<typeof projectCreateBodySchema>;
 /** Route handlers receive the pre-default input; the server normalises it. */
 export type ProjectCreateInput = z.input<typeof projectCreateBodySchema>;
@@ -219,8 +197,6 @@ export type ProjectCreateInput = z.input<typeof projectCreateBodySchema>;
 export const projectCreateResponseSchema = z.object({
   id: z.string(),
   code: z.string(),
-  lots: z.array(z.object({ id: z.string(), lotReference: z.string(), format: z.string() })),
-  tasks: z.array(z.object({ id: z.string(), format: z.string() })),
 });
 export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
 
@@ -229,9 +205,6 @@ export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
 export const projectUpdateBodySchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
-  coordinatorId: objectIdSchema.nullable().optional(),
-  /** Shared intake values — applied to the project AND every synced child lot. */
-  shared: projectSharedPatchSchema.optional(),
 });
 export type ProjectUpdateBody = z.infer<typeof projectUpdateBodySchema>;
 
@@ -266,13 +239,11 @@ export type ProjectLotRow = z.infer<typeof projectLotRowSchema>;
 
 export const projectDetailResponseSchema = z.object({
   project: projectRowSchema.extend({
-    coordinatorId: z.string().nullable(),
     /** Who created the project (looked up by id at read time; null if the user is gone). */
     createdByName: z.string().nullable(),
-    shared: projectSharedSchema,
     /** Derived: distinct assignees of the project's lots. */
     team: z.array(z.object({ userId: z.string(), userName: z.string(), lotCount: z.number() })),
-    /** Formats present, with the lot each one lives in — for "add media" and reassigning. */
+    /** The project's lots with their format and quantity (header totals, the lot picker). */
     lotsByFormat: z.array(
       z.object({
         lotId: z.string(),
@@ -283,8 +254,6 @@ export const projectDetailResponseSchema = z.object({
         assigneeName: z.string().nullable(),
       }),
     ),
-    /** Intake fields still empty across the whole project. */
-    missing: z.array(z.string()),
   }),
   progress: projectProgressSchema,
   /** Member lots, paginated — same rows as the intake register. */
@@ -297,20 +266,7 @@ export type ProjectDetailResponse = z.infer<typeof projectDetailResponseSchema>;
 
 export const projectAssignBodySchema = z.object({
   lotId: objectIdSchema,
-  /** Optional: who owns the lot once it joins (a synced lot with no assignee is admin-only). */
-  assigneeId: objectIdSchema.optional(),
 });
-
-/** Admin adds more media to a project later (new format → new child lot). */
-export const projectAddMediaBodySchema = z.object({
-  mediaLines: z.array(mediaLineInputSchema).min(1).max(20),
-  assignments: z.array(projectAssignmentSchema).max(20).default([]),
-  /** Only for NEW formats (a format that already has a lot cannot be assigned again). */
-  tasks: z.array(projectTaskInputSchema).max(20).default([]),
-  today: isoDaySchema.optional(),
-});
-export type ProjectAddMediaBody = z.infer<typeof projectAddMediaBodySchema>;
-export type ProjectAddMediaInput = z.input<typeof projectAddMediaBodySchema>;
 
 /** PUT /api/lots/[lotId]/assignee — null clears the assignee. */
 export const lotAssigneeBodySchema = z.object({ assigneeId: objectIdSchema.nullable() });
@@ -332,6 +288,10 @@ export type LotProjectsResponse = z.infer<typeof lotProjectsResponseSchema>;
 /* ------------------------------------------------------- manual item creation */
 
 export const itemCreateBodySchema = z.object({
+  /** How many items to add (each is numbered in order). */
+  quantity: z.number().int().min(1).max(200).default(1),
+  /** The sheet (media line) the items belong to; default the first. */
+  lineIndex: z.number().int().min(0).default(0),
   /**
    * Target group within the lot. Omitted = append to the last group, rolling
    * to a new group when the last one is full (36 items, intake convention).
@@ -348,6 +308,9 @@ export const itemCreateResponseSchema = z.object({
   code: z.string(),
   groupNo: z.number(),
   itemNo: z.number(),
+  /** How many items were added, and the last code (only differs from `code` when more than one). */
+  created: z.number(),
+  lastCode: z.string(),
 });
 export type ItemCreateResponse = z.infer<typeof itemCreateResponseSchema>;
 /** Route handlers receive the pre-default input; the server normalises it. */

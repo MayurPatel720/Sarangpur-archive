@@ -54,6 +54,13 @@ const matchesFilter = (r: GridItem, f: Filter) =>
 
 const SELECTION_CLEAR: Record<number, string[]> = {};
 
+/** The groups of one sheet with how many items each holds (for the Add item dialog). */
+const groupCounts = (items: GridItem[]) => {
+  const counts = new Map<number, number>();
+  for (const i of items) counts.set(i.groupNo, (counts.get(i.groupNo) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([groupNo, count]) => ({ groupNo, count }));
+};
+
 export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -643,6 +650,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
       {showAdd ? (
         <AddItemDialog
           lotId={lotId}
+          sheets={sheets.map((sh) => ({ lineIndex: sh.lineIndex, name: sh.name, groups: groupCounts(sh.all) }))}
           onClose={() => {
             setShowAdd(false);
             refresh();

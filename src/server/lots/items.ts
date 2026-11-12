@@ -10,17 +10,18 @@ import { assertActiveReferenceValue } from '@/server/reference';
 import type { ItemCreateInput, ItemCreateResponse } from '@/types/project';
 
 /**
- * Manual item entry — volunteers adding individual items to a lot beyond what
- * intake auto-generated from the received quantity.
+ * Manual item entry — volunteers adding items to a lot beyond what intake auto-generated from the
+ * received quantity. One call adds `quantity` items to one sheet (media line) and one group.
  *
- * Group / position continue the intake convention (36 per group); the code itself comes from the item scheme (`MDV-AHM-0021-R-000`):
- * appending targets the last group, rolling to a new group when it is full,
- * or an explicit `groupNo` starts/continues that group. Codes stay unique via
- * the collection's unique index; a lost append race surfaces as 409, not 500.
+ * Group / position continue the intake convention (36 per group); the code itself comes from the item
+ * scheme (`MDV-AHM-0021-R-000`): leaving the group out appends to the last group, rolling to a new one
+ * when it is full; an explicit `groupNo` starts / continues that group and rolls the rest into the next
+ * new group once it holds 36. Codes stay unique via the collection's unique index; a lost append race
+ * surfaces as 409, not 500.
  *
- * Counters: intake `quantity`/`quantityToDigitize` record what was RECEIVED
- * and are left untouched — only the live `digitization.expectedFileCount`
- * moves (when the new item is selected), so the digitize queue stays truthful.
+ * Counters: intake `quantity`/`quantityToDigitize` record what was RECEIVED and are left untouched —
+ * only the live `digitization.expectedFileCount` moves (when the new items are selected), so the
+ * digitize queue stays truthful.
  */
 const ITEMS_PER_GROUP = 36;
 
@@ -30,6 +31,8 @@ export async function createItem(
   ctx: MutationContext,
 ): Promise<ItemCreateResponse> {
   const selected = body.selectedForDigitization ?? true;
+  const quantity = body.quantity ?? 1;
+  const lineIndex = body.lineIndex ?? 0;
   if (!selected && !body.notDigitizedReason) {
     throw new HttpError(400, 'Give a reason when the item is not selected for digitization.');
   }
@@ -41,15 +44,18 @@ export async function createItem(
     lotId,
     actor: auditActor(ctx),
     kind: 'item_created',
-    title: 'Item added',
+    title: quantity === 1 ? 'Item added' : `${quantity} items added`,
     detail: body.groupNo ? `Group ${body.groupNo}` : 'Appended to last group',
     mutate: async (lot, session) => {
+      const line = lot.mediaLines?.[lineIndex];
+      if (lineIndex > 0 && !line) throw new HttpError(400, 'That sheet does not exist on this lot.');
 
       const groups: { _id: number; maxItemNo: number; count: number }[] =
         await LotItem.aggregate([
           { $match: { lot: lot._id } },
           { $group: { _id: '$groupNo', maxItemNo: { $max: '$itemNo' }, count: { $sum: 1 } } },
         ]).session(session);
+      let highestGroup = groups.reduce((m, g) => Math.max(m, g._id), 0);
 
       let groupNo: number;
       let itemNo: number;
@@ -67,10 +73,11 @@ export async function createItem(
           itemNo = last.maxItemNo + 1;
         }
       }
+      highestGroup = Math.max(highestGroup, groupNo);
 
       // Continue the pair already used by this sheet (the user may have changed it from
       // the default); an empty sheet falls back to sub-type prefix + origin.
-      const sibling = (await LotItem.findOne({ lot: lot._id, lineIndex: 0 })
+      const sibling = (await LotItem.findOne({ lot: lot._id, lineIndex })
         .sort({ sortOrder: -1 })
         .select('code sortOrder')
         .session(session)
@@ -78,46 +85,53 @@ export async function createItem(
       // A row cleared by Discard → "Yes and clear code" is now called discard-N: continue the pair from a normal row.
       const codedSibling =
         sibling && /^discard-\d+$/.test(sibling.code)
-          ? ((await LotItem.findOne({ lot: lot._id, lineIndex: 0, clearedCode: null })
+          ? ((await LotItem.findOne({ lot: lot._id, lineIndex, clearedCode: null })
               .sort({ sortOrder: -1 })
               .select('code')
               .session(session)
               .lean()) as { code: string } | null)
           : sibling;
       const parts = codedSibling ? parseItemCodeParts(codedSibling.code) : null;
-      const [code] = await allocateItemCodes(
-        parts?.abbr1 ?? (await namingPrefix(lot.format, lot.mediaSubtype)),
+      const codes = await allocateItemCodes(
+        parts?.abbr1 ?? (await namingPrefix(line?.format ?? lot.format, line?.mediaSubtype ?? lot.mediaSubtype)),
         parts?.abbr2 ?? lot.originSource ?? 'OTH',
-        1,
+        quantity,
         session,
       );
-      if (!code) throw new HttpError(500, 'Could not allocate an item code.');
-      const sortOrder = (sibling?.sortOrder ?? -1) + 1;
-      const format = lot.mediaLines?.[0]?.format ?? lot.format;
-      let itemId = '';
+      if (codes.length !== quantity) throw new HttpError(500, 'Could not allocate the item codes.');
+      const firstSort = (sibling?.sortOrder ?? -1) + 1;
+      const format = line?.format ?? lot.mediaLines?.[0]?.format ?? lot.format;
+      const dataType = line?.dataType ?? lot.mediaLines?.[0]?.dataType ?? lot.dataType;
+
+      // Number the items one after another; a full group rolls the rest into the next new group.
+      const docs = codes.map((code, i) => {
+        if (itemNo > ITEMS_PER_GROUP) {
+          highestGroup += 1;
+          groupNo = highestGroup;
+          itemNo = 1;
+        }
+        const doc = {
+          lot: lot._id,
+          code,
+          groupNo,
+          itemNo,
+          sortOrder: firstSort + i,
+          format,
+          // The chosen sheet (media line): its own breakdown stays intake-defined, totals stay truthful.
+          lineIndex,
+          selectedForDigitization: selected,
+          notDigitizedReason: selected ? null : (body.notDigitizedReason ?? null),
+          fileName: body.fileName?.trim() || null,
+          ...autoDecisionFields(format),
+          ...bornDigitalFields(format, dataType),
+        };
+        itemNo += 1;
+        return doc;
+      });
+
+      let created: { _id: unknown }[];
       try {
-        const [item] = await LotItem.create(
-          [
-            {
-              lot: lot._id,
-              code,
-              groupNo,
-              itemNo,
-              sortOrder,
-              format,
-              // Manual entries attach to the primary media line (index 0):
-              // per-line breakdowns stay intake-defined, totals stay truthful.
-              lineIndex: 0,
-              selectedForDigitization: selected,
-              notDigitizedReason: selected ? null : (body.notDigitizedReason ?? null),
-              fileName: body.fileName?.trim() || null,
-              ...autoDecisionFields(format),
-              ...bornDigitalFields(format, lot.mediaLines?.[0]?.dataType ?? lot.dataType),
-            },
-          ],
-          { session },
-        );
-        itemId = String(item!._id);
+        created = await LotItem.create(docs, { session, ordered: true });
       } catch (error) {
         // Lost an append race: another volunteer took this slot first.
         if (error instanceof Error && (error as { code?: number }).code === 11000) {
@@ -130,9 +144,17 @@ export async function createItem(
       }
 
       if (selected && !autoDecisionFields(format)) {
-        lot.set('digitization.expectedFileCount', (lot.digitization?.expectedFileCount ?? 0) + 1);
+        lot.set('digitization.expectedFileCount', (lot.digitization?.expectedFileCount ?? 0) + quantity);
       }
-      return { id: itemId, code, groupNo, itemNo };
+      const first = docs[0]!;
+      return {
+        id: String(created[0]!._id),
+        code: first.code,
+        groupNo: first.groupNo,
+        itemNo: first.itemNo,
+        created: quantity,
+        lastCode: docs[docs.length - 1]!.code,
+      };
     },
   });
 }

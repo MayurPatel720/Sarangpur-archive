@@ -17,13 +17,10 @@ import { useToast } from '@/components/ui/Toast';
 import type { ProjectLotRow } from '@/types/project';
 import { ProjectFormDialog } from './ProjectFormDialog';
 import { AssignLotDialog } from './AssignLotDialog';
-import { AddMediaDialog } from './AddMediaDialog';
 import { ProjectHeader } from './ProjectHeader';
 import { ProjectKpis } from './ProjectKpis';
-import { ProjectInfoCard } from './ProjectInfoCard';
 import { ProjectLotsTable } from './ProjectLotsTable';
 import { ProjectTasksCard } from './ProjectTasksCard';
-import { ProjectPhotosCard } from './ProjectPhotosCard';
 import { ProjectProgressCard } from './ProjectProgressCard';
 import { ProjectActivityCard } from './ProjectActivityCard';
 
@@ -45,14 +42,11 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const toast = useToast();
   const me = useMe();
   const stages = useReferenceList('stage');
-  const origins = useReferenceList('originSource');
   const stageLabel = (s: string) =>
     stages.data?.items.find((i) => i.value === s)?.label ?? STAGE_LABELS[s as keyof typeof STAGE_LABELS] ?? s;
-  const originLabel = (v: string) => origins.data?.items.find((i) => i.value === v)?.label ?? v;
   const { page, pageSize, setPage, setPageSize } = useUrlPagination(25, 'lots');
   const [showEdit, setShowEdit] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
-  const [showAddMedia, setShowAddMedia] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<ProjectLotRow | null>(null);
 
   const grants = me.data?.grants ?? [];
@@ -98,7 +92,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
             <Skeleton key={i} className="h-[88px] w-full" />
           ))}
         </div>
-        <SectionSkeleton title="Project information" />
         <SectionSkeleton title="Lots" height="h-40" />
         <SectionSkeleton title="Progress by stage" height="h-16" />
       </div>
@@ -136,8 +129,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         project={project}
         canEdit={canEdit}
         onEdit={() => setShowEdit(true)}
-        onShared={() => router.push(`/projects/${projectId}/shared`)}
-        onAddMedia={() => setShowAddMedia(true)}
       />
 
       <ProjectKpis
@@ -145,8 +136,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         progress={progress}
         tasks={!canViewTasks ? undefined : projectTasks.query.data ? projectTasks.counts : null}
       />
-
-      <ProjectInfoCard projectId={projectId} shared={project.shared} canEdit={canEdit} originLabel={originLabel} />
 
       <ProjectLotsTable
         lots={lots}
@@ -156,11 +145,10 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         stageLabel={stageLabel}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
-        onAddLots={() => setShowAssign(true)}
+        onAddExisting={() => setShowAssign(true)}
+        onCreateNew={() => router.push(`/register/new?project=${projectId}`)}
         onRemove={setRemoveTarget}
       />
-
-      <ProjectPhotosCard projectId={projectId} />
 
       {canViewTasks ? (
         <ProjectTasksCard projectId={projectId} projectCode={project.code} canAssign={canAssignTasks} />
@@ -179,14 +167,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
       {showEdit ? <ProjectFormDialog project={project} onClose={() => setShowEdit(false)} /> : null}
       {showAssign ? (
         <AssignLotDialog projectId={projectId} projectCode={project.code} onClose={() => setShowAssign(false)} />
-      ) : null}
-      {showAddMedia ? (
-        <AddMediaDialog
-          projectId={projectId}
-          existingFormats={[...new Set(project.lotsByFormat.map((l) => l.format))]}
-          existingLots={project.lotsByFormat.map((l) => ({ format: l.format, assigneeName: l.assigneeName }))}
-          onClose={() => setShowAddMedia(false)}
-        />
       ) : null}
       {removeTarget ? (
         <ConfirmDialog

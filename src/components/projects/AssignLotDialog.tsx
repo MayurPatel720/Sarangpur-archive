@@ -6,16 +6,13 @@ import { ApiRequestError, lotsApi, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
 import { Dialog } from '@/components/ui/Dialog';
-import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
-import { useUserPicker } from '@/hooks/useUserPicker';
+import { Field, FormError, GhostButton, PrimaryButton, TextInput } from '@/components/ui/Form';
 import { ErrorState } from '@/components/ui/primitives';
 import { useToast } from '@/components/ui/Toast';
 
 /**
- * Admin-only: search the lot register and attach a lot to this project. The
- * project's shared details overwrite the lot's (blanks on the project are filled
- * from the lot), and the lot starts syncing. Pick an assignee — a synced lot with
- * no assignee is admin-only. The server call is idempotent.
+ * Search the lot register and add an existing lot to this project. The lot keeps its own details.
+ * The server call is idempotent.
  */
 export function AssignLotDialog({
   projectId,
@@ -33,8 +30,6 @@ export function AssignLotDialog({
   const [debounced, setDebounced] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<string[]>([]);
-  const [assigneeId, setAssigneeId] = useState('');
-  const users = useUserPicker();
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(search.trim()), 300);
@@ -48,7 +43,7 @@ export function AssignLotDialog({
   });
 
   const assign = useMutation({
-    mutationFn: (lot: { id: string; lotReference: string }) => projectsApi.assignLot(projectId, lot.id, assigneeId || undefined),
+    mutationFn: (lot: { id: string; lotReference: string }) => projectsApi.assignLot(projectId, lot.id),
     onSuccess: (_data, lot) => {
       setAddedIds((prev) => [...prev, lot.id]);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
@@ -71,16 +66,6 @@ export function AssignLotDialog({
             placeholder="Owner, lot ref, place…"
             aria-label="Search lots to add"
           />
-        </Field>
-        <Field label="Assign to" hint="Owns the lot end to end. The project's details replace the lot's own.">
-          <Select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} aria-label="Assignee for added lots">
-            <option value="">Keep current / unassigned</option>
-            {(users.data?.users ?? []).map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
-              </option>
-            ))}
-          </Select>
         </Field>
         {results.isError ? (
           <ErrorState message="Couldn't search lots." onRetry={() => results.refetch()} />

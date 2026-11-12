@@ -169,6 +169,11 @@ const archiveLotSchema = new Schema(
      */
     syncProjectId: { type: Schema.Types.ObjectId, ref: 'Project', default: null, index: true },
     /**
+     * Lots saved together from one intake form (one lot per media format) share this id, so each one can show its
+     * siblings — a standalone lot has no parent project to list them. Null for older lots and single-format intakes.
+     */
+    linkGroupId: { type: Schema.Types.ObjectId, default: null, index: true },
+    /**
      * Who owns this lot end to end. Only the assignee and `project:assign` holders
      * may mutate it (enforced centrally in withAudit). `assigneeName` is denormalised
      * at write time and never back-filled (rule 5).

@@ -93,11 +93,17 @@ async function main() {
   const now = new Date().toISOString();
   const owner = (name: string) => ({ name, phone: '+91 98000 00000' });
 
-  const p1 = await createProject(
+  const p1 = await createProject({ name: 'Surat Mandir Archive', description: 'Photos and videos kept at the Surat mandir.' }, admin);
+  const p2 = await createProject({ name: 'Shah Family Collection', description: 'Family negatives and cassettes, Mumbai.' }, admin);
+  // A project's lots come from the intake form (one lot per format), saved straight into the project.
+  const p1Lots = await createIntake(
     {
-      name: 'Surat Mandir Archive',
-      description: 'Photos and videos kept at the Surat mandir.',
-      shared: { dateReceived: now, originSource: 'SAR', owner: owner('Surat Mandir Trust') },
+      dateReceived: now,
+      originSource: 'SAR',
+      owner: owner('Surat Mandir Trust'),
+      locationReceiver: owner('Archive Receiver'),
+      pointsOfContact: [],
+      projectId: p1.id,
       mediaLines: [
         { format: 'photo', dataType: 'physical', mediaSubtype: '35MM Film — Album', quantity: 6, quantityToDigitize: 6 },
         { format: 'video', dataType: 'both', mediaSubtype: 'Mini DVs', quantity: 4, quantityToDigitize: 4 },
@@ -105,11 +111,14 @@ async function main() {
     },
     admin,
   );
-  const p2 = await createProject(
+  const p2Lots = await createIntake(
     {
-      name: 'Shah Family Collection',
-      description: 'Family negatives and cassettes, Mumbai.',
-      shared: { dateReceived: now, originSource: 'MUM', owner: owner('Shah Family') },
+      dateReceived: now,
+      originSource: 'MUM',
+      owner: owner('Shah Family'),
+      locationReceiver: owner('Archive Receiver'),
+      pointsOfContact: [],
+      projectId: p2.id,
       mediaLines: [
         { format: 'photo', dataType: 'physical', mediaSubtype: '35MM Film — Negatives', quantity: 5, quantityToDigitize: 5 },
         { format: 'audio', dataType: 'both', mediaSubtype: 'Cassettes', quantity: 3, quantityToDigitize: 3 },
@@ -147,10 +156,10 @@ async function main() {
     );
     lotIds.push(lot.id);
   }
-  console.log(`   ${p1.lots.length + p2.lots.length} project lots + ${lotIds.length} standalone lots`);
+  console.log(`   ${p1Lots.lots.length + p2Lots.lots.length} project lots + ${lotIds.length} standalone lots`);
 
   // A little life in the first Excel: the user's own code abbreviations, and some details.
-  const first = p1.lots.find((l) => l.format === 'photo')!;
+  const first = p1Lots.lots.find((l) => l.format === 'photo')!;
   await recodeSheet(first.id, { lineIndex: 0, abbr1: 'ALB', abbr2: 'surat' }, admin);
   const grid = await getItemsGrid(first.id, { userId: admin.userId, grants: admin.grants });
   const ids = grid.items.map((i) => i.id);

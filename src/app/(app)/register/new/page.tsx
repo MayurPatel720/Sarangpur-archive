@@ -15,10 +15,12 @@ export const metadata: Metadata = {
 export default async function NewIntakePage({
   searchParams,
 }: {
-  searchParams: Promise<{ format?: string }>;
+  searchParams: Promise<{ format?: string; project?: string }>;
 }) {
-  const { format } = await searchParams;
+  const { format, project } = await searchParams;
   const initialFormat =
     format && (FORMATS as readonly string[]).includes(format) ? format : undefined;
-  return <IntakeForm initialFormat={initialFormat} />;
+  // `?project=` comes from a project page ("Create new lot"): the lots saved join that project.
+  const projectId = project && /^[0-9a-fA-F]{24}$/.test(project) ? project : undefined;
+  return <IntakeForm initialFormat={initialFormat} projectId={projectId} />;
 }

@@ -281,35 +281,42 @@ Pipelines (`src/server/tasks/pipelines.ts`, covered in `scripts/verify-pipelines
 
 ---
 
-## 7c. Projects — per-format assignment and tasks (`src/types/project.ts`)
+## 7c. Projects and linked lots (`src/types/project.ts`)
 
-`POST /api/projects` (`project:create`, → 201) and `POST /api/projects/[projectId]/media` (`project:edit`)
-create one child lot per format. Besides `mediaLines` they accept, per FORMAT (rows of the same
-format share one lot):
+A project is only a **name and a description** that groups lots. It holds no intake data, and nothing is
+copied between a project and its lots; its lots keep their own details.
 
-| Field | Shape | Notes |
-|---|---|---|
-| `assignments` | `[{ format, assigneeId | null }]` (≤20) | The lot owner. Always allowed. The wizard sends the first assignee of each format. |
-| `tasks` | `[{ format, description?, checklist: string[], priority, dueDate?, assigneeIds: id[] }]` (≤20) | Optional. Needs `task:assign` — **403** without it (plain `assignments` still work). |
-| `today` | `YYYY-MM-DD` | Caller's local day; a `dueDate` before it is rejected. Defaults to the server's UTC day. |
+- `POST /api/projects` (`project:create`, → 201) — body `{ name, description? }`, response `{ id, code }`.
+- `PATCH /api/projects/[projectId]` (`project:edit`) — `{ name?, description? }`.
+- `POST /api/projects/[projectId]/lots` (`project:assign`) — `{ lotId }` adds an EXISTING lot (idempotent);
+  `DELETE /api/projects/[projectId]/lots/[lotId]` removes it.
+- **New lot inside a project:** open the normal intake form with `/register/new?project=<projectId>`; the intake
+  body carries `projectId`. Every lot saved joins the project in the same transaction (needs `project:assign`,
+  **403** without it) and the project's `lotCount` and membership history are written there.
+- `GET /api/projects/[projectId]` (`project:view`) — the project page: `project` (code, name, description,
+  `lotCount`, `createdByName`, derived `team`, `lotsByFormat`), `progress`, member `lots` (paginated, with
+  `assigneeId`, `mediaLines`, `scanned` / `scanTarget`, `tagged`) and `recentActivity`. Tasks come from
+  `GET /api/tasks?project=<id>`.
 
-Task rules: `format` must be one of the lot formats being created (on add-media: a NEW format — a
-format that already has a lot cannot be assigned again); one task per format (a repeat is rejected);
-`assigneeIds` are 1–20 ACTIVE users, de-duplicated; `checklist` items are trimmed, 1–200 chars, ≤50;
-`dueDate` must be a real day and not in the past. The **title is built on the server** from the final
-project name — `<Format label> lot — <project name>` — and the task is linked to the new lot
-(`lotId`/`lotCode`), the project (`projectId`/`projectCode`) and the format exactly as `POST /api/tasks` does.
+### One lot per format, and linked lots
 
-Atomicity: `createProject` writes the project, every lot, every task, and their `ActivityLog` rows and
-assignee `Notification` rows (never to the actor) in ONE MongoDB transaction — all or nothing. Tasks reuse
-`createTaskInSession` / `persistTaskAudit` (the in-session halves of `createTask` / `withTaskAudit`). Any
-task failure aborts everything; its message starts with `<Format label> lot task: ` so the UI can reopen
-that format's dialog. (Add-media validates grant, formats, dates and assignees up front, then writes each NEW
-lot with its task in one transaction per lot; appends to existing formats keep their own transactions.)
+`POST /api/lots` (the intake form) always creates **one lot per media format**: rows of the same format share one lot.
+The optional per-format `assignments` (the lot owner) and `tasks` (`task:assign`) apply to that format's lot, exactly
+as on `POST /api/tasks`. When one submit makes more than one lot, they all get the same `linkGroupId`, so a standalone
+lot (no parent project) can still show its siblings: `GET /api/lots/[lotId]` returns `linkedLots: [{ id, lotReference,
+format, stage }]` — the other lots saved from the same form (empty for a single-format intake or an older lot).
+The response lists every lot created: `{ id, lotReference, itemsCreated, lots: [{ id, lotReference, format }] }`.
 
-Response of `POST /api/projects`: `{ id, code, lots: [{id, lotReference, format}], tasks: [{id, format}] }`.
+Atomicity: all the lots, their tasks and (when opened from a project) the project membership are written in ONE
+MongoDB transaction — all or nothing. A task failure's message starts with `<Format label> lot task: ` so the UI can
+reopen that format's dialog.
 
-`GET /api/projects/[projectId]` (`project:view`) adds, for the project page: `project.createdByName` (creator, one indexed user read; null if gone) and, on each `lots.rows[]` entry, `assigneeId`, `mediaLines: [{mediaSubtype, quantity}]` and the denormalised counters `scanned` / `scanTarget` (digitization found / expected files) and `tagged` (MLS tagged count). `coordinatorId` / `coordinatorName` are still returned but the UI no longer shows or edits them. The page reads its tasks from `GET /api/tasks?project=<id>`.
+### Add items by hand
+
+`POST /api/lots/[lotId]/items` body: `{ quantity? (1–200, default 1), lineIndex? (the sheet, default 0), groupNo?,
+selectedForDigitization?, notDigitizedReason?, fileName? }`. Items are numbered one after another in one transaction.
+`groupNo` omitted continues the last group; a group holds 36, so the rest rolls into the next new group. Response:
+`{ id, code, groupNo, itemNo, created, lastCode }` (the first item, plus how many and the last code).
 
 ---
 

@@ -3,19 +3,15 @@ import { date, num } from '@/lib/format';
 import { GhostButton } from '@/components/ui/Form';
 import type { ProjectDetailResponse } from '@/types/project';
 
-/** Code, name, description, a one-line meta summary, and the admin actions. */
+/** Code, name, description, a one-line meta summary, and the Edit action. */
 export function ProjectHeader({
   project,
   canEdit,
   onEdit,
-  onShared,
-  onAddMedia,
 }: {
   project: ProjectDetailResponse['project'];
   canEdit: boolean;
   onEdit: () => void;
-  onShared: () => void;
-  onAddMedia: () => void;
 }) {
   const items = project.lotsByFormat.reduce((sum, l) => sum + l.quantity, 0);
   const formats = [...new Set(project.lotsByFormat.map((l) => l.format))].map(
@@ -43,8 +39,6 @@ export function ProjectHeader({
       {canEdit ? (
         <div className="sm:ml-auto flex flex-wrap gap-2 flex-shrink-0">
           <GhostButton onClick={onEdit}>Edit</GhostButton>
-          <GhostButton onClick={onShared}>Shared details</GhostButton>
-          <GhostButton onClick={onAddMedia}>Add media</GhostButton>
         </div>
       ) : null}
     </header>

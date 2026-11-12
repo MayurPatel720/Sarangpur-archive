@@ -146,7 +146,6 @@ import {
   projectListResponseSchema,
   projectUpdateResponseSchema,
   type ItemCreateInput,
-  type ProjectAddMediaInput,
   type ItemCreateResponse,
   type LotProjectsResponse,
   type ProjectAssignResponse,
@@ -627,23 +626,12 @@ export const projectsApi = {
       body,
       projectUpdateResponseSchema,
     ),
-  assignLot: (projectId: string, lotId: string, assigneeId?: string) =>
+  assignLot: (projectId: string, lotId: string) =>
     sendJson<ProjectAssignResponse>(
       `/api/projects/${encodeURIComponent(projectId)}/lots`,
       'POST',
-      { lotId, ...(assigneeId ? { assigneeId } : {}) },
+      { lotId },
       projectAssignResponseSchema,
-    ),
-  addMedia: (projectId: string, body: ProjectAddMediaInput) =>
-    sendJson<{ lots: { id: string; lotReference: string; format: string; created: boolean }[] }>(
-      `/api/projects/${encodeURIComponent(projectId)}/media`,
-      'POST',
-      body,
-      z.object({
-        lots: z.array(
-          z.object({ id: z.string(), lotReference: z.string(), format: z.string(), created: z.boolean() }),
-        ),
-      }),
     ),
   setAssignee: (lotId: string, assigneeId: string | null) =>
     sendJson<{ lotId: string; assigneeId: string | null; assigneeName: string | null }>(

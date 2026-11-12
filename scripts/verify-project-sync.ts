@@ -1,5 +1,6 @@
 /**
- * Integration check for the project wizard / shared-data sync / assignee rule.
+ * Integration check for projects (a name + description that group lots), the intake that makes one linked lot per format,
+ * adding lots to a project, and the assignee rule.
  *
  *   npm run verify:project-sync
  *
@@ -18,8 +19,8 @@ import { Project } from '../src/models/Project';
 import { User } from '../src/models/User';
 import type { MutationContext } from '../src/lib/api';
 import { ALL_PERMISSIONS } from '../src/server/permissions';
-import { createProject, updateProject, assignLot, unassignLot, setLotAssignee, addProjectMedia } from '../src/server/projects/mutations';
-import { patchLot, submitForDecision, createIntake, replaceMediaLines } from '../src/server/lots/mutations';
+import { createProject, updateProject, assignLot, unassignLot, setLotAssignee } from '../src/server/projects/mutations';
+import { patchLot, submitForDecision, createIntake } from '../src/server/lots/mutations';
 import { getProjectDetail } from '../src/server/projects/queries';
 import { getLotDetail } from '../src/server/lots/queries';
 
@@ -63,111 +64,83 @@ async function main() {
   const video = await sample('video');
 
   const createdProjects: Types.ObjectId[] = [];
-  const extraLots: string[] = [];
+  const createdLots: string[] = [];
   try {
-    console.log('\nCreate project (one lot per format)');
-    const created = await createProject(
-      {
-        name: 'Verify project',
-        shared: { owner: { name: 'Test Owner' } },
-        mediaLines: [
-          { ...photo, quantity: 5 },
-          { ...photo, quantity: 3, quantityRemarks: 'second photo row' },
-          { ...video, quantity: 2 },
-        ],
-        assignments: [
-          { format: 'photo', assigneeId: String(u2._id) },
-          { format: 'video', assigneeId: String(u3._id) },
-        ],
-      },
-      admin,
-    );
+    console.log('\nCreate project (name + description only)');
+    const created = await createProject({ name: 'Verify project', description: 'Throw-away' }, admin);
     createdProjects.push(new Types.ObjectId(created.id));
-    check('two child lots (photo + video)', created.lots.length === 2, created.lots);
-    const photoLot = created.lots.find((l) => l.format === 'photo')!;
-    const videoLot = created.lots.find((l) => l.format === 'video')!;
-    const pd = await getLotDetail(photoLot.id);
-    check('photo lot quantity = 8', pd.lot.quantity === 8, pd.lot.quantity);
-    check('shared owner copied', pd.lot.owner.name === 'Test Owner', pd.lot.owner);
-    check('date/origin missing → gate list', pd.lot.intakeMissing.join() === 'Date received,Origin source', pd.lot.intakeMissing);
-    check('assignee set', pd.lot.assignee?.id === String(u2._id), pd.lot.assignee);
-    check('items generated (8)', (await LotItem.countDocuments({ lot: photoLot.id })) === 8);
+    const empty = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 }, admin.grants);
+    check('a new project has no lots', empty.project.lotCount === 0 && empty.lots.total === 0, empty.project);
+    check('description kept', empty.project.description === 'Throw-away');
 
-    console.log('\nIntake gate');
-    await rejects('cannot submit with date/origin missing', () => submitForDecision(photoLot.id, volA), 400);
-
-    console.log('\nAssignee rule');
-    await rejects('non-assignee cannot edit', () => patchLot(videoLot.id, { version: 0, conditionNotes: 'x' }, volA), 403);
-
-    console.log('\nChild edit syncs to project + sibling');
+    console.log('\nIntake from a project: one lot per format, linked, inside the project');
     const originSource = (await ArchiveLot.findOne({ originSource: { $ne: null } }).select('originSource').lean())!.originSource!;
-    const v0 = (await getLotDetail(photoLot.id)).lot.version;
-    await patchLot(
-      photoLot.id,
-      { version: v0, originSource, dateReceived: new Date('2026-09-01T00:00:00+05:30').toISOString() },
-      volA,
-    );
-    const sib = await getLotDetail(videoLot.id);
-    check('sibling got origin', sib.lot.originSource === originSource, sib.lot.originSource);
-    check('sibling got date', Boolean(sib.lot.dateReceived), sib.lot.dateReceived);
+    const intake = {
+      dateReceived: new Date().toISOString(),
+      originSource,
+      owner: { name: 'Verify Owner' },
+      locationReceiver: { name: 'Verify Receiver' },
+      pointsOfContact: [],
+      mediaLines: [
+        { ...photo, quantity: 5 },
+        { ...photo, quantity: 3, quantityRemarks: 'second photo row' },
+        { ...video, quantity: 2 },
+      ],
+    };
+    await rejects('adding to a project needs project:assign', () => createIntake({ ...intake, projectId: created.id }, volA), 403);
+    const made = await createIntake({ ...intake, projectId: created.id }, admin);
+    createdLots.push(...made.lots.map((l) => l.id));
+    check('two lots (photo + video), not one', made.lots.length === 2 && made.lots.map((l) => l.format).sort().join() === 'photo,video', made.lots);
+    const photoLot = made.lots.find((l) => l.format === 'photo')!;
+    const videoLot = made.lots.find((l) => l.format === 'video')!;
+    const pd = await getLotDetail(photoLot.id);
+    check('photo lot holds both photo rows (quantity 8)', pd.lot.quantity === 8 && (await LotItem.countDocuments({ lot: photoLot.id })) === 8, pd.lot.quantity);
+    check('each lot keeps its own owner details', pd.lot.owner.name === 'Verify Owner');
+    check('lots from one form are linked to each other', pd.lot.linkedLots.length === 1 && pd.lot.linkedLots[0]!.id === videoLot.id, pd.lot.linkedLots);
+    check('the project counts them', (await Project.findById(created.id).lean())!.lotCount === 2);
+    check('nothing is synced', pd.lot.syncProject === null);
     const proj = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 }, admin.grants);
+    check('the project page lists both lots', proj.lots.total === 2 && proj.progress.lotsTotal === 2, proj.lots.total);
+
+    console.log('\nStandalone intake: also one lot per format, linked');
+    const alone = await createIntake(intake, admin);
+    createdLots.push(...alone.lots.map((l) => l.id));
+    check('standalone with two formats makes two lots', alone.lots.length === 2, alone.lots);
+    const aloneDetail = await getLotDetail(alone.lots[0]!.id);
+    check('the standalone lots are linked, with no project', aloneDetail.lot.linkedLots.length === 1 && aloneDetail.lot.linkedLots[0]!.id === alone.lots[1]!.id, aloneDetail.lot.linkedLots);
+    const single = await createIntake({ ...intake, mediaLines: [{ ...photo, quantity: 2 }] }, admin);
+    createdLots.push(single.id);
+    check('a single-format intake has nothing linked', (await getLotDetail(single.id)).lot.linkedLots.length === 0);
+
+    console.log('\nAttach an existing lot, then detach');
+    await assignLot(created.id, { lotId: single.id }, admin);
+    check('attached: counted once', (await Project.findById(created.id).lean())!.lotCount === 3);
+    await assignLot(created.id, { lotId: single.id }, admin);
+    check('adding again changes nothing', (await Project.findById(created.id).lean())!.lotCount === 3);
+    check('the lot keeps its own details', (await getLotDetail(single.id)).lot.owner.name === 'Verify Owner');
+    await unassignLot(created.id, single.id, admin);
+    check('detached: count back to 2', (await Project.findById(created.id).lean())!.lotCount === 2);
+
+    console.log('\nUpdate and lot rules');
+    await updateProject(created.id, { name: 'Verify project 2', description: null }, admin);
+    const upd = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 }, admin.grants);
+    check('name and description updated', upd.project.name === 'Verify project 2' && upd.project.description === null, upd.project);
+    await setLotAssignee(videoLot.id, { assigneeId: String(u2._id) }, admin);
+    check('reassigned', (await getLotDetail(videoLot.id)).lot.assignee?.id === String(u2._id));
+    await rejects('a non-assignee cannot edit the lot', () => patchLot(videoLot.id, { version: 0, conditionNotes: 'x' }, volB), 403);
     const noVideo = admin.grants.filter((g) => g !== 'format:video');
     const lockedView = await getProjectDetail(created.id, { lotPage: 1, lotPageSize: 25 }, noVideo);
     const lrow = lockedView.lots.rows.find((r) => r.id === videoLot.id);
-    check('a lot of a format you cannot open is locked, with only its number and format', lrow?.locked === true && lrow.format === 'video' && lrow.ownerName === '' && lrow.assigneeName === null && lrow.quantity === 0 && lrow.mediaLines.length === 0, lrow);
-    check('the lots you can open stay open', lockedView.lots.rows.filter((r) => r.id !== videoLot.id).every((r) => !r.locked));
-    check('a locked lot does not leak its assignee into the team', lockedView.project.team.length === 1, lockedView.project.team);
-    check('an admin with every format sees nothing locked', proj.lots.rows.every((r) => !r.locked));
-    check('project shared has origin', proj.project.shared.originSource === originSource);
-    check('project has nothing missing', proj.project.missing.length === 0, proj.project.missing);
-    check('team derived from assignees', proj.project.team.length === 2, proj.project.team);
+    check('a lot of a format you cannot open is locked, with only its number and format', lrow?.locked === true && lrow.format === 'video' && lrow.ownerName === '' && lrow.quantity === 0, lrow);
 
-    console.log('\nProject edit fans out');
-    await updateProject(created.id, { shared: { conditionNotes: 'Fragile reels' } }, admin);
-    const both = await ArchiveLot.find({ syncProjectId: created.id }).select('conditionNotes').lean();
-    check('both lots have the note', both.every((l) => l.conditionNotes === 'Fragile reels'), both);
-
-    console.log('\nQuantity edit + gate passes');
-    const d2 = await getLotDetail(photoLot.id);
-    await replaceMediaLines(
-      photoLot.id,
-      { version: d2.lot.version, mediaLines: [{ ...photo, quantity: 10 }] },
-      volA,
-    );
-    check('quantity now 10 with 10 items', (await LotItem.countDocuments({ lot: photoLot.id })) === 10);
+    console.log('\nSubmit moves a lot Intake → Data entry → Decision');
+    await setLotAssignee(photoLot.id, { assigneeId: String(u2._id) }, admin);
     await submitForDecision(photoLot.id, volA);
-    check('assignee can now send to data entry', (await getLotDetail(photoLot.id)).lot.stage === 'metadata');
+    check('data entry first', (await getLotDetail(photoLot.id)).lot.stage === 'metadata');
     await submitForDecision(photoLot.id, volA);
-    check('and then on to decision', (await getLotDetail(photoLot.id)).lot.stage === 'decision');
-    await rejects('other volunteer still blocked', () => patchLot(photoLot.id, { version: 99, conditionNotes: 'y' }, volB), 403);
-
-    console.log('\nAdmin: add media, reassign, attach/detach');
-    const added = await addProjectMedia(created.id, { mediaLines: [{ ...video, quantity: 4 }], assignments: [] }, admin);
-    check('video lot reused, not created', added.lots[0]?.created === false, added);
-    await setLotAssignee(videoLot.id, { assigneeId: String(u2._id) }, admin);
-    check('reassigned', (await getLotDetail(videoLot.id)).lot.assignee?.id === String(u2._id));
-
-    const standalone = await createIntake(
-      {
-        dateReceived: new Date().toISOString(),
-        originSource,
-        owner: { name: 'Someone Else' },
-        locationReceiver: { name: 'Verify Receiver' },
-        pointsOfContact: [],
-        mediaLines: [{ ...photo, quantity: 1 }],
-      },
-      admin,
-    );
-    extraLots.push(standalone.id);
-    await assignLot(created.id, { lotId: standalone.id, assigneeId: String(u3._id) }, admin);
-    const attached = await getLotDetail(standalone.id);
-    check('attach: project wins (owner overwritten)', attached.lot.owner.name === 'Test Owner', attached.lot.owner);
-    check('attach: synced + assigned', attached.lot.syncProject?.code === created.code && attached.lot.assignee?.id === String(u3._id));
-    await unassignLot(created.id, standalone.id, admin);
-    const detached = await getLotDetail(standalone.id);
-    check('detach stops syncing, keeps values', detached.lot.syncProject === null && detached.lot.owner.name === 'Test Owner');
+    check('then decision', (await getLotDetail(photoLot.id)).lot.stage === 'decision');
   } finally {
-    const lots = await ArchiveLot.find({ $or: [{ syncProjectId: { $in: createdProjects } }, { _id: { $in: extraLots } }] })
+    const lots = await ArchiveLot.find({ $or: [{ projectIds: { $in: createdProjects } }, { _id: { $in: createdLots } }] })
       .select('_id')
       .lean();
     const ids = lots.map((l) => l._id);

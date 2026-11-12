@@ -44,6 +44,7 @@ import { MediaLinesPanel } from './MediaLinesPanel';
 import { ItemsGrid } from './ItemsGrid';
 import { ActivityPanel } from './ActivityPanel';
 import { LotProjectsSection } from './LotProjectsSection';
+import { LinkedLotsSection } from './LinkedLotsSection';
 import { LotAssigneeSelect, LotProjectBar } from './LotProjectBar';
 import { LotPhotosCard } from './LotPhotosCard';
 
@@ -1143,6 +1144,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <ProgressSection lot={lot} />
         <JourneyPanel lot={lot} stageLabel={stageLabel} />
         <PeopleSection lot={lot} />
+        <LinkedLotsSection lot={lot} />
         <LotProjectsSection lotId={lot.id} />
       </TabPanel>
 

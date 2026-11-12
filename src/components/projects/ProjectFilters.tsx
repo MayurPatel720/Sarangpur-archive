@@ -19,7 +19,6 @@ import {
 import { isoToDmy } from '@/lib/format';
 
 export interface ProjectFilterValues {
-  coordinator: string;
   /** Has a lot of this format. */
   format: string;
   /** Has a lot at this stage. */
@@ -30,16 +29,15 @@ export interface ProjectFilterValues {
   adv: string;
 }
 
-type DefId = 'coordinator' | 'format' | 'stage' | 'created';
+type DefId = 'format' | 'stage' | 'created';
 
 const DEFS: { id: DefId; label: string; keys: (keyof ProjectFilterValues)[] }[] = [
-  { id: 'coordinator', label: 'Coordinator', keys: ['coordinator'] },
   { id: 'format', label: 'Has lot of format', keys: ['format'] },
   { id: 'stage', label: 'Has lot at stage', keys: ['stage'] },
   { id: 'created', label: 'Created', keys: ['createdFrom', 'createdTo'] },
 ];
 
-const EMPTY: ProjectFilterValues = { coordinator: '', format: '', stage: '', createdFrom: '', createdTo: '', adv: '' };
+const EMPTY: ProjectFilterValues = { format: '', stage: '', createdFrom: '', createdTo: '', adv: '' };
 
 /** The project list's filter bar: the same chips, "+ Filter" menu and quick views as the lot list. */
 export function ProjectFilters({
@@ -53,7 +51,6 @@ export function ProjectFilters({
   filters: ProjectFilterValues;
   onFilters: (next: ProjectFilterValues) => void;
 }) {
-  const people = useUserPicker();
   const formats = useReferenceList('format');
   const stages = useReferenceList('stage');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -71,11 +68,10 @@ export function ProjectFilters({
 
   const options: Record<Exclude<DefId, 'created'>, FilterOption[]> = useMemo(
     () => ({
-      coordinator: (people.data?.users ?? []).map((u) => ({ value: u.id, label: u.name })),
       format: (formats.data?.items ?? []).map((i) => ({ value: i.value, label: i.label })),
       stage: (stages.data?.items ?? []).map((i) => ({ value: i.value, label: i.label })),
     }),
-    [people.data, formats.data, stages.data],
+    [formats.data, stages.data],
   );
 
   const valueText = (id: DefId): string => {
@@ -120,15 +116,6 @@ export function ProjectFilters({
   const panelFor = (id: DefId) => {
     if (id === 'created') {
       return <DateRangePanel from={filters.createdFrom} to={filters.createdTo} onChange={(from, to) => onFilters({ ...filters, createdFrom: from, createdTo: to })} />;
-    }
-    if (id === 'coordinator' && people.isLoading) {
-      return (
-        <div className="flex flex-col gap-2 p-3">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-        </div>
-      );
     }
     return (
       <OptionList

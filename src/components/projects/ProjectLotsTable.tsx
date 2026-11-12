@@ -13,7 +13,8 @@ import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Pagination, totalPagesOf } from '@/components/ui/Pagination';
 import { GhostButton, Select } from '@/components/ui/Form';
 import { IconButton } from '@/components/ui/IconButton';
-import { IconLock } from '@/components/ui/icons';
+import { IconChevronDown, IconLock } from '@/components/ui/icons';
+import { Menu, menuItem } from '@/components/master/MasterMenus';
 import { useToast } from '@/components/ui/Toast';
 import type { Severity } from '@/types/dashboard';
 import type { ProjectDetailResponse, ProjectLotRow } from '@/types/project';
@@ -53,7 +54,8 @@ export function ProjectLotsTable({
   stageLabel,
   onPageChange,
   onPageSizeChange,
-  onAddLots,
+  onAddExisting,
+  onCreateNew,
   onRemove,
 }: {
   lots: ProjectDetailResponse['lots'];
@@ -63,7 +65,10 @@ export function ProjectLotsTable({
   stageLabel: (stage: string) => string;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
-  onAddLots: () => void;
+  /** Open the picker of existing lots. */
+  onAddExisting: () => void;
+  /** Open the intake form, which saves its lots straight into this project. */
+  onCreateNew: () => void;
   onRemove: (row: ProjectLotRow) => void;
 }) {
   const router = useRouter();
@@ -178,7 +183,24 @@ export function ProjectLotsTable({
       <PanelHeader title={`Lots (${num(lots.total)})`}>
         {canAssign ? (
           <span className="ml-auto">
-            <GhostButton onClick={onAddLots}>Add lots</GhostButton>
+            <Menu
+              label="Add lot"
+              width={230}
+              align="right"
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[6px] border border-line-strong bg-surface px-3 text-[13px] font-semibold text-ink-2 shadow-control hover:bg-accent-soft"
+              trigger={<>Add lot <IconChevronDown size={14} /></>}
+            >
+              {(close) => (
+                <>
+                  <button type="button" role="menuitem" className={menuItem} onClick={() => { onAddExisting(); close(); }}>
+                    Add existing lot…
+                  </button>
+                  <button type="button" role="menuitem" className={menuItem} onClick={() => { onCreateNew(); close(); }}>
+                    Create new lot
+                  </button>
+                </>
+              )}
+            </Menu>
           </span>
         ) : null}
       </PanelHeader>

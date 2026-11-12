@@ -135,11 +135,12 @@ export const lotCreateBodySchema = z
     /** Calendar due date for the return, ISO datetime with offset. */
     returnDueAt: z.string().datetime({ offset: true }).optional(),
     rights: rightsSchema.optional(),
+    /** Open the form from a project: every lot saved joins this project. */
+    projectId: objectIdString.optional(),
     /**
      * Per-format owners, like the project wizard (needs `project:assign`). Rows of one format share
-     * one. When every assigned format has the same person (or only one is assigned) the intake stays
-     * ONE lot owned by them; when different formats have different people it becomes one lot per
-     * format, each owned by its person. A format with no entry stays unassigned.
+     * one. Every format becomes its own lot (lots from one form are linked to each other), each owned by
+     * its format's person; a format with no entry stays unassigned.
      */
     assignments: z
       .array(z.object({ format: z.string().trim().min(1).max(40), assigneeId: objectIdString }))
@@ -384,6 +385,8 @@ const lotDetailSchema = z.object({
   attachmentCount: z.number(),
   /** Project this lot's shared intake data is synced with, if any. */
   syncProject: z.object({ id: z.string(), code: z.string(), name: z.string(), siblingCount: z.number() }).nullable(),
+  /** Other lots saved together with this one from one intake form (one per format), if any. */
+  linkedLots: z.array(z.object({ id: z.string(), lotReference: z.string(), format: z.string(), stage: z.string() })),
   assignee: z.object({ id: z.string(), name: z.string() }).nullable(),
   /** Required intake fields still empty — the Intake→Decision gate. */
   intakeMissing: z.array(z.string()),

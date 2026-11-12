@@ -38,21 +38,14 @@ const columns: Column<ProjectRow>[] = [
     header: 'Lots',
     render: (r) => <span className="whitespace-nowrap">{r.lotCount}</span>,
   },
-  {
-    key: 'coordinator',
-    header: 'Coordinator',
-    render: (r) => (
-      <span className="whitespace-nowrap">{r.coordinatorName ? r.coordinatorName : '—'}</span>
-    ),
-  },
 ];
 
 export function ProjectsManager({ assigneeId }: { /** "My lots": only projects this user has a lot in. */ assigneeId?: string } = {}) {
   const router = useRouter();
   const { page, pageSize, setPage, setPageSize, resetPage } = useUrlPagination(25);
   const [search, setSearch] = useState('');
-  // Filters beside the search: coordinator, format and stage of its lots, created dates, and the advanced rows.
-  const [pf, setPf] = useState<ProjectFilterValues>({ coordinator: '', format: '', stage: '', createdFrom: '', createdTo: '', adv: '' });
+  // Filters beside the search: format and stage of its lots, created dates, and the advanced rows.
+  const [pf, setPf] = useState<ProjectFilterValues>({ format: '', stage: '', createdFrom: '', createdTo: '', adv: '' });
   const filtersOn = Object.values(pf).some(Boolean);
   const extra = useMemo(() => Object.fromEntries(Object.entries(pf).filter(([, v]) => v)) as Record<string, string>, [pf]);
   const me = useMe();

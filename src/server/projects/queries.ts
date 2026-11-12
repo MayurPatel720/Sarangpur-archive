@@ -10,7 +10,6 @@ import { User } from '@/models/User';
 import { escapeRegex } from '@/server/lots/queries';
 import { parseAdvanced } from '@/lib/advanced-filters';
 import { buildProjectAdvanced } from '@/server/filters/advanced';
-import { intakeMissing } from '@/lib/intake-gate';
 import {
   projectActivityPipeline,
   projectItemStatsPipeline,
@@ -35,7 +34,6 @@ export function shapeProjectRow(doc: {
   name: string;
   description?: string | null;
   lotCount: number;
-  coordinatorName?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): ProjectRow {
@@ -45,7 +43,6 @@ export function shapeProjectRow(doc: {
     name: doc.name,
     description: doc.description ?? null,
     lotCount: doc.lotCount,
-    coordinatorName: doc.coordinatorName ?? null,
     createdAt: new Date(doc.createdAt).toISOString(),
     updatedAt: new Date(doc.updatedAt).toISOString(),
   };
@@ -63,7 +60,7 @@ export async function listProjects(query: ProjectListQuery): Promise<ProjectList
   const idLists: unknown[][] = [];
   if (query.assignee) {
     idLists.push(
-      await ArchiveLot.distinct('syncProjectId', { assignee: new Types.ObjectId(query.assignee), syncProjectId: { $ne: null } }),
+      await ArchiveLot.distinct('projectIds', { assignee: new Types.ObjectId(query.assignee) }),
     );
   }
   if (query.format) {
@@ -73,7 +70,6 @@ export async function listProjects(query: ProjectListQuery): Promise<ProjectList
   if (idLists.length > 0) {
     filter._id = { $in: idLists.reduce((acc, ids) => acc.filter((id) => ids.some((x) => String(x) === String(id)))) };
   }
-  if (query.coordinator) filter.coordinator = new Types.ObjectId(query.coordinator);
   if (query.createdFrom || query.createdTo) {
     filter.createdAt = {
       ...(query.createdFrom ? { $gte: new Date(`${query.createdFrom}T00:00:00.000+05:30`) } : {}),
@@ -236,9 +232,7 @@ export async function getProjectDetail(
   return {
     project: {
       ...shapeProjectRow(project),
-      coordinatorId: project.coordinator ? String(project.coordinator) : null,
       createdByName,
-      shared: (project.shared ?? {}) as ProjectDetailResponse['project']['shared'],
       // Team is derived: whoever is assigned a lot in this project.
       team: [...teamCounts.entries()].map(([userId, t]) => ({
         userId,
@@ -253,9 +247,6 @@ export async function getProjectDetail(
         assigneeId: m.assignee && canOpen(m.format) ? String(m.assignee) : null,
         assigneeName: canOpen(m.format) ? (m.assigneeName ?? null) : null,
       })),
-      missing: intakeMissing(
-        (project.shared ?? {}) as { dateReceived?: string; originSource?: string; owner?: { name?: string } },
-      ),
     },
     progress: {
       lotsTotal,

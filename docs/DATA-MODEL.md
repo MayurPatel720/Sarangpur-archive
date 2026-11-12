@@ -39,7 +39,7 @@ One delivery of material from one owner. The central collection.
 ### Contacts — **embedded** (owned by the lot, never queried alone)
 `owner` (required), `pointsOfContact[]`, `facilitator` — each `{ name, phone, email, address }`.
 `referencePeople[]` — `{ name, phone }`, both required, max 5, default `[]` (old lots have none). Info-only
-"people who know about this"; a shared project field (synced like `pointsOfContact`).
+"people who know about this".
 
 ### Media
 `format` (enum, indexed) · `dataType` (`physical`|`digital`|`both` = Physical + Digital; a "physical" / "digital" filter also matches `both`) · `mediaSubtype` (String) ·
@@ -184,6 +184,17 @@ Indexes: `{ at: -1 }` (global feed) · `{ lot: 1, at: -1 }` (record timeline)
 archive (likely none — this is a permanent legal record).
 
 ---
+
+## `projects` — DONE (`src/models/Project.ts`)
+
+A project is only a **name + description** that groups lots: `{ code (auto, unique), name, description, createdBy, lotCount }`.
+Membership lives on the lot (`ArchiveLot.projectIds`); `lotCount` is a counter cache kept in the same transaction.
+A project holds no intake data and nothing is copied between it and its lots. (Older documents may still carry
+`coordinator` / `shared`; nothing reads them.)
+
+**Linked lots:** `ArchiveLot.linkGroupId` (ObjectId, indexed, default null) is shared by the lots saved together from one
+intake form (the intake always makes one lot per media format). It lets a standalone lot — which has no parent
+project — list its siblings (`linkedLots` on the lot detail).
 
 ## `projectimages` — DONE (`src/models/ProjectImage.ts`)
 

@@ -35,6 +35,7 @@ import { changeItemStatus } from '../src/server/lots/item-status';
 import { cellText } from '../src/lib/item-cells';
 import { getReferenceList } from '../src/server/reference';
 import { listMasterItems } from '../src/server/lots/master-items';
+import { getLotDetail } from '../src/server/lots/queries';
 import { updateMasterColumns } from '../src/server/lots/master-columns';
 import { masterQuerySchema } from '../src/types/master';
 import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor, SHEET_HIDDEN, shownOnSheet } from '../src/lib/item-columns';
@@ -382,16 +383,17 @@ async function main() {
 
       const same = await createIntake({ ...mixed, assignments: [{ format: 'photo', assigneeId: me }, { format: 'video', assigneeId: me }] }, admin);
       created.push(...same.lots.map((l) => l.id));
-      check('one person on every format keeps ONE lot', same.lots.length === 1 && same.itemsCreated === 3, same.lots);
+      check('one person on every format: still one lot per format, linked', same.lots.length === 2 && same.itemsCreated === 3 && (await getLotDetail(same.lots[0]!.id)).lot.linkedLots.length === 1, same.lots);
 
       const partial = await createIntake({ ...mixed, assignments: [{ format: 'video', assigneeId: me }] }, admin);
       created.push(...partial.lots.map((l) => l.id));
       const partialLot = await ArchiveLot.findById(partial.id).select('assignee').lean();
-      check('only some formats assigned: still one lot, owned by that person', partial.lots.length === 1 && String(partialLot?.assignee) === me);
+      const partialVideoLot = await ArchiveLot.findById(partial.lots.find((l) => l.format === 'video')!.id).select('assignee').lean();
+      check('only some formats assigned: the assigned format\'s lot is owned, the other is not', partial.lots.length === 2 && String(partialVideoLot?.assignee) === me && partialLot?.assignee == null);
 
       const none = await createIntake(mixed, admin);
       created.push(...none.lots.map((l) => l.id));
-      check('nobody assigned: one unassigned lot', none.lots.length === 1 && (await ArchiveLot.findById(none.id).select('assignee').lean())?.assignee == null);
+      check('nobody assigned: one unassigned lot per format', none.lots.length === 2 && (await ArchiveLot.countDocuments({ _id: { $in: none.lots.map((l) => l.id) }, assignee: null })) === 2);
 
       const split = await createIntake(
         {
@@ -479,6 +481,20 @@ async function main() {
     check('cleared rows sit at the end of the sheet, in order', dcAfter.slice(-2).map((i) => i.id).join() === [dc1.id, dc2.id].join(), dcAfter.map((i) => i.code));
     const retiredCode = (await LotItem.findById(dc1.id).lean())?.clearedCode;
     check('the old code is kept as clearedCode (retired)', retiredCode === dc1.code, retiredCode);
+
+    console.log('add items: how many, which group');
+    const aiBefore = (await grid(physPhoto.id)).items;
+    const aiTop = Math.max(...aiBefore.map((i) => i.groupNo));
+    const bulk = await createItem(physPhoto.id, { quantity: 40, groupNo: aiTop + 1 }, admin);
+    const aiAfter = (await grid(physPhoto.id)).items;
+    const aiNew = aiAfter.filter((i) => !aiBefore.some((b) => b.id === i.id));
+    check('adds as many items as asked', bulk.created === 40 && aiNew.length === 40, [bulk.created, aiNew.length]);
+    check('the chosen group takes 36, the rest roll into the next new group', aiNew.filter((i) => i.groupNo === aiTop + 1).length === 36 && aiNew.filter((i) => i.groupNo === aiTop + 2).length === 4, aiNew.map((i) => i.groupNo));
+    check('every new item has its own code', new Set(aiNew.map((i) => i.code)).size === 40 && !aiNew.some((i) => /^discard-/.test(i.code)));
+    const aiLast = await createItem(physPhoto.id, { quantity: 2 }, admin);
+    check('no group chosen continues the last group', aiLast.created === 2 && aiLast.groupNo === aiTop + 2, aiLast);
+    await rejects('a sheet that does not exist is refused', () => createItem(physPhoto.id, { quantity: 1, lineIndex: 9 }, admin), 400);
+
 
     await bulkUpdateItems(digitalPhoto.id, { itemIds: [dpItems[0]!.id], set: { digital: false } }, admin);
     check('the answer can still be changed', (await grid(digitalPhoto.id)).items.find((i) => i.id === dpItems[0]!.id)?.digital === false);

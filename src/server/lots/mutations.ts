@@ -19,6 +19,7 @@ import { isTerminalStage } from '@/server/lots/queries';
 import { FORMATS, FORMAT_LABELS, type Format, type Stage } from '@/lib/domain';
 import { User } from '@/models/User';
 import { assertNotPast, assertRealDay, createTaskInSession } from '@/server/tasks/mutations';
+import { recordNewLotsInProject, requireProject } from '@/server/projects/membership';
 import type { LotCreateBody, LotPatchBody, DecisionBody, DecisionResponse, OverrideRequestBody, OverrideDecideBody } from '@/types/lot';
 import type { TriageBulkBody } from '@/types/triage';
 
@@ -44,6 +45,8 @@ export type LotInsertBody = Omit<LotCreateBody, 'dateReceived' | 'originSource' 
 export interface LotInsertExtras {
   syncProjectId?: Types.ObjectId | null;
   projectIds?: Types.ObjectId[];
+  /** Lots saved together from one intake form share this id. */
+  linkGroupId?: Types.ObjectId | null;
   assignee?: { id: string; name: string } | null;
 }
 
@@ -209,6 +212,7 @@ export async function insertLotInSession(
         },
         projectIds: extras.projectIds ?? [],
         syncProjectId: extras.syncProjectId ?? null,
+        linkGroupId: extras.linkGroupId ?? null,
         assignee: extras.assignee ? new Types.ObjectId(extras.assignee.id) : null,
         assigneeName: extras.assignee?.name ?? null,
         stage: 'intake',
@@ -351,10 +355,13 @@ export async function createIntake(
 ): Promise<{ id: string; lotReference: string; itemsCreated: number; lots: { id: string; lotReference: string; format: string }[] }> {
   const owners = await resolveIntakeAssignments(body, ctx);
   const formats = [...new Set(body.mediaLines.map((l) => l.format))];
-  const split = new Set([...owners.values()].map((o) => o.id)).size > 1;
-  const groups = split
-    ? formats.map((f) => ({ formats: [f], lines: body.mediaLines.filter((l) => l.format === f) }))
-    : [{ formats, lines: body.mediaLines }];
+  // One lot per media format, always. Lots saved together share a link id so each shows its siblings.
+  const groups = formats.map((f) => ({ formats: [f], lines: body.mediaLines.filter((l) => l.format === f) }));
+  const linkGroupId = groups.length > 1 ? new Types.ObjectId() : null;
+  if (body.projectId && !can(ctx.grants, 'project:assign')) {
+    throw new HttpError(403, 'Your role cannot add lots to a project.');
+  }
+  const project = body.projectId ? await requireProject(body.projectId) : null;
   const vocabs = await Promise.all(groups.map((g) => validateLotVocab({ ...body, mediaLines: g.lines } as LotInsertBody)));
   await connectToDatabase();
 
@@ -368,7 +375,11 @@ export async function createIntake(
       for (const [i, g] of groups.entries()) {
         // The lot's owner: its format's person, else (one lot) the first assigned format's person.
         const owner = g.formats.map((f) => owners.get(f)).find(Boolean) ?? null;
-        const lot = await insertLotInSession({ ...body, mediaLines: g.lines } as LotInsertBody, vocabs[i]!, ctx, session, { assignee: owner });
+        const lot = await insertLotInSession({ ...body, mediaLines: g.lines } as LotInsertBody, vocabs[i]!, ctx, session, {
+          assignee: owner,
+          linkGroupId,
+          projectIds: project ? [project.id] : [],
+        });
         lots.push({ id: lot.id, lotReference: lot.lotReference, format: lot.format });
         itemsCreated += lot.itemsCreated;
         // Tasks (owner + others) are created in the same transaction.
@@ -396,6 +407,8 @@ export async function createIntake(
           }
         }
       }
+      // Opened from a project: the new lots are counted into it and their history written, in this same transaction.
+      if (project) await recordNewLotsInProject(session, project, lots, ctx);
     });
     const first = lots[0]!;
     return { id: first.id, lotReference: first.lotReference, itemsCreated, lots };

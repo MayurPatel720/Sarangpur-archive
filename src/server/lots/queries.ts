@@ -482,6 +482,15 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       syncProject = { id: String(proj._id), code: proj.code, name: proj.name, siblingCount };
     }
   }
+  // Lots saved together from the same intake form (one per format).
+  const linkedLots = doc.linkGroupId
+    ? (await ArchiveLot.find({ linkGroupId: doc.linkGroupId, _id: { $ne: doc._id } }).select('lotReference format stage').sort({ lotReference: 1 }).lean()).map((l) => ({
+        id: String(l._id),
+        lotReference: l.lotReference,
+        format: l.format,
+        stage: l.stage,
+      }))
+    : [];
   const nameById = new Map(users.map((u) => [String(u._id), u.name as string]));
   const userName = (id: Types.ObjectId | null | undefined): string | null =>
     id == null ? null : (nameById.get(String(id)) ?? 'Unknown');
@@ -595,6 +604,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       },
       attachmentCount,
       syncProject,
+      linkedLots,
       assignee: doc.assignee
         ? { id: String(doc.assignee), name: doc.assigneeName ?? userName(doc.assignee) ?? 'Unknown' }
         : null,

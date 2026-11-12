@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ApiRequestError, lotsApi } from '@/lib/api-client';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ApiRequestError, lotsApi, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { scopedHref } from '@/lib/dashboard-links';
 import type { LotCreateBody } from '@/types/lot';
@@ -58,11 +58,18 @@ const STEP_INTROS: readonly (string | null)[] = [
   null,
 ];
 
-export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
+export function IntakeForm({ initialFormat, projectId }: { initialFormat?: string; /** Opened from a project: every lot saved here joins it. */ projectId?: string } = {}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const me = useMe();
   const can = me.data ? me.data.grants.includes('lot:create') : false;
+  // Opened from a project page: only its name is needed (for the title).
+  const project = useQuery({
+    queryKey: queryKeys.projects.detail(projectId ?? ''),
+    queryFn: () => projectsApi.detail(projectId!, 1, 1),
+    enabled: Boolean(projectId) && Boolean(me.data),
+  });
+  const title = projectId ? `New lot in ${project.data?.project.code ?? 'project'}` : 'New intake';
   /**
    * Format block the user came from — seeds every new row AND locks the
    * format dropdown to that block's format. No `initialFormat` = unlocked,
@@ -95,8 +102,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   const photoUploads = usePhotoUploads(undefined, 'lot');
 
   // Per-row "Assign", exactly like the project wizard: rows of one format share one assignment
-  // (owner + optional task). One person for every assigned format keeps ONE lot; different people on
-  // different formats make one lot per format — a lot has a single owner.
+  // (owner + optional task). Every format becomes its own lot.
   const rowAssign = useRowAssign();
   const canAssignLot = useCan('project:assign');
   const lineFormats = [...new Set(draft.lines.map((l) => l.format).filter(Boolean))];
@@ -106,8 +112,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
     const owners = assignments.flatMap((a) => (a.assigneeId ? [{ format: a.format, assigneeId: a.assigneeId }] : []));
     return { ...(owners.length ? { assignments: owners } : {}), ...(tasks.length ? { tasks } : {}) };
   };
-  const ownerIds = new Set(lineFormats.flatMap((f) => (rowAssign.drafts[f]?.assignees[0] ? [rowAssign.drafts[f]!.assignees[0]!.id] : [])));
-  const splitsIntoLots = canAssignLot && ownerIds.size > 1;
+  const splitsIntoLots = lineFormats.length > 1;
 
   const ctx: StepCtx = {
     mode: 'lot',
@@ -123,6 +128,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
     mutationFn: (body: LotCreateBody) => lotsApi.create(body),
     onSuccess: async (res) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
+      if (projectId) void queryClient.invalidateQueries({ queryKey: queryKeys.projects.all });
       // Photos never block registration: upload them now, report failures, open the lot either way.
       if (photos.length > 0) {
         setUploadingPhotos(true);
@@ -133,8 +139,14 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
           toast.error(`${failed} ${failed === 1 ? 'photo' : 'photos'} failed — add ${failed === 1 ? 'it' : 'them'} from the lot page`);
         }
       }
-      if (res.lots.length > 1) {
-        toast.success(`${res.lots.length} lots registered`, res.lots.map((l) => l.lotReference).join(', '));
+      if (projectId) {
+        toast.success(
+          res.lots.length > 1 ? `${res.lots.length} lots added to the project` : 'Lot added to the project',
+          res.lots.map((l) => l.lotReference).join(', '),
+        );
+        router.push(`/projects/${projectId}`);
+      } else if (res.lots.length > 1) {
+        toast.success(`${res.lots.length} lots registered (one per format, linked)`, res.lots.map((l) => l.lotReference).join(', '));
         router.push(scopedHref('/register', initialFormat));
       } else {
         router.push(scopedHref(`/register/${res.id}`, initialFormat));
@@ -157,7 +169,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
   if (me.isLoading) {
     return (
       <Panel>
-        <PanelHeader title="New intake" />
+        <PanelHeader title={title} />
         <div className="p-3 md:p-4 flex flex-col gap-2">
           <Skeleton className="h-10 w-full" />
           <Skeleton className="h-10 w-full" />
@@ -276,13 +288,14 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
       ...(draft.physicalLabelApplied ? { physicalLabelApplied: true } : {}),
       ...(draft.containerLabelApplied ? { containerLabelApplied: true } : {}),
       ...assignmentBody(),
+      ...(projectId ? { projectId } : {}),
     };
     create.mutate(body);
   };
 
   return (
     <Panel>
-      <PanelHeader title="New intake" />
+      <PanelHeader title={title} />
       <div className="p-3 md:p-4 flex flex-col gap-5">
         <Stepper steps={STEPS} current={step} done={stepsDone} onJump={jumpTo} />
         {STEP_INTROS[step] ? (
@@ -312,8 +325,7 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
               <>
                 {splitsIntoLots ? (
                   <p role="status" className="m-0 mt-3 rounded-[6px] border border-info-line bg-info-bg px-3 py-2 text-[12.5px] text-info">
-                    {lineFormats.map((f) => FORMAT_LABELS[f as Format] ?? f).join(' and ')} are assigned to different people, so registering
-                    creates {lineFormats.length} lots — one per format, each with its own owner. Photos you add go to the first lot.
+                    Registering creates {lineFormats.length} lots — one per format ({lineFormats.map((f) => FORMAT_LABELS[f as Format] ?? f).join(', ')}). They are linked to each other, and each can have its own owner. Photos you add go to the first lot.
                   </p>
                 ) : null}
                 <div className="mt-3 flex flex-col gap-2 border-t border-line-soft pt-3">
