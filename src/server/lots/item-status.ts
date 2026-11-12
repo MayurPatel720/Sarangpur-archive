@@ -1,5 +1,7 @@
+import { Types } from 'mongoose';
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
+import { tracked } from '@/server/lots/history-core';
 import { parseDateRange } from '@/lib/date-range';
 import { PRASADI_FORMAT } from '@/lib/item-columns';
 import { REMOVAL_COLUMNS } from '@/lib/item-status';
@@ -36,7 +38,20 @@ function removalAttrs(removal: Removal): { $set: Record<string, unknown>; $unset
   return { $set, $unset };
 }
 
+/** Removes / re-activates a Prasadi item; recorded in the lot's version history. */
 export async function changeItemStatus(lotId: string, body: ItemStatusBody, ctx: MutationContext): Promise<ItemStatusResponse> {
+  const scope = Types.ObjectId.isValid(body.itemId) ? [new Types.ObjectId(body.itemId)] : [];
+  return tracked({
+    lotId,
+    ctx,
+    kind: 'status',
+    label: body.action === 'reactivate' ? 'Made an item active again' : body.action === 'remove' ? 'Removed an item from the archive' : 'Corrected removal details',
+    scope,
+    run: () => changeItemStatusCore(lotId, body, ctx),
+  });
+}
+
+async function changeItemStatusCore(lotId: string, body: ItemStatusBody, ctx: MutationContext): Promise<ItemStatusResponse> {
   let out: ItemStatusResponse = { code: '', status: 'active' };
   await withAudit({
     lotId,

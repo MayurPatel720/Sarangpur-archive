@@ -1,6 +1,7 @@
 import { Types, type AnyBulkWriteOperation, type ClientSession } from 'mongoose';
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
+import { tracked } from '@/server/lots/history-core';
 import { connectToDatabase } from '@/lib/mongo';
 import { abbrError, buildItemCode, parseItemCodeParts } from '@/lib/item-code';
 import { ALWAYS_VISIBLE, BUILTIN_COLUMNS } from '@/lib/item-columns';
@@ -62,7 +63,12 @@ async function referencedBy(codes: string[], session?: ClientSession): Promise<s
  * rest continue in row order. The user's own earlier numbers are released first, so
  * re-using the same pair with a different start works. Duplicate (D) rows keep their codes.
  */
+/** Re-codes one sheet; recorded in the lot's version history. */
 export async function recodeSheet(lotId: string, body: SheetCodeBody, ctx: MutationContext): Promise<SheetCodeResponse> {
+  return tracked({ lotId, ctx, kind: 'recode', label: 'Re-coded a sheet', scope: 'all', checkpoint: 'Before re-coding a sheet', run: () => recodeSheetCore(lotId, body, ctx) });
+}
+
+async function recodeSheetCore(lotId: string, body: SheetCodeBody, ctx: MutationContext): Promise<SheetCodeResponse> {
   const abbr1 = body.abbr1.trim();
   const abbr2 = body.abbr2.trim();
   const e1 = abbrError('First abbreviation', abbr1);
@@ -119,7 +125,13 @@ export async function recodeSheet(lotId: string, body: SheetCodeBody, ctx: Mutat
  * Change ONE item's number and / or its last three digits (copy number) to free ones — the
  * abbreviations stay. The finished code must not belong to any other item in the archive.
  */
+/** Changes one item's number; recorded in the lot's version history. */
 export async function setItemNumber(lotId: string, body: ItemNumberBody, ctx: MutationContext): Promise<{ code: string }> {
+  const scope = Types.ObjectId.isValid(body.itemId) ? [new Types.ObjectId(body.itemId)] : [];
+  return tracked({ lotId, ctx, kind: 'recode', label: 'Changed an item number', scope, run: () => setItemNumberCore(lotId, body, ctx) });
+}
+
+async function setItemNumberCore(lotId: string, body: ItemNumberBody, ctx: MutationContext): Promise<{ code: string }> {
   return withAudit({
     lotId,
     actor: auditActor(ctx),
@@ -176,7 +188,16 @@ type SideItem = ItemRow & { lot: Types.ObjectId; code: string };
  * original in Duplicate code. The duplicate's old number is freed. Nothing is written to
  * the original's lot — its row finds the link on read. `confirm: false` only returns the plan.
  */
+/** Marks a duplicate; recorded in the lot's version history. */
 export async function markDuplicate(
+  lotId: string,
+  body: ItemDuplicateBody,
+  ctx: MutationContext,
+): Promise<ItemDuplicateResponse> {
+  return tracked({ lotId, ctx, kind: 'duplicate', label: 'Marked a duplicate', scope: 'all', run: () => markDuplicateCore(lotId, body, ctx) });
+}
+
+async function markDuplicateCore(
   lotId: string,
   body: ItemDuplicateBody,
   ctx: MutationContext,
@@ -276,7 +297,12 @@ export async function markDuplicate(
 /* -------------------------------------------------------------- row order */
 
 /** Saves a drag in the grid: the sheet's rows, top to bottom. Codes never change. */
+/** Reorders rows; recorded in the lot's version history. */
 export async function reorderItems(lotId: string, body: ItemOrderBody, ctx: MutationContext): Promise<{ updated: number }> {
+  return tracked({ lotId, ctx, kind: 'reorder', label: 'Reordered rows', scope: 'all', run: () => reorderItemsCore(lotId, body, ctx) });
+}
+
+async function reorderItemsCore(lotId: string, body: ItemOrderBody, ctx: MutationContext): Promise<{ updated: number }> {
   return withAudit({
     lotId,
     actor: auditActor(ctx),
@@ -307,7 +333,13 @@ export async function reorderItems(lotId: string, body: ItemOrderBody, ctx: Muta
 const MAX_CUSTOM = 30;
 
 /** Hide / unhide columns, add or remove a custom column — shared by everyone on this lot. */
+/** Hides / adds / removes columns; removing a custom column also deletes its values, so that is recorded. */
 export async function updateColumns(lotId: string, body: ColumnsBody, ctx: MutationContext): Promise<ColumnsResponse> {
+  if (!body.removeKey) return updateColumnsCore(lotId, body, ctx);
+  return tracked({ lotId, ctx, kind: 'edit', label: 'Removed a custom column', scope: 'all', run: () => updateColumnsCore(lotId, body, ctx) });
+}
+
+async function updateColumnsCore(lotId: string, body: ColumnsBody, ctx: MutationContext): Promise<ColumnsResponse> {
   return withAudit({
     lotId,
     actor: auditActor(ctx),

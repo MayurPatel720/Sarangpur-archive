@@ -5,6 +5,7 @@ import { connectToDatabase } from '@/lib/mongo';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { auditActor, withAudit } from '@/server/audit';
+import { trackedByItems } from '@/server/lots/history-core';
 import { finishLotIfHandled, type ReturnHandover } from '@/server/lots/item-grid';
 import { bumpUsage } from '@/server/reference';
 import { assertActive, activeValuesWithFlag } from '@/server/reference/runtime';
@@ -20,7 +21,13 @@ import type { ReturnRecordBody, ReturnRecordResponse } from '@/types/returns';
 
 const clean = (v: string | undefined | null) => (v && v.trim() ? v.trim() : null);
 
+/** Records a return handover; the items' return details are recorded in the lot's version history. */
 export async function recordReturn(body: ReturnRecordBody, ctx: MutationContext): Promise<ReturnRecordResponse> {
+  const itemIds = (body as { itemIds?: string[] }).itemIds ?? [];
+  if (itemIds.length === 0) return recordReturnCore(body, ctx);
+  return trackedByItems({ itemIds, ctx, kind: 'workflow', label: `Return recorded · ${itemIds.length} ${itemIds.length === 1 ? 'item' : 'items'}`, run: () => recordReturnCore(body, ctx) });
+}
+async function recordReturnCore(body: ReturnRecordBody, ctx: MutationContext): Promise<ReturnRecordResponse> {
   await connectToDatabase();
   if (!Types.ObjectId.isValid(body.lotId)) throw new HttpError(404, 'Lot not found.');
   const method = clean(body.method);

@@ -298,6 +298,18 @@ copied between a project and its lots; its lots keep their own details.
   `assigneeId`, `mediaLines`, `scanned` / `scanTarget`, `tagged`) and `recentActivity`. Tasks come from
   `GET /api/tasks?project=<id>`.
 
+### Version history of a lot's Excel (`src/types/history.ts`)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/lots/[lotId]/history` | Sessions (newest first, with their change sets), saved versions, and what Undo / Redo would do for the caller. `lot:view` + format access |
+| GET | `/api/lots/[lotId]/history/changes/[changeSetId]` | The cells one change touched (old → new) |
+| GET | `/api/lots/[lotId]/history/preview?versionId\|seq` | What a restore would change (also "Compare") |
+| GET | `/api/lots/[lotId]/history/item?itemId\|code&path?` | Every recorded change of one row or cell: who, when, from what |
+| POST | `/api/lots/[lotId]/history` | `{ action: undo \| redo \| undoSession \| restore \| saveVersion, … }`. `lot:edit`; the assignee rule applies. Returns `{ done, applied, conflicts[], notes[], label }`: with conflicts, `done: false` and nothing is changed until the caller resends with `skipConflicts: true` |
+
+Reopening a decision by undo / restore is allowed, but refused (409) when the lot has moved on or work was done after it.
+
 ### One lot per format, and linked lots
 
 `POST /api/lots` (the intake form) always creates **one lot per media format**: rows of the same format share one lot.

@@ -185,6 +185,25 @@ archive (likely none — this is a permanent legal record).
 
 ---
 
+## Version history — `lotchangesets`, `lotchangerows`, `lotversions` — DONE (`src/models/LotChangeSet.ts`)
+
+The undo / redo / restore history of a lot's Excel (`src/lib/item-history.ts`, `src/server/lots/history*.ts`).
+Every write to a lot's items is bracketed by `tracked()` / `trackedByItems()` (history-core.ts): the touched rows are read
+before and after, and the pair is stored as one **change set**.
+
+| Collection | Holds |
+|---|---|
+| `lotchangesets` | One per save: `lot, seq` (1, 2, 3 … per lot, atomic counter `lotChange:<lotId>`), `sessionId` (one person's edits with under 30 min between them), `actor / actorName / at`, `kind` (`edit bulk import add_items discard_clear recode duplicate reorder media_lines status workflow undo restore`), `label`, `itemCount / cellCount`, `lotBefore / lotAfter` (stage, decision, naming code, counters — so a decision is reopened exactly), `undoOf[]`, `undoneAt`, `redoable` |
+| `lotchangerows` | One per item per change set: `changeSet, lot, seq, item, code, before, after` (the item's **tracked fields**, `null` = did not exist / removed), `paths[]` (what differs) |
+| `lotversions` | A named (or automatic) checkpoint: `lot, name, seq, at, by, auto` — a pointer into history, not a copy |
+
+Tracked fields (`TRACKED_FIELDS`): everything a person edits in the sheet or through the workflow. Not tracked: photo counters
+(another collection) and file size / hash (the scan reconciler). **Undo** writes the "before" images back and records itself
+as a change set (`kind: undo`, `undoOf`); a **redo** is the undo of an undo. A row somebody changed since is a **conflict**
+(reported, never overwritten). **Restore** takes each row's "before" image from the first change after the chosen point and
+is itself a change set. Reopening a decision needs the lot not to have moved on and no item digitalized / tagged / returned.
+`scripts/verify-history.ts` also fails if a new file writes to `LotItem` without being listed as covered.
+
 ## `projects` — DONE (`src/models/Project.ts`)
 
 A project is only a **name + description** that groups lots: `{ code (auto, unique), name, description, createdBy, lotCount }`.

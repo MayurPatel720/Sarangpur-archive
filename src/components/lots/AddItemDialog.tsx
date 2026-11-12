@@ -4,17 +4,8 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, lotsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
-import { useReferenceList } from '@/hooks/useReferenceList';
 import { Dialog } from '@/components/ui/Dialog';
-import {
-  Checkbox,
-  Field,
-  FormError,
-  GhostButton,
-  PrimaryButton,
-  Select,
-  TextInput,
-} from '@/components/ui/Form';
+import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
 import type { ItemCreateInput } from '@/types/project';
 
@@ -32,7 +23,7 @@ export interface AddItemSheet {
 
 /**
  * Add items by hand: how many, to which sheet (media type of the lot) and to which group (an existing one,
- * or a new one). The server numbers every item in order; a group holds 36, so the rest rolls into the next
+ * or a new one). New items are always selected for digitization; the file name is filled in later. The server numbers every item in order; a group holds 36, so the rest rolls into the next
  * new group.
  */
 export function AddItemDialog({
@@ -47,14 +38,10 @@ export function AddItemDialog({
 }) {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const reasons = useReferenceList('notDigitizedReason');
   const sheetList: AddItemSheet[] = sheets.length > 0 ? sheets : [{ lineIndex: 0, name: 'Items', groups: [] }];
   const [lineIndex, setLineIndex] = useState(sheetList[0]!.lineIndex);
   const [count, setCount] = useState('1');
   const [group, setGroup] = useState<string>(LAST_GROUP);
-  const [selected, setSelected] = useState(true);
-  const [reason, setReason] = useState('');
-  const [fileName, setFileName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const sheet = sheetList.find((s) => s.lineIndex === lineIndex) ?? sheetList[0]!;
@@ -68,15 +55,9 @@ export function AddItemDialog({
 
   const create = useMutation({
     mutationFn: async () => {
-      const body: ItemCreateInput = {
-        selectedForDigitization: selected,
-        quantity,
-        lineIndex,
-      };
+      const body: ItemCreateInput = { quantity, lineIndex };
       if (group === NEW_GROUP) body.groupNo = highestGroup + 1;
       else if (group !== LAST_GROUP) body.groupNo = Number.parseInt(group, 10);
-      if (!selected && reason) body.notDigitizedReason = reason;
-      if (fileName.trim()) body.fileName = fileName.trim();
       return lotsApi.createItem(lotId, body);
     },
     onSuccess: (data) => {
@@ -94,7 +75,7 @@ export function AddItemDialog({
     },
   });
 
-  const canSubmit = !create.isPending && !quantityInvalid && (selected || reason !== '');
+  const canSubmit = !create.isPending && !quantityInvalid;
 
   return (
     <Dialog title="Add items" subtitle="Numbered automatically, one after another." onClose={onClose}>
@@ -154,32 +135,6 @@ export function AddItemDialog({
             ))}
             <option value={NEW_GROUP}>New group</option>
           </Select>
-        </Field>
-        <Checkbox
-          label="Selected for digitization"
-          checked={selected}
-          onChange={(e) => setSelected(e.target.checked)}
-        />
-        {!selected ? (
-          <Field label="Reason" required hint="Required when the items are not selected.">
-            <Select value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Not-selected reason">
-              <option value="">Choose a reason…</option>
-              {(reasons.data?.items ?? []).map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        ) : null}
-        <Field label="File name" hint="Optional — usually filled at digitalization time.">
-          <TextInput
-            value={fileName}
-            onChange={(e) => setFileName(e.target.value)}
-            placeholder="IMG_0042.jpg"
-            maxLength={180}
-            aria-label="File name (optional)"
-          />
         </Field>
         <FormError message={quantityInvalid ? `How many must be a whole number from 1 to ${MAX_QUANTITY}.` : error} />
         <div className="flex justify-end gap-2.5">

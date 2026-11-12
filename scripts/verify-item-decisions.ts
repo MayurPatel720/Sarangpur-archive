@@ -36,6 +36,7 @@ import { cellText } from '../src/lib/item-cells';
 import { getReferenceList } from '../src/server/reference';
 import { listMasterItems } from '../src/server/lots/master-items';
 import { getLotDetail } from '../src/server/lots/queries';
+import { LotChangeRow, LotChangeSet, LotVersion } from '../src/models/LotChangeSet';
 import { updateMasterColumns } from '../src/server/lots/master-columns';
 import { masterQuerySchema } from '../src/types/master';
 import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor, SHEET_HIDDEN, shownOnSheet } from '../src/lib/item-columns';
@@ -800,6 +801,9 @@ async function main() {
   } finally {
     await LotImage.deleteMany({ lot: { $in: created } });
     await Task.deleteMany({ lot: { $in: created } });
+    await LotChangeRow.deleteMany({ lot: { $in: created } });
+    await LotChangeSet.deleteMany({ lot: { $in: created } });
+    await LotVersion.deleteMany({ lot: { $in: created } });
     await LotItem.deleteMany({ lot: { $in: created } });
     await ActivityLog.deleteMany({ lot: { $in: created } });
     await ArchiveLot.deleteMany({ _id: { $in: created } });

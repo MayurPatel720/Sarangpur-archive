@@ -127,6 +127,19 @@ import {
   type ItemsGridResponse,
 } from '@/types/items';
 import {
+  historyActionResponseSchema,
+  historyChangeDetailSchema,
+  historyItemResponseSchema,
+  historyListResponseSchema,
+  historyPreviewSchema,
+  type HistoryActionBody,
+  type HistoryActionResponse,
+  type HistoryChangeDetail,
+  type HistoryItemResponse,
+  type HistoryListResponse,
+  type HistoryPreview,
+} from '@/types/history';
+import {
   masterColumnsResponseSchema,
   masterResponseSchema,
   type MasterColumnsBody,
@@ -540,6 +553,29 @@ export const queuesApi = {
     getJson<LotListResponse>(queueUrl('returns', page, pageSize, format), lotListResponseSchema),
   discards: (page: number, pageSize: number, format?: string) =>
     getJson<LotListResponse>(queueUrl('discards', page, pageSize, format), lotListResponseSchema),
+};
+
+export const historyApi = {
+  list: (lotId: string) =>
+    getJson<HistoryListResponse>(`/api/lots/${encodeURIComponent(lotId)}/history`, historyListResponseSchema),
+  change: (lotId: string, changeSetId: string) =>
+    getJson<HistoryChangeDetail>(
+      `/api/lots/${encodeURIComponent(lotId)}/history/changes/${encodeURIComponent(changeSetId)}`,
+      historyChangeDetailSchema,
+    ),
+  preview: (lotId: string, target: { seq?: number; versionId?: string }) => {
+    const qs = new URLSearchParams();
+    if (target.seq !== undefined) qs.set('seq', String(target.seq));
+    if (target.versionId) qs.set('versionId', target.versionId);
+    return getJson<HistoryPreview>(`/api/lots/${encodeURIComponent(lotId)}/history/preview?${qs}`, historyPreviewSchema);
+  },
+  item: (lotId: string, q: { itemId?: string; code?: string; path?: string }) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) qs.set(k, v);
+    return getJson<HistoryItemResponse>(`/api/lots/${encodeURIComponent(lotId)}/history/item?${qs}`, historyItemResponseSchema);
+  },
+  act: (lotId: string, body: HistoryActionBody) =>
+    sendJson<HistoryActionResponse>(`/api/lots/${encodeURIComponent(lotId)}/history`, 'POST', body, historyActionResponseSchema),
 };
 
 export const itemsGridApi = {

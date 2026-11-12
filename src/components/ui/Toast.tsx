@@ -20,12 +20,16 @@ type ToastItem = {
   title: string;
   description?: string;
   duration: number;
+  action?: ToastAction;
 };
 
+/** A link-style button on a toast, e.g. "Undo". */
+export type ToastAction = { label: string; onClick: () => void };
+
 type ToastApi = {
-  success: (title: string, description?: string) => void;
+  success: (title: string, description?: string, action?: ToastAction) => void;
   error: (title: string, description?: string) => void;
-  info: (title: string, description?: string) => void;
+  info: (title: string, description?: string, action?: ToastAction) => void;
   dismiss: (id: string) => void;
 };
 
@@ -67,11 +71,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const push = useCallback(
-    (tone: ToastTone, title: string, description?: string) => {
+    (tone: ToastTone, title: string, description?: string, action?: ToastAction) => {
       const id = nextId();
-      const duration = tone === 'error' ? 6000 : 3500;
+      // A toast with an action (Undo) stays a little longer.
+      const duration = tone === 'error' ? 6000 : action ? 8000 : 3500;
       setItems((list) => {
-        const next = [...list, { id, tone, title, description, duration }];
+        const next = [...list, { id, tone, title, description, duration, action }];
         return next.slice(-4);
       });
       const timer = setTimeout(() => dismiss(id), duration);
@@ -90,9 +95,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo<ToastApi>(
     () => ({
-      success: (title, description) => push('success', title, description),
+      success: (title, description, action) => push('success', title, description, action),
       error: (title, description) => push('error', title, description),
-      info: (title, description) => push('info', title, description),
+      info: (title, description, action) => push('info', title, description, action),
       dismiss,
     }),
     [push, dismiss],
@@ -132,6 +137,18 @@ function ToastCard({ item, onDismiss }: { item: ToastItem; onDismiss: () => void
           <p className="m-0 text-[13px] font-semibold leading-snug text-ink">{item.title}</p>
           {item.description ? (
             <p className="m-0 text-[12px] leading-snug text-ink-3">{item.description}</p>
+          ) : null}
+          {item.action ? (
+            <button
+              type="button"
+              onClick={() => {
+                item.action!.onClick();
+                onDismiss();
+              }}
+              className="mt-1 w-fit cursor-pointer border-0 bg-transparent p-0 text-[12.5px] font-semibold text-accent hover:underline"
+            >
+              {item.action.label}
+            </button>
           ) : null}
         </div>
         <button

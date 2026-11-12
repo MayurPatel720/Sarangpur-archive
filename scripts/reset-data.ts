@@ -38,6 +38,7 @@ import { createProject } from '../src/server/projects/mutations';
 import { bulkUpdateItems, getItemsGrid } from '../src/server/lots/item-grid';
 import { recodeSheet } from '../src/server/lots/item-codes';
 import { ensureBothDataType } from './backfill-data-type-both';
+import { LotChangeRow, LotChangeSet, LotVersion } from '../src/models/LotChangeSet';
 
 const MODELS = [
   ['lots', ArchiveLot],
@@ -51,6 +52,9 @@ const MODELS = [
   ['file index rows', FileIndex],
   ['MLS outbox rows', MlsOutbox],
   ['pickups', LotPickup],
+  ['history change rows', LotChangeRow],
+  ['history change sets', LotChangeSet],
+  ['history versions', LotVersion],
 ] as const;
 
 const mask = (uri: string) => uri.replace(/\/\/([^:]+):[^@]+@/, '//$1:****@');

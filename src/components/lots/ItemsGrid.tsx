@@ -29,6 +29,8 @@ import { ImportDialog } from './ImportDialog';
 import { SetPathDialog } from './SetPathDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { ItemFamilyGrid, PHOTO_ROW_PX } from './ItemFamilyGrid';
+import { HistoryControls } from './HistoryControls';
+import { useLotHistory } from '@/hooks/useLotHistory';
 import { useMe } from '@/hooks/useCan';
 
 /**
@@ -102,7 +104,13 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const refLabel = useCallback((list: string, v: string | null) => refLabelOf(refLists, list, v), [refLists]);
 
   const [showPath, setShowPath] = useState(false);
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: gridKey });
+  // Version history: Undo / Redo / History, and the "Undo" link on bigger saves.
+  const history = useLotHistory(lotId);
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: gridKey });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.lots.history(lotId) });
+  };
+  const undoLink = { label: 'Undo', onClick: () => void history.undo() };
 
   const save = useMutation({
     mutationFn: (v: { itemIds: string[]; set: ItemsBulkSet }) => itemsGridApi.update(lotId, v),
@@ -115,6 +123,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         toast.success('Lot decided from its items', `Moved to ${res.finalized.stage}.`);
       } else if (res.blockedBy.length) {
         toast.info('Every item is decided', res.blockedBy.join(' '));
+      } else if (res.updated > 1) {
+        toast.success(`${res.updated} rows updated`, undefined, undoLink);
       }
     },
     onError: (e) => {
@@ -516,6 +526,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 </button>
               ) : null}
               <HiddenColumnsMenu hidden={hiddenSpecs} onShow={showColumn} onShowAll={() => columns.mutate({ hidden: [] })} />
+              <HistoryControls history={history} canEdit={canDetails} lotId={lotId} />
             </div>
           </div>
 
@@ -532,7 +543,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   { itemIds: selected, set },
                   {
                     onSuccess: (res) => {
-                      toast.success(`Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`);
+                      toast.success(`Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`, undefined, undoLink);
                       deselectAll();
                       setShowBulk(false);
                     },
@@ -700,7 +711,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               { itemIds: [clearCodeFor.id], set: { discardClearCode: true } },
               {
                 onSuccess: () => {
-                  toast.success("Code cleared", "The row is now a discard and sits at the end of its sheet.");
+                  toast.success("Code cleared", "The row is now a discard and sits at the end of its sheet.", undoLink);
                   setClearCodeFor(null);
                 },
                 onError: () => setClearCodeFor(null),

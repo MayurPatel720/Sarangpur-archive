@@ -1,5 +1,6 @@
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
+import { tracked } from '@/server/lots/history-core';
 import { LotItem } from '@/models/LotItem';
 import { allocateItemCodes } from '@/server/codes';
 import { parseItemCodeParts } from '@/lib/item-code';
@@ -25,7 +26,23 @@ import type { ItemCreateInput, ItemCreateResponse } from '@/types/project';
  */
 const ITEMS_PER_GROUP = 36;
 
+/** Adds items by hand; recorded in the lot's version history (undo removes them again). */
 export async function createItem(
+  lotId: string,
+  body: ItemCreateInput,
+  ctx: MutationContext,
+): Promise<ItemCreateResponse> {
+  return tracked({
+    lotId,
+    ctx,
+    kind: 'add_items',
+    scope: 'new',
+    label: (r: ItemCreateResponse) => `Added ${r.created} ${r.created === 1 ? 'item' : 'items'} (${r.code}${r.created > 1 ? ` to ${r.lastCode}` : ''})`,
+    run: () => createItemCore(lotId, body, ctx),
+  });
+}
+
+async function createItemCore(
   lotId: string,
   body: ItemCreateInput,
   ctx: MutationContext,

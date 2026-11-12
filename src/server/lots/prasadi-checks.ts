@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
+import { trackedByItems } from '@/server/lots/history-core';
 import { connectToDatabase } from '@/lib/mongo';
 import { PRASADI_FORMAT } from '@/lib/item-columns';
 import { CHECK_RESULTS, daysOverdue, nextCheckDate, weeksText } from '@/lib/recheck';
@@ -54,7 +55,16 @@ export async function listPrasadiChecks(query: PrasadiCheckQuery, now = new Date
 }
 
 /** Records a check on Prasadi items — one audited write per lot touched. */
+/** Marks Prasadi items as checked; recorded in each lot's version history. */
 export async function markPrasadiChecked(
+  body: PrasadiCheckDoneBody,
+  ctx: MutationContext,
+  now = new Date(),
+): Promise<{ updated: number }> {
+  return trackedByItems({ itemIds: body.itemIds, ctx, kind: 'workflow', label: `Quality check recorded · ${body.itemIds.length} ${body.itemIds.length === 1 ? 'item' : 'items'}`, run: () => markPrasadiCheckedCore(body, ctx, now) });
+}
+
+async function markPrasadiCheckedCore(
   body: PrasadiCheckDoneBody,
   ctx: MutationContext,
   now = new Date(),

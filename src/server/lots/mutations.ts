@@ -20,6 +20,7 @@ import { FORMATS, FORMAT_LABELS, type Format, type Stage } from '@/lib/domain';
 import { User } from '@/models/User';
 import { assertNotPast, assertRealDay, createTaskInSession } from '@/server/tasks/mutations';
 import { recordNewLotsInProject, requireProject } from '@/server/projects/membership';
+import { tracked } from '@/server/lots/history-core';
 import type { LotCreateBody, LotPatchBody, DecisionBody, DecisionResponse, OverrideRequestBody, OverrideDecideBody } from '@/types/lot';
 import type { TriageBulkBody } from '@/types/triage';
 
@@ -424,7 +425,16 @@ export async function createIntake(
  * file name or progress (which cannot be reproduced). Project child lots stay
  * single-format. Route permission: `lot:edit`; the assignee rule applies.
  */
+/** Replaces the media table (and so the items); recorded in the lot's version history. */
 export async function replaceMediaLines(
+  lotId: string,
+  body: { version: number; mediaLines: LotCreateBody['mediaLines'] },
+  ctx: MutationContext,
+): Promise<{ id: string; lotReference: string; quantity: number; version: number }> {
+  return tracked({ lotId, ctx, kind: 'media_lines', label: 'Changed the media lines', scope: 'all', checkpoint: 'Before changing the media lines', run: () => replaceMediaLinesCore(lotId, body, ctx) });
+}
+
+async function replaceMediaLinesCore(
   lotId: string,
   body: { version: number; mediaLines: LotCreateBody['mediaLines'] },
   ctx: MutationContext,

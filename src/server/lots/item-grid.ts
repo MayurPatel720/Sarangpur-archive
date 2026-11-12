@@ -18,6 +18,8 @@ import { canWorkLot } from '@/server/lots/access';
 import { can } from '@/server/permissions';
 import { finalizeItemDecisions } from '@/server/lots/mutations';
 import { nextSequence } from '@/server/codes';
+import { tracked, trackedByItems } from '@/server/lots/history-core';
+import { describeEdit, type ChangeKind } from '@/lib/item-history';
 import type {
   GridItem,
   ItemDispositionDoneBody,
@@ -289,12 +291,53 @@ export async function bulkUpdateItems(
   return applyItemEdits(lotId, ids.map((id) => ({ id, set: { ...(body.set as Record<string, unknown>) } })), ctx);
 }
 
+/** What a save key is called in the History list. */
+const EDIT_LABELS: Record<string, string> = {
+  attrs: 'Format-specific fields',
+  custom: 'Custom columns',
+  masterCustom: 'Master Excel columns',
+  discardClearCode: 'Discard · clear code',
+  ...Object.fromEntries(BUILTIN_COLUMNS.filter((c) => c.field).map((c) => [c.field!, c.label])),
+};
+
 /**
- * Applies per-item edits in ONE audited transaction (grid save, bulk bar and the Excel
- * import all come through here), then lets the lot move on: decides it when the last item
- * is decided, and keeps its stage in step with capture / MLS / logging.
+ * Applies per-item edits (grid save, bulk bar and the Excel import all come through here) and records
+ * the change in the lot's version history: the touched rows before and after, as one change set.
+ * A decision edit can finalize the lot and rewrite every item, so it records the whole sheet.
  */
 export async function applyItemEdits(
+  lotId: string,
+  edits: ItemEdit[],
+  ctx: MutationContext,
+  audit: EditAudit = {},
+): Promise<ItemsBulkResponse> {
+  const keys = [...new Set(edits.flatMap((e) => Object.keys(e.set)))];
+  const n = edits.length;
+  const isImport = audit.kind === 'items_imported';
+  const clearing = keys.includes('discardClearCode');
+  const kind: ChangeKind = isImport ? 'import' : clearing ? 'discard_clear' : n > 1 ? 'bulk' : 'edit';
+  const label = isImport
+    ? (audit.title ?? 'Excel import')
+    : clearing
+      ? `Discard · Yes and clear code · ${n} ${n === 1 ? 'item' : 'items'}`
+      : describeEdit(keys, n, (k) => EDIT_LABELS[k] ?? k);
+  const touchesDecision = DECISION_KEYS.some((k) => keys.includes(k));
+  return tracked({
+    lotId,
+    ctx,
+    kind,
+    label,
+    scope: touchesDecision ? 'all' : edits.map((e) => new Types.ObjectId(e.id)),
+    checkpoint: isImport ? 'Before Excel import' : n >= 50 ? 'Before bulk edit' : undefined,
+    run: () => applyItemEditsCore(lotId, edits, ctx, audit),
+  });
+}
+
+/**
+ * Applies per-item edits in ONE audited transaction, then lets the lot move on: decides it when the
+ * last item is decided, and keeps its stage in step with capture / MLS / logging.
+ */
+async function applyItemEditsCore(
   lotId: string,
   edits: ItemEdit[],
   ctx: MutationContext,
@@ -731,7 +774,20 @@ export async function listItemDispositions(query: ItemDispositionQuery): Promise
  * digitized first can only be marked once its file is captured. When that leaves a lot
  * with nothing to digitize and every item handled, the lot becomes returned / discarded.
  */
+/** Marks items returned / discarded in the queue; recorded in each lot's version history. */
 export async function markItemDispositionsDone(
+  body: ItemDispositionDoneBody,
+  ctx: MutationContext,
+): Promise<{ updated: number }> {
+  return trackedByItems({
+    itemIds: body.itemIds,
+    ctx,
+    kind: 'workflow',
+    label: `Marked ${body.itemIds.length} ${body.itemIds.length === 1 ? 'item' : 'items'} ${body.kind === 'return' ? 'returned' : 'discarded'}`,
+    run: () => markItemDispositionsDoneCore(body, ctx),
+  });
+}
+async function markItemDispositionsDoneCore(
   body: ItemDispositionDoneBody,
   ctx: MutationContext,
 ): Promise<{ updated: number }> {
