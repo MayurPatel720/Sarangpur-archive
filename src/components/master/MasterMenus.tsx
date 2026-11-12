@@ -347,6 +347,8 @@ export function HeaderMenu({
     pin: () => void;
     move: (step: -1 | 1) => void;
     resetWidth: () => void;
+    /** Only for the Master Excel's own custom columns, and only offered to admins. */
+    remove?: () => void;
   };
 }) {
   return (
@@ -398,6 +400,14 @@ export function HeaderMenu({
             <button type="button" className={menuItem} onClick={run(actions.showOnly)}>
               Show only this column
             </button>
+            {actions.remove ? (
+              <>
+                <div className="my-1 border-t border-line-soft" />
+                <button type="button" className={`${menuItem} !text-danger`} onClick={run(actions.remove)}>
+                  Remove column
+                </button>
+              </>
+            ) : null}
           </>
         );
       }}

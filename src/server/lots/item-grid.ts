@@ -10,12 +10,14 @@ import { nextCheckDate } from '@/lib/recheck';
 import type { ActivityKind } from '@/lib/domain';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem, type LotItemDoc } from '@/models/LotItem';
+import { MasterColumn } from '@/models/MasterColumn';
 import { withAudit, auditActor } from '@/server/audit';
 import { mediaSubtypeListKeyAsync } from '@/server/lots/queries';
 import { getReferenceList } from '@/server/reference';
 import { canWorkLot } from '@/server/lots/access';
 import { can } from '@/server/permissions';
 import { finalizeItemDecisions } from '@/server/lots/mutations';
+import { nextSequence } from '@/server/codes';
 import type {
   GridItem,
   ItemDispositionDoneBody,
@@ -42,7 +44,7 @@ import type {
  * discard = Yes ⇒ Discard, and choosing Discard here answers discard = Yes.
  */
 
-const DECISION_KEYS = ['digital', 'redigital', 'discard'] as const;
+const DECISION_KEYS = ['digital', 'redigital', 'discard', 'discardClearCode'] as const;
 
 /** The registry's format-specific columns, by id — the only keys an edit may put under `attrs`. */
 const ATTR_COLUMNS = new Map(BUILTIN_COLUMNS.filter((c) => c.attr).map((c) => [c.id, c]));
@@ -298,7 +300,7 @@ export async function applyItemEdits(
   ctx: MutationContext,
   audit: EditAudit = {},
 ): Promise<ItemsBulkResponse> {
-  for (const e of edits) for (const k of Object.keys(e.set)) if (k !== 'custom') e.set[k] = clean(e.set[k]);
+  for (const e of edits) for (const k of Object.keys(e.set)) if (k !== 'custom' && k !== 'masterCustom') e.set[k] = clean(e.set[k]);
 
   const keys = new Set(edits.flatMap((e) => Object.keys(e.set)));
   const touchesDecision = DECISION_KEYS.some((k) => keys.has(k));
@@ -314,6 +316,10 @@ export async function applyItemEdits(
     }
   }
   const refLists = new Map(await Promise.all([...refKeys].map(async (k) => [k, await getReferenceList(k)] as const)));
+  // Master Excel free-text columns that may be written.
+  const masterTextKeys = new Set(
+    keys.has('masterCustom') ? (await MasterColumn.find({ kind: 'text' }).select('key').lean()).map((c) => c.key) : [],
+  );
 
   await withAudit({
     lotId,
@@ -330,6 +336,25 @@ export async function applyItemEdits(
       if (items.length !== ids.length) throw new HttpError(404, 'Some items do not belong to this lot.');
       const byId = new Map(items.map((i) => [String(i._id), i]));
       const customDefs = new Map((lot.customColumns ?? []).map((c) => [c.key, c]));
+
+      // Discard → "Yes and clear code": an item that another item points at as its original keeps its code.
+      const clearing = edits.filter((e) => e.set.discardClearCode === true).map((e) => byId.get(e.id)!.code);
+      const originals = new Set(
+        clearing.length === 0
+          ? []
+          : (await LotItem.find({ duplicateCode: { $in: clearing } }).select('duplicateCode').session(session).lean()).map((d) => String(d.duplicateCode)),
+      );
+      /** Last position of each sheet, so cleared rows can go to its end (one after the other). */
+      const endOf = new Map<number, number>();
+      const nextEnd = async (line: number) => {
+        if (!endOf.has(line)) {
+          const top = await LotItem.findOne({ lot: lot._id, lineIndex: line }).sort({ sortOrder: -1 }).select('sortOrder').session(session).lean();
+          endOf.set(line, top?.sortOrder ?? 0);
+        }
+        const n = endOf.get(line)! + 1;
+        endOf.set(line, n);
+        return n;
+      };
 
       const now = new Date();
       const ops: AnyBulkWriteOperation[] = [];
@@ -467,6 +492,14 @@ export async function applyItemEdits(
           }
         }
 
+        // The Master Excel's free-text custom columns (see src/lib/master-custom.ts).
+        for (const [mk, raw] of Object.entries((set.masterCustom ?? {}) as Record<string, unknown>)) {
+          if (!masterTextKeys.has(mk)) fail('Unknown Master Excel column.');
+          const v = typeof raw === 'string' ? clean(raw) : null;
+          if (v === null || v === undefined) $unset[`masterCustom.${mk}`] = '';
+          else $set[`masterCustom.${mk}`] = String(v).slice(0, 2000);
+        }
+
         // Custom columns.
         const custom = (set.custom ?? {}) as Record<string, unknown>;
         for (const [ck, raw] of Object.entries(custom)) {
@@ -492,6 +525,22 @@ export async function applyItemEdits(
             $set[`custom.${ck}`] = String(v).slice(0, 2000);
           }
         }
+
+        // Discard → "Yes and clear code": the row is decided Discard, its archive code is cleared (it becomes
+        // discard-1, discard-2 … in one running count) and it moves to the end of its sheet. The old number stays retired.
+        if (set.discardClearCode === true) {
+          set.digital = false;
+          set.redigital = false;
+          set.discard = true;
+          if (!it.clearedCode) {
+            if (it.taggedInMls) fail('this item is already tagged in MLS, so its code can no longer be cleared.');
+            if (originals.has(it.code)) fail('this item is the original of a duplicate, so its code cannot be cleared.');
+            $set.code = `discard-${await nextSequence('discardCode', session)}`;
+            $set.clearedCode = it.code;
+            $set.sortOrder = await nextEnd(it.lineIndex ?? 0);
+          }
+        }
+        delete set.discardClearCode;
 
         // Decision + disposition.
         const before = answersOf(it);

@@ -50,6 +50,7 @@ export const queryKeys = {
   master: {
     all: ['master'] as const,
     list: (params: string) => [...queryKeys.master.all, 'list', params] as const,
+    columns: ['master', 'columns'] as const,
   },
   queues: {
     all: ['queues'] as const,

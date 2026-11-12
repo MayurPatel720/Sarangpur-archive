@@ -36,6 +36,8 @@ export interface BulkField {
 
 /** The "blank this field" choice. */
 export const CLEAR = '__clear';
+/** The Discard field's extra choice "Yes and clear code" (sent as `discardClearCode`, not as a Yes/No). */
+export const DISCARD_CLEAR_CODE = '__clearcode';
 
 const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info', 'photo', 'status']);
 
@@ -157,6 +159,10 @@ export function buildBulkSet(
   for (const f of fields) {
     const raw = values[f.id];
     if (raw === undefined || raw === '') continue;
+    if (f.id === 'discard' && raw === DISCARD_CLEAR_CODE) {
+      set.discardClearCode = true;
+      continue;
+    }
     const r = parseBulkValue(f, raw);
     if (!r.ok) {
       errors[f.id] = r.error;

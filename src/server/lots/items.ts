@@ -75,7 +75,16 @@ export async function createItem(
         .select('code sortOrder')
         .session(session)
         .lean()) as { code: string; sortOrder?: number } | null;
-      const parts = sibling ? parseItemCodeParts(sibling.code) : null;
+      // A row cleared by Discard → "Yes and clear code" is now called discard-N: continue the pair from a normal row.
+      const codedSibling =
+        sibling && /^discard-\d+$/.test(sibling.code)
+          ? ((await LotItem.findOne({ lot: lot._id, lineIndex: 0, clearedCode: null })
+              .sort({ sortOrder: -1 })
+              .select('code')
+              .session(session)
+              .lean()) as { code: string } | null)
+          : sibling;
+      const parts = codedSibling ? parseItemCodeParts(codedSibling.code) : null;
       const [code] = await allocateItemCodes(
         parts?.abbr1 ?? (await namingPrefix(lot.format, lot.mediaSubtype)),
         parts?.abbr2 ?? lot.originSource ?? 'OTH',

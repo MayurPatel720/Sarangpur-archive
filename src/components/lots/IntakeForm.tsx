@@ -349,7 +349,8 @@ export function IntakeForm({ initialFormat }: { initialFormat?: string } = {}) {
         ) : null}
 
         {/* ------------------------------------------------------- footer */}
-        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-line-soft">
+        {/* Sticky: the buttons stay on screen however long the step is (-bottom cancels the page's bottom padding). */}
+        <div className="sticky -bottom-4 md:-bottom-6 z-20 flex flex-wrap items-center gap-2 border-t border-line-soft bg-surface py-3">
           {step > 0 ? (
             <GhostButton disabled={busy} onClick={goBack}>
               Back

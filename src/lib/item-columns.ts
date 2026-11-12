@@ -35,7 +35,7 @@ export const DEPT_IDS = DEPARTMENTS.map((d) => d.id) as [DeptId, ...DeptId[]];
 export const CUSTOM_DEPARTMENTS = DEPARTMENTS.filter((d) => d.id !== 'removal');
 export type CustomDeptId = Exclude<DeptId, 'removal'>;
 export const CUSTOM_DEPT_IDS = CUSTOM_DEPARTMENTS.map((d) => d.id) as [CustomDeptId, ...CustomDeptId[]];
-export const deptLabel = (id: string) => (id === 'lot' ? 'Lot' : (DEPARTMENTS.find((d) => d.id === id)?.label ?? id));
+export const deptLabel = (id: string) => (id === 'lot' ? 'Lot' : id === 'custom' ? 'Custom' : (DEPARTMENTS.find((d) => d.id === id)?.label ?? id));
 
 export type ColumnKind =
   | 'readonly' //  shown, never edited here
@@ -59,7 +59,8 @@ export interface ColumnSpec {
   id: string;
   label: string;
   /** `lot` = the Master Excel's lot / project columns (not part of a lot's own Excel). */
-  dept: DeptId | 'lot';
+  /** `lot` = the Master Excel's lot columns, `custom` = its own custom columns (see master-custom.ts). */
+  dept: DeptId | 'lot' | 'custom';
   kind: ColumnKind;
   /** Key in `ItemsBulkSet` for editable columns. */
   field?: string;

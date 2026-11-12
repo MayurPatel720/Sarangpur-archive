@@ -35,6 +35,7 @@ import { changeItemStatus } from '../src/server/lots/item-status';
 import { cellText } from '../src/lib/item-cells';
 import { getReferenceList } from '../src/server/reference';
 import { listMasterItems } from '../src/server/lots/master-items';
+import { updateMasterColumns } from '../src/server/lots/master-columns';
 import { masterQuerySchema } from '../src/types/master';
 import { allColumns, appliesToFormat, forFormat, isCommonColumn, labelFor, SHEET_HIDDEN, shownOnSheet } from '../src/lib/item-columns';
 import { daysOverdue, nextCheckDate, weeksText } from '../src/lib/recheck';
@@ -462,6 +463,23 @@ async function main() {
     check('Add item on a digital photo lot also starts with Digital = Yes', (await grid(digitalPhoto.id)).items.find((i) => i.id === added.id)?.digital === true);
     const addedPhys = await createItem(physPhoto.id, {}, admin);
     check('Add item on a physical photo lot stays blank', (await grid(physPhoto.id)).items.find((i) => i.id === addedPhys.id)?.digital === null);
+    console.log('discard: yes and clear code');
+    const dcRows = (await grid(physPhoto.id)).items;
+    const dc1 = dcRows[0]!;
+    const dc2 = dcRows[1]!;
+    await bulkUpdateItems(physPhoto.id, { itemIds: [dc1.id], set: { discardClearCode: true } }, admin);
+    await bulkUpdateItems(physPhoto.id, { itemIds: [dc2.id], set: { discardClearCode: true } }, admin);
+    const dcAfter = (await grid(physPhoto.id)).items;
+    const c1 = dcAfter.find((i) => i.id === dc1.id)!;
+    const c2 = dcAfter.find((i) => i.id === dc2.id)!;
+    const n1 = Number(/^discard-(\d+)$/.exec(c1.code)?.[1] ?? NaN);
+    check('the code is cleared and the row is renamed discard-N', Number.isFinite(n1) && c1.code !== dc1.code, [dc1.code, c1.code]);
+    check('the next one continues the running count', c2.code === `discard-${n1 + 1}`, [c1.code, c2.code]);
+    check('the row is decided Discard', c1.result === 'discard' && c1.discard === true && c1.digital === false && c1.redigital === false, c1);
+    check('cleared rows sit at the end of the sheet, in order', dcAfter.slice(-2).map((i) => i.id).join() === [dc1.id, dc2.id].join(), dcAfter.map((i) => i.code));
+    const retiredCode = (await LotItem.findById(dc1.id).lean())?.clearedCode;
+    check('the old code is kept as clearedCode (retired)', retiredCode === dc1.code, retiredCode);
+
     await bulkUpdateItems(digitalPhoto.id, { itemIds: [dpItems[0]!.id], set: { digital: false } }, admin);
     check('the answer can still be changed', (await grid(digitalPhoto.id)).items.find((i) => i.id === dpItems[0]!.id)?.digital === false);
 
@@ -744,6 +762,25 @@ async function main() {
     // A recheck on a non-Prasadi item is ignored (a mixed bulk selection must not mark photos).
     await bulkUpdateItems(lot.id, { itemIds: [a], set: { recheckWeeks: 4 } }, admin);
     check('recheck weeks never lands on a non-Prasadi item', (await grid(lot.id)).items.find((i) => i.id === a)!.recheckWeeks === null);
+
+    console.log('master excel: custom columns');
+    const mcText = (await updateMasterColumns({ add: { label: 'ZZ verify note', kind: 'text' } }, admin)).columns.find((c) => c.label === 'ZZ verify note')!;
+    const mcLot = (await updateMasterColumns({ add: { label: 'ZZ verify owner', kind: 'lot', source: 'ownerName' } }, admin)).columns.find((c) => c.label === 'ZZ verify owner')!;
+    try {
+      await rejects('a second column with the same name is refused', () => updateMasterColumns({ add: { label: 'zz verify note', kind: 'text' } }, admin), 409);
+      await rejects('a fetched column needs a lot detail', () => updateMasterColumns({ add: { label: 'ZZ verify none', kind: 'lot' } }, admin), 400);
+      await bulkUpdateItems(lot.id, { itemIds: [a], set: { masterCustom: { [mcText.key]: 'hello' } } }, admin);
+      await rejects('an unknown master column is refused', () => bulkUpdateItems(lot.id, { itemIds: [a], set: { masterCustom: { mc_nope: 'x' } } }, admin), 400);
+      const mrows = await listMasterItems(masterQuerySchema.parse({ lot: (await ArchiveLot.findById(lot.id).lean())!.lotReference, pageSize: 50 }), admin);
+      const mrow = mrows.rows.find((r) => r.id === a)!;
+      check('typed text comes back on the row', mrow.extra[mcText.key] === 'hello', mrow.extra);
+      check('a fetched column shows the lot detail', mrow.extra[mcLot.key] === ((await ArchiveLot.findById(lot.id).lean())!.owner?.name ?? ''), mrow.extra);
+      await rejects('only an admin removes a column', () => updateMasterColumns({ removeKey: mcText.key }, { ...admin, grants: ['lot:view'] }), 403);
+    } finally {
+      await updateMasterColumns({ removeKey: mcText.key }, admin);
+      await updateMasterColumns({ removeKey: mcLot.key }, admin);
+    }
+    check('removing a column wipes what was typed into it', !((await LotItem.findById(a).lean()) as { masterCustom?: Record<string, unknown> } | null)?.masterCustom?.[mcText.key]);
   } finally {
     await LotImage.deleteMany({ lot: { $in: created } });
     await Task.deleteMany({ lot: { $in: created } });

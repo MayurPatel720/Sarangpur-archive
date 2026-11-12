@@ -149,6 +149,8 @@ export const itemsBulkBodySchema = z.object({
       digital: tri,
       redigital: tri,
       discard: tri,
+      /** Discard → "Yes and clear code": discard = Yes, the archive code is cleared, the row becomes discard-N and moves to the end of its sheet. */
+      discardClearCode: z.boolean().optional(),
       decisionRemark: text(2000),
       captured: z.boolean().optional(),
       digitalSource: text(200),
@@ -163,6 +165,8 @@ export const itemsBulkBodySchema = z.object({
       loggerName: text(200),
       /** Values of the lot's custom columns, by column key. */
       custom: z.record(z.string().max(40), customValueSchema).optional(),
+      /** Values of the Master Excel's free-text custom columns, by column key (null clears). */
+      masterCustom: z.record(z.string().max(40), z.string().trim().max(2000).nullable()).optional(),
     })
     .refine((s) => Object.keys(s).length > 0, { message: 'Nothing to change.' }),
 });

@@ -18,6 +18,8 @@ const lotItemSchema = new Schema(
     format: { type: String, trim: true, default: null, index: true },
     /** Full item code, e.g. NEG-MUM-014-01-03. Unique across the archive. */
     code: { type: String, required: true, unique: true, trim: true },
+    /** Set by Discard → "Yes and clear code": the archive code this item had before it became discard-N. That number stays retired (see maxItemNumber). */
+    clearedCode: { type: String, trim: true, default: null },
     /** Group within the lot — a film roll, a tape, an album. */
     groupNo: { type: Number, required: true, min: 1 },
     itemNo: { type: Number, required: true, min: 1 },
@@ -104,6 +106,8 @@ const lotItemSchema = new Schema(
     lastCheckedByName: { type: String, trim: true, default: null },
     /** User-added columns of the lot's Excel, keyed by the column's key (lot.customColumns). */
     custom: { type: Schema.Types.Mixed, default: undefined },
+    /** Values of the free-text columns of the Master Excel, keyed by the column's key (MasterColumn). */
+    masterCustom: { type: Schema.Types.Mixed, default: undefined },
 
     /**
      * Per-item decision. Answers are Yes / No / unanswered (null). `verdict` is

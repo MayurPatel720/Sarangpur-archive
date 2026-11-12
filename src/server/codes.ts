@@ -77,7 +77,8 @@ export function formatItemCode(prefix: string, origin: string, seq: number, kind
  * abbreviation pair (`ALB-surat`) is simply "the highest number in use + 1", read from
  * the items themselves. That makes numbers the user frees (a re-coded sheet, a duplicate
  * that moved to another number) available again, and numbers the user jumps over
- * (26 → 30) stay free until someone types them. The unique index on `code` is the
+ * (26 → 30) stay free until someone types them. The one exception: a number cleared by
+ * Discard → "Yes and clear code" stays retired (the item keeps it in `clearedCode`). The unique index on `code` is the
  * safety net if two writers race for the same number (surfaces as a 409).
  */
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -86,8 +87,10 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export async function maxItemNumber(abbr1: string, abbr2: string, session?: ClientSession): Promise<number> {
   await connectToDatabase();
   const [peak] = await LotItem.aggregate<{ max: number }>([
-    { $match: { code: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
-    { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$code', '-'] }, 2] } } } },
+    // A cleared item (discard-N) keeps its old code in `clearedCode`: that number stays used, never handed out again.
+    { $project: { c: { $ifNull: ['$clearedCode', '$code'] } } },
+    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
+    { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$c', '-'] }, 2] } } } },
     { $group: { _id: null, max: { $max: '$n' } } },
   ]).session(session ?? null);
   return peak?.max ?? 0;
@@ -103,8 +106,9 @@ export async function usedItemNumbers(
 ): Promise<Set<number>> {
   await connectToDatabase();
   const rows = await LotItem.aggregate<{ n: number }>([
-    { $match: { code: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
-    { $project: { _id: 0, n: { $toInt: { $arrayElemAt: [{ $split: ['$code', '-'] }, 2] } } } },
+    { $project: { c: { $ifNull: ['$clearedCode', '$code'] } } },
+    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
+    { $project: { _id: 0, n: { $toInt: { $arrayElemAt: [{ $split: ['$c', '-'] }, 2] } } } },
     { $match: { n: { $gte: from, $lte: to } } },
   ]).session(session ?? null);
   return new Set(rows.map((r) => r.n));

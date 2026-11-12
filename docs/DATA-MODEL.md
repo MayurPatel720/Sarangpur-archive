@@ -126,6 +126,8 @@ individually, and the 16MB document ceiling would eventually be hit.
 | `digitalSource` / `phyStorageLoc` / `storageRemark` | String | Dig source (a place, e.g. Mumbai) · where the physical item is kept · remark |
 | `logged` / `loggedAt` / `loggerName` | Boolean / Date / String | Logging date / logger. `logged` is no longer a sheet column (hidden); `taggedInMls` now sits in the Logging band |
 | `custom` | Mixed | Values of the lot's added columns, by column key (`ArchiveLot.customColumns`) |
+| `masterCustom` | Mixed | Values of the Master Excel's free-text columns, by column key (`mastercolumns`) |
+| `clearedCode` | String | null | Set by Discard → "Yes and clear code": the archive code the row had before it became `discard-N` (running count `discardCode` in `counters`). That number stays retired — `maxItemNumber` still counts it |
 | `decision.verdict` | `archive` \| `return_or_discard` \| null | Legacy mirror of the result, written so old guards ("items already decided") keep working |
 | `name`, `description`, `event`, `people`, `year`, `month`, `itemCondition`, `decision.existsInMls` … | | Retired from the Excel; old values stay in the database |
 | `dispositionDoneAt` / `dispositionDoneByName` / `lotReference` | | Denormalised for the item queues |
@@ -152,6 +154,10 @@ that lot) and `customColumns[]` (`{ key, label, type: text|number|yesno|date, de
 `src/lib/item-columns.ts`.
 
 ---
+
+## `mastercolumns` — DONE (`src/models/MasterColumn.ts`)
+
+Custom columns of the Master Excel only, shared by everyone: `key` (`mc_…`, unique), `label`, `kind` (`text` = typed per row, stored on the item; `lot` = fetched live from a lot detail such as owner name / phone, see `src/lib/master-custom.ts`), `source`, `createdBy`. Never shown on a lot's own Items sheet.
 
 ## `activitylogs` — DONE (`src/models/ActivityLog.ts`)
 

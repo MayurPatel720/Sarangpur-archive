@@ -71,6 +71,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const [codeFor, setCodeFor] = useState<GridItem | null>(null);
   const [duplicateFor, setDuplicateFor] = useState<{ item: GridItem; code: string } | null>(null);
   const [deleteColumn, setDeleteColumn] = useState<CustomColumn | null>(null);
+  /** The row whose Discard was set to "Yes and clear code", waiting for the OK. */
+  const [clearCodeFor, setClearCodeFor] = useState<GridItem | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   /** The item whose photos are open (Prasadi). */
   const [photosFor, setPhotosFor] = useState<GridItem | null>(null);
@@ -159,7 +161,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const specs = useMemo(() => allColumns(data?.customColumns ?? []), [data?.customColumns]);
   const hiddenIds = useMemo(() => new Set(data?.hiddenColumns ?? []), [data?.hiddenColumns]);
   const visibleSpecs = useMemo(
-    () => specs.filter((s) => !hiddenIds.has(s.id) && (s.dept === 'lot' || shownDepts.includes(s.dept) || s.kind === 'code')),
+    () => specs.filter((s) => !hiddenIds.has(s.id) && (s.dept === 'lot' || s.dept === 'custom' || shownDepts.includes(s.dept) || s.kind === 'code')),
     [specs, hiddenIds, shownDepts],
   );
   /** Media formats present in this lot — a column that fits none of them is not offered at all. */
@@ -261,7 +263,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   useEffect(() => {
     if (selected.length === 0) setShowBulk(false);
   }, [selected.length]);
-  const dialogOpen = showAdd || showImport || showBulk || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
+  const dialogOpen = showAdd || showImport || showBulk || Boolean(clearCodeFor) || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
   useEffect(() => {
     if (!fullscreen) return;
     const prev = document.body.style.overflow;
@@ -408,7 +410,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Sticky toolbar: stays at the top of the page while the sheets scroll (-top cancels the page's top padding). */}
+          <div className={`flex flex-wrap items-center gap-2 ${fullscreen ? '' : 'sticky -top-4 md:-top-[22px] z-30 -mx-3 border-b border-line-soft bg-surface px-3 py-2 md:-mx-4 md:px-4'}`}>
             <div role="group" aria-label="Show items" className={prasadiOnly ? 'hidden' : 'flex flex-wrap gap-1.5'}>
               {FILTERS.map((f) => (
                 <button
@@ -470,7 +473,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   title="Set the same values on the ticked rows"
                   className="inline-flex h-10 cursor-pointer items-center rounded-[6px] border border-accent bg-accent-soft px-4 text-[13px] font-semibold text-accent"
                 >
-                  {selected.length} selected
+                  Bulk edit
+                  <span className="ml-1.5 rounded-full bg-accent px-1.5 text-[11px] font-bold leading-[18px] text-white tabular-nums">{selected.length}</span>
                 </button>
               ) : null}
               {canDetails && pathItems.length > 0 ? (
@@ -550,6 +554,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   onOpenStatus={setStatusFor}
                   height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : ROW_PX)}
                   onOpenCode={onOpenCode}
+                  onClearCode={setClearCodeFor}
                   onDuplicate={onDuplicate}
                   onHide={hideColumn}
                   onDeleteColumn={setDeleteColumn}
@@ -674,6 +679,27 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
             refresh();
             void queryClient.invalidateQueries({ queryKey: queryKeys.lots.detail(lotId) });
           }}
+        />
+      ) : null}
+      {clearCodeFor ? (
+        <ConfirmDialog
+          title="Discard and clear this code?"
+          body={`${clearCodeFor.code} will be cleared. The row is decided Discard, renamed discard-N (next number in the running count) and moved to the end of its sheet. The old code is retired for good and cannot be brought back.`}
+          confirmLabel="Yes and clear code"
+          pending={save.isPending}
+          onConfirm={() =>
+            save.mutate(
+              { itemIds: [clearCodeFor.id], set: { discardClearCode: true } },
+              {
+                onSuccess: () => {
+                  toast.success("Code cleared", "The row is now a discard and sits at the end of its sheet.");
+                  setClearCodeFor(null);
+                },
+                onError: () => setClearCodeFor(null),
+              },
+            )
+          }
+          onClose={() => setClearCodeFor(null)}
         />
       ) : null}
       {deleteColumn ? (

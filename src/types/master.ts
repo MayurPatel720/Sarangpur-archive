@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { BUILTIN_COLUMNS } from '@/lib/item-columns';
+import { LOT_SOURCE_IDS, MASTER_COLUMN_KINDS } from '@/lib/master-custom';
 import { gridItemSchema } from './items';
 
 /**
@@ -77,8 +78,34 @@ export const masterRowSchema = gridItemSchema.extend({
   projectCode: z.string(),
   projectName: z.string(),
   assigneeName: z.string(),
+  /** The Master Excel's own custom columns: column key → value (typed text, or the lot detail it fetches). */
+  extra: z.record(z.string(), z.string()),
 });
 export type MasterRow = z.output<typeof masterRowSchema>;
+
+/* ------------------------------------------------- custom columns of the Master Excel */
+
+export const masterColumnSchema = z.object({
+  key: z.string(),
+  label: z.string(),
+  kind: z.enum(MASTER_COLUMN_KINDS),
+  source: z.enum(LOT_SOURCE_IDS).nullable(),
+});
+export const masterColumnsResponseSchema = z.object({ columns: z.array(masterColumnSchema) });
+export type MasterColumnsResponse = z.output<typeof masterColumnsResponseSchema>;
+
+/** PATCH /api/items/master/columns — add a column, or (admins) remove one. */
+export const masterColumnsBodySchema = z.object({
+  add: z
+    .object({
+      label: z.string().trim().min(1, 'Give the column a name.').max(60),
+      kind: z.enum(MASTER_COLUMN_KINDS),
+      source: z.enum(LOT_SOURCE_IDS).nullable().optional(),
+    })
+    .optional(),
+  removeKey: z.string().max(40).optional(),
+});
+export type MasterColumnsBody = z.input<typeof masterColumnsBodySchema>;
 
 export const masterResponseSchema = z.object({
   rows: z.array(masterRowSchema),

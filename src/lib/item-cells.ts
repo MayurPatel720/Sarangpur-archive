@@ -45,6 +45,7 @@ export function cellText(
   }
   // Master Excel only — present on its rows, absent on a lot's own Excel.
   const m = row as Partial<MasterRow>;
+  if (spec.dept === 'custom') return m.extra?.[spec.id] ?? '';
   switch (spec.id) {
     case 'lotNo':
       return m.lotReference ?? '';

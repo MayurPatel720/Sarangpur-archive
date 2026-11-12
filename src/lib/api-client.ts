@@ -126,7 +126,13 @@ import {
   type SheetCodeResponse,
   type ItemsGridResponse,
 } from '@/types/items';
-import { masterResponseSchema, type MasterResponse } from '@/types/master';
+import {
+  masterColumnsResponseSchema,
+  masterResponseSchema,
+  type MasterColumnsBody,
+  type MasterColumnsResponse,
+  type MasterResponse,
+} from '@/types/master';
 import {
   searchResponseSchema,
   type SearchResponse,
@@ -591,6 +597,9 @@ export const masterApi = {
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') qs.set(k, String(v));
     return getJson<MasterResponse>(`/api/items/master?${qs}`, masterResponseSchema);
   },
+  columns: () => getJson<MasterColumnsResponse>('/api/items/master/columns', masterColumnsResponseSchema),
+  updateColumns: (body: MasterColumnsBody) =>
+    sendJson<MasterColumnsResponse>('/api/items/master/columns', 'PATCH', body, masterColumnsResponseSchema),
 };
 
 export const projectsApi = {

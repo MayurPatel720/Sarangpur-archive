@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CLEAR, buildBulkSet, bulkFieldsFor, type BulkField } from '@/lib/bulk-fields';
+import { CLEAR, DISCARD_CLEAR_CODE, buildBulkSet, bulkFieldsFor, type BulkField } from '@/lib/bulk-fields';
 import { DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { MAX_RECHECK_WEEKS } from '@/lib/recheck';
@@ -112,6 +112,7 @@ export function BulkEditBar({
             <option value="">No change</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
+            {f.id === 'discard' ? <option value={DISCARD_CLEAR_CODE}>Yes and clear code</option> : null}
             <option value={CLEAR}>Clear</option>
           </Select>
         );

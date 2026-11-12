@@ -127,6 +127,8 @@ function PhotoCell({ item }: { item: GridItem }) {
 }
 type Tri = boolean | null;
 const TRI_VALUES = ['Yes', 'No', ''] as const;
+/** The extra choice of the Discard column. */
+export const DISCARD_CLEAR_CODE = 'Yes and clear code';
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
 const triParse = (s: unknown): Tri => (s === 'Yes' ? true : s === 'No' ? false : null);
 
@@ -154,6 +156,7 @@ export function ItemFamilyGrid({
   onOpenStatus,
   height,
   onOpenCode,
+  onClearCode,
   onDuplicate,
   onHide,
   onDeleteColumn,
@@ -184,6 +187,8 @@ export function ItemFamilyGrid({
   /** CSS height of the grid box. */
   height: string;
   onOpenCode: (item: GridItem) => void;
+  /** Discard → "Yes and clear code" was picked for this row (the parent asks, then saves). */
+  onClearCode: (item: GridItem) => void;
   onDuplicate: (item: GridItem, otherCode: string) => void;
   onHide: (columnId: string) => void;
   /** Show only one department (null = all). A view for this user, not saved. */
@@ -448,7 +453,8 @@ export function ItemFamilyGrid({
             pinned: 'left',
             cellClass: 'font-mono',
             tooltipValueGetter: () => 'Click to change the code',
-            onCellClicked: (p) => p.data && onOpenCode(p.data),
+            // A cleared row (discard-N) has no code left to edit.
+            onCellClicked: (p) => p.data && !/^discard-\d+$/.test(p.data.code) && onOpenCode(p.data),
             cellRenderer: (p: ICellRendererParams<GridItem>) => (
               <button type="button" className="bg-transparent border-0 p-0 text-accent cursor-pointer font-mono text-[12.5px]">
                 {p.value as string}
@@ -472,6 +478,26 @@ export function ItemFamilyGrid({
           };
         case 'yesno': {
           const f = spec.field as 'digital' | 'redigital' | 'discard';
+          if (f === 'discard') {
+            // Discard has one more choice: "Yes and clear code" — asks first (the old code cannot come back), then the server
+            // marks the row Discard, renames it discard-N and moves it to the end of the sheet.
+            return {
+              ...base,
+              editable: canDecide,
+              valueGetter: (p) => (p.data ? triText(p.data.discard) : ''),
+              valueSetter: (p: ValueSetterParams<GridItem>) => {
+                if (!p.data) return false;
+                if (p.newValue === DISCARD_CLEAR_CODE) {
+                  onClearCode(p.data);
+                  return false;
+                }
+                p.data.discard = triParse(p.newValue);
+                return true;
+              },
+              cellEditor: 'agSelectCellEditor',
+              cellEditorParams: { values: [...TRI_VALUES, DISCARD_CLEAR_CODE] },
+            };
+          }
           return {
             ...base,
             editable: canDecide,
@@ -568,7 +594,7 @@ export function ItemFamilyGrid({
       ...groups,
     ];
     return all.map(lockInactive);
-  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onClearCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;

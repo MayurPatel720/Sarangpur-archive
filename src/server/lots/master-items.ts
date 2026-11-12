@@ -8,6 +8,9 @@ import { requiredColumns } from '@/lib/item-status';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { Project } from '@/models/Project';
+import { MasterColumn } from '@/models/MasterColumn';
+import type { LotSource } from '@/lib/master-custom';
+import { lotDetailText, type LotDetails } from '@/server/lots/master-columns';
 import { getReferenceList } from '@/server/reference';
 import { requireFormatScope } from '@/server/format-scope';
 import { can } from '@/server/permissions';
@@ -212,7 +215,7 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   // ---- the page's lots, projects and duplicate back-links (one query each)
   const lotIds = [...new Set(items.map((i) => String(i.lot)))].map((id) => new Types.ObjectId(id));
   const lots = await ArchiveLot.find({ _id: { $in: lotIds } })
-    .select('lotReference stage format dataType mediaSubtype mediaLines syncProjectId projectIds assigneeName')
+    .select('lotReference stage format dataType mediaSubtype mediaLines syncProjectId projectIds assigneeName owner pointsOfContact facilitator locationReceiver originSource dateReceived')
     .lean();
   const lotById = new Map(lots.map((l) => [String(l._id), l]));
   const projectIds = [...new Set(lots.flatMap((l) => (l.syncProjectId ? [l.syncProjectId] : (l.projectIds ?? []).slice(0, 1))).map(String))];
@@ -238,6 +241,9 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
     return label;
   };
 
+  // The Master Excel's own custom columns: typed text (on the item) or a detail fetched from the lot.
+  const customCols = await MasterColumn.find().select('key kind source').lean();
+
   const rows: MasterResponse['rows'] = [];
   for (const it of items) {
     const lot = lotById.get(String(it.lot));
@@ -262,6 +268,14 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
       projectCode: project?.code ?? '',
       projectName: project?.name ?? '',
       assigneeName: lot.assigneeName ?? '',
+      extra: Object.fromEntries(
+        customCols.map((c) => [
+          c.key,
+          c.kind === 'lot' && c.source
+            ? lotDetailText(lot as LotDetails, c.source as LotSource)
+            : String(((it as { masterCustom?: Record<string, unknown> }).masterCustom ?? {})[c.key] ?? ''),
+        ]),
+      ),
     });
   }
   return { rows, total, page: query.page, pageSize: query.pageSize };

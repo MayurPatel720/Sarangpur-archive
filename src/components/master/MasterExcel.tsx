@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import Link from 'next/link';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiRequestError, masterApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useFormatContext } from '@/hooks/useFormatParam';
@@ -22,6 +22,10 @@ import type { MasterRow } from '@/types/master';
 import { buildItemsWorkbook } from '@/components/lots/excel-io';
 import { applyView, DEFAULT_VIEW, MAX_WIDTH, MIN_WIDTH, moveColumn, ROW_PADDING, useMasterView } from '@/components/master/master-view';
 import { MasterPathCell } from '@/components/master/MasterPathCell';
+import { MasterCustomCell } from '@/components/master/MasterCustomCell';
+import { AddMasterColumnDialog } from '@/components/master/AddMasterColumnDialog';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useMe } from '@/hooks/useCan';
 import { ColumnsMenu, DisplayMenu, ExportMenu, HeaderMenu, ViewsMenu, toolbarButton } from '@/components/master/MasterMenus';
 
 /**
@@ -34,7 +38,7 @@ import { ColumnsMenu, DisplayMenu, ExportMenu, HeaderMenu, ViewsMenu, toolbarBut
  * views. How the sheet looks is remembered per format on this device.
  */
 
-const BANDS = [{ id: 'lot', label: 'Lot' }, ...DEPARTMENTS] as const;
+const BANDS = [{ id: 'lot', label: 'Lot' }, ...DEPARTMENTS, { id: 'custom', label: 'Custom' }] as const;
 const EXPORT_CAP = 20_000;
 const EXPORT_PAGE = 200;
 const SELECT_W = 40;
@@ -140,6 +144,31 @@ const tsvCell = (s: string) => s.replace(/[\t\r\n]+/g, ' ');
 
 export function MasterExcel() {
   const toast = useToast();
+  const queryClient = useQueryClient();
+  const me = useMe();
+  /** The Master Excel's own custom columns (shared by everyone). */
+  const customDefs = useQuery({ queryKey: queryKeys.master.columns, queryFn: () => masterApi.columns(), staleTime: 30_000 });
+  const allColumns = useMemo<ColumnSpec[]>(
+    () => [
+      ...MASTER_COLUMNS,
+      ...(customDefs.data?.columns ?? []).map(
+        (c): ColumnSpec => ({ id: c.key, label: c.label, dept: 'custom', kind: c.kind === 'text' ? 'text' : 'readonly', width: 170 }),
+      ),
+    ],
+    [customDefs.data],
+  );
+  const [addColumn, setAddColumn] = useState(false);
+  const [removeFor, setRemoveFor] = useState<ColumnSpec | null>(null);
+  const canRemoveColumns = Boolean(me.data?.grants.includes('lists:manage'));
+  const removeColumn = useMutation({
+    mutationFn: (key: string) => masterApi.updateColumns({ removeKey: key }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.master.columns });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.master.all });
+      setRemoveFor(null);
+    },
+    onError: (e) => toast.error('Could not remove the column', e instanceof ApiRequestError ? e.message : undefined),
+  });
   const format = useFormatContext();
   const stages = useReferenceList('stage');
   const photoSubtypes = useReferenceList('mediaSubtype.photo');
@@ -226,9 +255,10 @@ export function MasterExcel() {
 
   // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
   // every format has — a format's own columns need that format picked (and Export writes a sheet each).
-  const viewCols = useMemo(() => (format ? forFormat(MASTER_COLUMNS, format) : MASTER_COLUMNS.filter(isCommonColumn)), [format]);
+  const viewCols = useMemo(() => (format ? forFormat(allColumns, format) : allColumns.filter(isCommonColumn)), [format, allColumns]);
   const shownDepts = view.depts ?? BANDS.map((b) => b.id);
-  const baseColumns = useMemo(() => viewCols.filter((c) => shownDepts.includes(c.dept)), [viewCols, shownDepts]);
+  // The custom band is always on (a column is hidden one by one from the Columns menu).
+  const baseColumns = useMemo(() => viewCols.filter((c) => c.dept === 'custom' || shownDepts.includes(c.dept)), [viewCols, shownDepts]);
   const columns = useMemo(() => applyView(baseColumns, view), [baseColumns, view]);
   const visibleBands = useMemo(() => BANDS.filter((b) => b.id === 'lot' || viewCols.some((c) => c.dept === b.id)), [viewCols]);
 
@@ -262,12 +292,12 @@ export function MasterExcel() {
   /* ------------------------------------------------------------------- filter chips */
   const paramInfo = useMemo(() => {
     const m = new Map<string, ColumnSpec>();
-    for (const c of MASTER_COLUMNS) {
+    for (const c of allColumns) {
       const f = MASTER_FILTERS[c.id];
       if (f) m.set(f.param, c);
     }
     return m;
-  }, []);
+  }, [allColumns]);
   const chipValue = (param: string, v: string): string => {
     const c = paramInfo.get(param);
     if (c?.refList) return refLabel(c.refList, v);
@@ -327,7 +357,7 @@ export function MasterExcel() {
         download(new Blob([`﻿${[head, ...body].join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `${stem}.csv`);
       } else {
         // One format: one sheet, the columns as shown. All formats: one sheet per format, each with that format's own columns.
-        const shownCols = MASTER_COLUMNS.filter((c) => shownDepts.includes(c.dept) && !view.hidden.includes(c.id));
+        const shownCols = allColumns.filter((c) => (c.dept === 'custom' || shownDepts.includes(c.dept)) && !view.hidden.includes(c.id));
         const byFormat = new Map<string, MasterRow[]>();
         for (const r of picked) byFormat.set(r.format, [...(byFormat.get(r.format) ?? []), r]);
         const sheets = format
@@ -376,6 +406,8 @@ export function MasterExcel() {
     }
     // The one editable cell: a file path is pasted in long after intake (see MasterPathCell).
     if (c.id === 'fileName') return <MasterPathCell row={row} />;
+    // The Master Excel's own columns: typed text, or a lot detail fetched automatically (read-only).
+    if (c.dept === 'custom' && c.kind === 'text') return <MasterCustomCell row={row} colKey={c.id} label={c.label} />;
     if (c.kind === 'photo') {
       return row.coverUrl ? (
         <Link href={`/register/${row.lotId}?tab=items`} className="inline-flex items-center gap-1.5 no-underline">
@@ -412,7 +444,8 @@ export function MasterExcel() {
         ) : null}
       </div>
 
-      <div role="toolbar" aria-label="Sheet tools" className="flex flex-wrap items-center gap-2">
+      {/* Sticky outside full screen: the tools stay at the top of the page while it scrolls (-top cancels the page's top padding). */}
+      <div role="toolbar" aria-label="Sheet tools" className={`flex flex-wrap items-center gap-2 ${full ? '' : 'sticky -top-4 z-40 -mx-3 bg-canvas px-3 py-2 md:-top-[22px] md:-mx-6 md:px-6'}`}>
         <ViewsMenu
           saved={saved}
           onApply={(s) => {
@@ -432,6 +465,9 @@ export function MasterExcel() {
           onToggleDept={(id, on) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) })}
         />
         <DisplayMenu view={view} setView={setView} />
+        <button type="button" className={toolbarButton} onClick={() => setAddColumn(true)} title="Add a column to this sheet (for everyone)">
+          + Column
+        </button>
         {phone ? (
           <button type="button" className={toolbarButton} onClick={() => setPhoneFilters((v) => !v)} aria-pressed={phoneFilters}>
             Filters{activeFilters > 0 ? ` (${activeFilters})` : ''}
@@ -473,7 +509,7 @@ export function MasterExcel() {
           {sort ? (
             <span className="inline-flex items-center overflow-hidden rounded-full border border-line-strong bg-surface text-[12px] text-ink-2">
               <span className="pl-2.5">
-                Sorted by <span className="font-semibold">{MASTER_COLUMNS.find((c) => c.id === sort)?.label ?? sort}</span> {view.dir === 'asc' ? 'A → Z' : 'Z → A'}
+                Sorted by <span className="font-semibold">{allColumns.find((c) => c.id === sort)?.label ?? sort}</span> {view.dir === 'asc' ? 'A → Z' : 'Z → A'}
               </span>
               <button type="button" aria-label="Clear sort" onClick={() => setView({ sort: '', dir: 'asc' })} className="h-6 w-6 cursor-pointer border-0 bg-transparent text-ink-3 hover:text-danger">
                 ×
@@ -569,6 +605,7 @@ export function MasterExcel() {
                                 pin: () => setView((v) => ({ pinned: v.pinned.includes(c.id) ? v.pinned.filter((x) => x !== c.id) : [...v.pinned, c.id] })),
                                 move: (step) => setView((v) => ({ order: moveColumn(baseColumns, v, c.id, step) })),
                                 resetWidth: () => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== c.id)) })),
+                                ...(c.dept === 'custom' && canRemoveColumns ? { remove: () => setRemoveFor(c) } : {}),
                               }}
                             />
                           </span>
@@ -682,6 +719,17 @@ export function MasterExcel() {
           ) : null}
         </Panel>
       )}
+      {addColumn ? <AddMasterColumnDialog onClose={() => setAddColumn(false)} /> : null}
+      {removeFor ? (
+        <ConfirmDialog
+          title="Remove this column?"
+          body={`“${removeFor.label}” is removed for everyone, and anything typed into it is deleted.`}
+          confirmLabel="Remove column"
+          pending={removeColumn.isPending}
+          onConfirm={() => removeColumn.mutate(removeFor.id)}
+          onClose={() => setRemoveFor(null)}
+        />
+      ) : null}
     </div>
   );
 }
