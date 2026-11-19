@@ -30,16 +30,43 @@ function sheetName(raw: string, used: Set<string>): string {
   return name;
 }
 
+/** Cells and rows a History export marks (the changes of a session, a version or "Show changes"). */
+export interface ExportMarks {
+  cells: Map<string, Map<string, { from: string; to: string; by: string; at: string }>>;
+  rows: Map<string, 'added' | 'removed'>;
+}
+
+/** One line of the extra "Changes" sheet. */
+export interface ExportChangeLine {
+  item: string;
+  column: string;
+  from: string;
+  to: string;
+  by: string;
+  at: string;
+  kind: 'edited' | 'added' | 'removed';
+}
+
+const GREEN = 'FFC6EFCE';
+const RED = 'FFFFC7CE';
+const fill = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb } });
+
 /** The workbook for an export (one sheet per media type) — kept apart from the download so it can be tested. */
 export async function buildItemsWorkbook({
   sheets,
   columns: allColumns,
   refLabel,
+  marks,
+  changeLines,
 }: {
   /** A sheet may carry its own columns (e.g. a Prasadi sheet); otherwise `columns` is used. */
   sheets: { name: string; rows: GridItem[]; columns?: Spec[] }[];
   columns: Spec[];
   refLabel: (list: string, value: string | null) => string;
+  /** History export: mark the changed cells and rows (green = new value, the old value is in the cell note). */
+  marks?: ExportMarks;
+  /** History export: adds a "Changes" sheet with one line per change. */
+  changeLines?: ExportChangeLine[];
 }): Promise<Workbook> {
   const ExcelJS = await loadExcel();
   const wb: Workbook = new ExcelJS.Workbook();
@@ -73,10 +100,46 @@ export async function buildItemsWorkbook({
     }
     // Data.
     for (const item of sheet.rows) {
-      ws.addRow(columns.map((c) => cellText(item, c, refLabel)));
+      const row = ws.addRow(columns.map((c) => cellText(item, c, refLabel)));
+      if (!marks) continue;
+      const rowMark = marks.rows.get(item.id);
+      const cellMarks = marks.cells.get(item.id);
+      columns.forEach((c, i) => {
+        const cell = row.getCell(i + 1);
+        const m = cellMarks?.get(c.id);
+        if (m) {
+          cell.fill = fill(GREEN);
+          cell.font = { bold: true };
+          cell.note = 'Was: ' + (m.from && m.from !== '—' ? m.from : '(empty)') + '\nChanged by ' + m.by + ', ' + m.at;
+        } else if (rowMark) {
+          cell.fill = fill(rowMark === 'added' ? GREEN : RED);
+        }
+      });
     }
     const codeCol = Math.max(1, columns.findIndex((c) => c.id === 'code') + 1);
     ws.views = [{ state: 'frozen', xSplit: codeCol, ySplit: 2 }];
+  }
+  if (changeLines && changeLines.length > 0) {
+    const ws = wb.addWorksheet(sheetName('Changes', used));
+    const head = ['Item', 'Column', 'Was', 'Now', 'Changed by', 'Changed at', 'What'];
+    head.forEach((h, i) => {
+      ws.getCell(1, i + 1).value = h;
+    });
+    const r1 = ws.getRow(1);
+    r1.font = { bold: true };
+    r1.border = { bottom: { style: 'thin' } };
+    [20, 24, 30, 30, 18, 22, 12].forEach((w, i) => {
+      ws.getColumn(i + 1).width = w;
+    });
+    for (const l of changeLines) {
+      const row = ws.addRow([l.item, l.column, l.from, l.to, l.by, l.at, l.kind === 'edited' ? 'Edited' : l.kind === 'added' ? 'Row added' : 'Row removed']);
+      if (l.kind !== 'edited') {
+        row.eachCell((cell) => {
+          cell.fill = fill(l.kind === 'added' ? GREEN : RED);
+        });
+      }
+    }
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
   }
   return wb;
 }
@@ -86,13 +149,17 @@ export async function exportItemsToExcel({
   sheets,
   columns,
   refLabel,
+  marks,
+  changeLines,
 }: {
   fileName: string;
   sheets: { name: string; rows: GridItem[]; columns?: Spec[] }[];
   columns: Spec[];
   refLabel: (list: string, value: string | null) => string;
+  marks?: ExportMarks;
+  changeLines?: ExportChangeLine[];
 }): Promise<void> {
-  const wb = await buildItemsWorkbook({ sheets, columns, refLabel });
+  const wb = await buildItemsWorkbook({ sheets, columns, refLabel, marks, changeLines });
   const buf = await wb.xlsx.writeBuffer();
   const url = URL.createObjectURL(
     new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),

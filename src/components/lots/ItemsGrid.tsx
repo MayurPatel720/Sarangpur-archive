@@ -22,7 +22,8 @@ import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/t
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
 import { DuplicateDialog } from './DuplicateDialog';
-import { exportItemsToExcel } from './excel-io';
+import { exportItemsToExcel, type ExportChangeLine, type ExportMarks } from './excel-io';
+import { pathLabel } from '@/lib/item-history';
 import { BulkEditBar } from './BulkEditBar';
 import { ItemPhotosDialog } from './ItemPhotosDialog';
 import { ItemStatusDialog } from './ItemStatusDialog';
@@ -359,14 +360,38 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     }
   };
 
-  const exportExcel = async () => {
+  const exportExcel = async (history?: { fileSuffix: string }) => {
     if (!data) return;
     try {
+      // A History export: the sheet as shown (session / version / current), changed cells marked, plus a Changes sheet.
+      let extra: { marks?: ExportMarks; changeLines?: ExportChangeLine[] } = {};
+      if (history && activeView) {
+        const label = (id: string | null, path: string) => specs.find((c) => c.id === id)?.label ?? pathLabel(path);
+        const m: ExportMarks = { cells: new Map(), rows: new Map() };
+        const lines: ExportChangeLine[] = [];
+        for (const c of activeView.changes) {
+          const code = c.code ?? '';
+          if (c.added || c.removed) {
+            m.rows.set(c.itemId, c.added ? 'added' : 'removed');
+            lines.push({ item: code, column: '', from: '', to: '', by: c.cells[0]?.by ?? '', at: c.cells[0] ? dateTime12(c.cells[0].at) : '', kind: c.added ? 'added' : 'removed' });
+          }
+          for (const x of c.cells) {
+            if (x.column) {
+              const cm = m.cells.get(c.itemId) ?? new Map();
+              cm.set(x.column, { from: x.from, to: x.to, by: x.by, at: dateTime12(x.at) });
+              m.cells.set(c.itemId, cm);
+            }
+            if (!c.added && !c.removed) lines.push({ item: code, column: label(x.column, x.path), from: x.from, to: x.to, by: x.by, at: dateTime12(x.at), kind: 'edited' });
+          }
+        }
+        extra = { marks: m, changeLines: lines };
+      }
       await exportItemsToExcel({
-        fileName: `${lotReference}-items`,
+        fileName: history ? lotReference + '-' + history.fileSuffix : lotReference + '-items',
         sheets: sheets.map((s) => ({ name: s.name, rows: s.all, columns: columnsByFormat.get(s.format) ?? visibleSpecs })),
         columns: visibleSpecs,
         refLabel,
+        ...extra,
       });
     } catch {
       toast.error('Could not export', 'Try again, or reload the page.');
@@ -549,6 +574,17 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               ) : null}
             </span>
             <span className="ml-auto flex items-center gap-2">
+              <GhostButton
+                className="!h-8 !px-3 !text-[12px]"
+                title="Download this sheet as Excel, with the changed cells marked and a Changes sheet"
+                onClick={() => {
+                  const stamp = activeView.at ? new Date(activeView.at).toISOString().slice(0, 16).replace('T', '-').replace(':', '') : 'now';
+                  const kind = histView ? (histView.mode === 'session' ? 'session' : 'version') : 'changes';
+                  void exportExcel({ fileSuffix: kind + '-' + stamp });
+                }}
+              >
+                Export to Excel
+              </GhostButton>
               {histView && me.data?.grants.includes('lot:edit') ? (
                 <GhostButton className="!h-8 !px-3 !text-[12px]" onClick={() => setRestoring(true)}>
                   Restore this

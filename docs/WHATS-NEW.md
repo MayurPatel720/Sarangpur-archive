@@ -4,6 +4,29 @@ A plain-English guide to the latest changes. No technical knowledge needed.
 
 ---
 
+## Today at a glance
+
+| What | Where to find it |
+|---|---|
+| **All five parts of an item's code can be changed** (abbreviation 1, abbreviation 2, number, letter, last 3 digits) | Items tab → click an Archive code → **Only this item** (section 5b) |
+| **Code letter M** now exists next to R and D, and admins can add more letters | **Admin → Lists → Item code letters** (section 5b) |
+| **Change the code letter for many items at once** | Tick rows → **Bulk edit** → **Code letter** (section 5b) |
+| **One right-click menu on both Excel sheets** for column actions, show / hide columns, row height and layout | Right-click anywhere on the Master Excel or a lot's Items tab (section 6c) |
+| **Drag a column heading to move it** (grab handle ⠿) and **Save layout** to your account | Both sheets; Save layout is in the right-click menu (section 6c) |
+| **Master Excel: every column is editable**, and **columns that lots added** can be shown | Click a cell; right-click → Columns → Added to lots (section 6c) |
+| **Export a session (or version) to Excel**, with that session's changes marked | History panel → pick a session → **Export to Excel** (section 7) |
+| **Tidier Items toolbar**, plus a **Returned** filter | Top of the Items tab (section 4) |
+| **Machines:** company name, repair comment, bill file path, Usage tab and usage types | **Machines** page (section 8) |
+
+### Good to know
+
+- Your saved layout follows you to any computer. If you reload without saving, the saved layout comes back.
+- The five code parts are changed in the code window only. They are not separate columns in the sheets.
+- On a machine, **Make** and **Version** are gone. Use **Company name** instead.
+- The list of what a machine can capture (VHS, Scanner and so on) is managed under **Admin → Lists → Machine usage types**.
+
+---
+
 ## 1. Projects are now simple
 
 **What changed:** A project is now just a **name** and a **description**. It is a folder that groups lots together.
@@ -59,6 +82,8 @@ On a lot's **Items** tab the toolbar has been tidied up:
 | **Import / Export** (up-and-down arrows icon) | One button with a small menu: **Import from Excel** or **Export to Excel**. |
 | **Bulk edit (number)** | Appears when you tick rows. Opens a window to change the same thing on all ticked rows. |
 | **Print tags** | Removed. |
+
+**The filter row** has **All**, **Undecided**, **Digitize**, **Discard** and **Returned** (items whose storage choice is Return), then a **Departments** menu to show or hide whole sections. The tools sit on the right: **Set path**, **Import / Export**, then Undo, Redo, History and Changes. Column actions (add, show, hide, row height, layout) moved into the right-click menu, see section 6c.
 
 ### Bulk edit window
 - Tabs at the top: **Details**, **Decision**, **Digitalization & Storage**, **Logging**.
@@ -184,6 +209,11 @@ The clock opens a **panel on the right**, and the sheet stays on screen. It work
 - **Find a row:** type an archive code to see who changed that row, when, and from what.
 - In the bar above the sheet: **Back to current** leaves the history view, and **Restore this** puts the sheet back to that point (it asks first). Restoring is saved as a **new change**, so a restore can also be undone.
 - While you look at the past, the sheet is **read only**.
+- **Export to Excel** (in the same bar, also under **Changes**): downloads the sheet you are looking at as an Excel file.
+  - Cells that session changed are **green** and bold; the **old value is in the cell's note** (hover or right-click the cell in Excel).
+  - Added rows are green and removed rows are red.
+  - An extra **Changes** sheet lists every change: item, column, old value, new value, who changed it and when.
+  - The file name says what it is, for example `LOT-2026-0676-session-2026-11-19-1432.xlsx`. These files are for reading and sharing, not for importing back.
 
 ### Show changes on the normal sheet
 
