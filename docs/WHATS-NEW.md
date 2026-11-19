@@ -157,19 +157,18 @@ The **Decision** columns (**Digital**, **Redigital**, **Discard**, **Decision re
 ## 6c. Master Excel and the lot's Excel now match
 
 **One menu for everything about columns (both sheets)**
-Right-click anywhere on the sheet, or right-click / click a column heading (or its ⋮). One menu opens:
-- **This column** (when you click a heading): sort (Master Excel), Move left / right, Pin, Hide, Reset width, Show only this column, Delete or Remove for custom columns.
-- **Columns:** + Add a column, tick **whole sections**, search and tick any column to show or hide it. On the Master Excel the same list includes the columns lots added to their own Excel (File Size and so on); tick one and every row shows the value from its own lot.
-- **Display:** row height (and, on the Master Excel, wrap long text and the filter row).
+Right-click anywhere on the sheet, or right-click / click a column heading (or its ⋮). One short menu opens (**Display** opens as a dropdown beside it). The **Columns** dropdown is a button in the toolbar, next to Views on the Master Excel and in the filter row on a lot's Items tab:
+- **This column** (when you click a heading): sort (Master Excel), Pin, Hide, Reset width, Show only this column, Delete or Remove for custom columns.
+- **Columns** button: + Add a column, tick **whole sections** (departments), search and tick any column to show or hide it. On the Master Excel the same list includes the columns lots added to their own Excel (File Size and so on); tick one and every row shows the value from its own lot.
 - **Layout:** **Save layout**, **Undo layout changes** (and, on the lot sheet, Reset column order and pins).
-The old Departments, Display, Columns, Lot columns, ⋯ and + Column buttons are gone from the toolbars.
+Toolbar buttons: **Columns** (sections and every column), **Lot columns** (Master Excel: columns lots added) and **+ Column**. The right-click menu has the column's own actions, **Display** (row height; on the Master Excel also wrap and the filter row) and Save / Undo layout.
 
 **Master Excel**
 - **Everything is editable:** text, dates, numbers, dropdowns and Yes/No cells. The lot's own rules and History apply, so a change can be undone from the lot.
 
 **Lot's Items tab**
 - **Import / Export** menu: **Copy all rows** (or **Copy N selected**) to paste into Excel.
-- **Drag to move:** every column heading has a grab handle (⠿). Drag a column left or right and drop it. On the lot's sheet a column moves inside its own department.
+- **Drag to move:** every column heading has a grab handle (⠿). Drag a column left or right and drop it (moving a column is by drag only, it is not in the right-click menu). On the lot's sheet a column moves inside its own department.
 - **Save layout** (both sheets): right-click and choose **Save layout**. Your changes (order, pins, widths, hidden columns, row height) are a draft until you save. The saved layout is kept on your account, so it follows you to any computer. **Undo layout changes** goes back to the saved one. If you reload without saving, the saved layout comes back.
 
 ---

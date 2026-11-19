@@ -35,7 +35,7 @@ import { ItemFamilyGrid, PHOTO_ROW_PX, type HistoryMarks } from './ItemFamilyGri
 import { HistoryControls } from './HistoryControls';
 import { useLotHistory } from '@/hooks/useLotHistory';
 import { useServerLayout } from '@/hooks/useServerLayout';
-import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
+import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, MenuSub, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
 import type { ColumnMenuInfo, SectionMenuInfo } from './GridHeader';
 import { useMe } from '@/hooks/useCan';
 
@@ -337,6 +337,44 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     [columns, specs, data?.hiddenColumns],
   );
   const showColumn = (id: string) => columns.mutate({ hidden: (data?.hiddenColumns ?? []).filter((h) => h !== id) });
+  /** The Columns button's dropdown: whole sections (departments), then every column grouped by department. */
+  const columnsPanel = (close: () => void) => {
+    const pickerColumns = specs
+      .filter((c) => c.kind !== 'code' && (lotFormats.length === 0 || lotFormats.some((f) => shownOnSheet(c, f))))
+      .map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !hiddenIds.has(c.id) }));
+    return (
+      <>
+        {canDetails ? (
+          <div className="px-3 pb-1 text-[12px]">
+            <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setColumnError(null); setShowAddColumn(true); }}>
+              + Add a column
+            </button>
+          </div>
+        ) : null}
+        {lotDepts.length > 1 ? (
+          <>
+            <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
+            {lotDepts.map((d) => (
+              <MenuCheck
+                key={d.id}
+                checked={shownDepts.includes(d.id)}
+                onChange={(on) => setShownDepts((prev) => (on ? DEPARTMENTS.map((x) => x.id).filter((x) => x === d.id || prev.includes(x)) : prev.filter((x) => x !== d.id)))}
+              >
+                {d.label}
+              </MenuCheck>
+            ))}
+          </>
+        ) : null}
+        <ColumnsPicker
+          columns={pickerColumns}
+          onToggle={(id, on) => (on ? showColumn(id) : hideColumn(id))}
+          onShowAll={() => columns.mutate({ hidden: [] })}
+          onHideAll={() => columns.mutate({ hidden: specs.filter((c) => c.kind !== 'code' && !ALWAYS_VISIBLE.has(c.id)).map((c) => c.id) })}
+        />
+      </>
+    );
+  };
+
   const onInvalid = useCallback((message: string) => toast.error('Not saved', message), [toast]);
   const onOpenCode = useCallback((item: GridItem) => setCodeFor(item), []);
   const onDuplicate = useCallback((item: GridItem, code: string) => setDuplicateFor({ item, code }), []);
@@ -652,6 +690,22 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               </div>
             ) : null}
             </div>
+            <Menu
+              label="Choose columns"
+              width={310}
+              className={toolBtn}
+              trigger={
+                <>
+                  Columns
+                  {hiddenSpecs.length > 0 ? (
+                    <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-white">{hiddenSpecs.length} hidden</span>
+                  ) : null}
+                  <span aria-hidden>▾</span>
+                </>
+              }
+            >
+              {(close) => columnsPanel(close)}
+            </Menu>
             <div role="toolbar" aria-label="Excel tools" className="flex flex-wrap items-center gap-1.5 lg:ml-auto">
               {selected.length > 0 && canDetails ? (
                 <button
@@ -684,6 +738,19 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   </>
                 )}
               </Menu>
+              {canDetails ? (
+                <button
+                  type="button"
+                  className={toolBtn}
+                  title="Add a column to this sheet (for everyone on this lot)"
+                  onClick={() => {
+                    setColumnError(null);
+                    setShowAddColumn(true);
+                  }}
+                >
+                  <IconPlus size={14} aria-hidden /> Column
+                </button>
+              ) : null}
               <div className="ml-auto flex items-center gap-1.5">
               <HistoryControls history={history} canEdit={canDetails} lotId={lotId} view={histView} onView={setHistView} showChanges={showChanges} onShowChanges={setShowChanges} onPanelChange={setPanelOpen} />
               </div>
@@ -693,21 +760,11 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           {sheetMenu.state ? (() => {
             const close = sheetMenu.close;
             const target = sheetMenu.state.column;
-            const pickerColumns = specs
-              .filter((c) => c.kind !== 'code' && (lotFormats.length === 0 || lotFormats.some((f) => shownOnSheet(c, f))))
-              .map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !hiddenIds.has(c.id) }));
-            const densities = [{ id: 'compact', label: 'Compact' }, { id: 'normal', label: 'Normal' }, { id: 'roomy', label: 'Roomy' }] as const;
             return (
               <SheetMenu pos={sheetMenu.state.pos} onClose={close} label="Sheet options">
                 {target?.kind === 'column' ? (
                   <>
                     <MenuHeading>{target.info.label}</MenuHeading>
-                    {target.info.onMove ? (
-                      <>
-                        <MenuAction onClose={close} disabled={!target.info.canMoveLeft} onClick={() => target.info.onMove?.(-1)}>Move left</MenuAction>
-                        <MenuAction onClose={close} disabled={!target.info.canMoveRight} onClick={() => target.info.onMove?.(1)}>Move right</MenuAction>
-                      </>
-                    ) : null}
                     {target.info.onPin ? <MenuAction onClose={close} onClick={() => target.info.onPin?.()}>{target.info.pinned ? 'Unpin column' : 'Pin column'}</MenuAction> : null}
                     {target.info.hideable ? <MenuAction onClose={close} onClick={target.info.onHide}>Hide column</MenuAction> : null}
                     {target.info.onDelete ? <MenuAction danger onClose={close} onClick={() => target.info.onDelete?.()}>Delete column…</MenuAction> : null}
@@ -723,38 +780,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                     <MenuDivider />
                   </>
                 ) : null}
-                <MenuHeading>Columns</MenuHeading>
-                {canDetails ? (
-                  <div className="px-3 pb-1 text-[12px]">
-                    <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setColumnError(null); setShowAddColumn(true); }}>
-                      + Add a column
-                    </button>
-                  </div>
-                ) : null}
-                {lotDepts.length > 1 ? (
-                  <>
-                    <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
-                    {lotDepts.map((d) => (
-                      <MenuCheck
-                        key={d.id}
-                        checked={shownDepts.includes(d.id)}
-                        onChange={(on) => setShownDepts((prev) => (on ? DEPARTMENTS.map((x) => x.id).filter((x) => x === d.id || prev.includes(x)) : prev.filter((x) => x !== d.id)))}
-                      >
-                        {d.label}
-                      </MenuCheck>
-                    ))}
-                  </>
-                ) : null}
-                <ColumnsPicker
-                  columns={pickerColumns}
-                  onToggle={(id, on) => (on ? showColumn(id) : hideColumn(id))}
-                  onShowAll={() => columns.mutate({ hidden: [] })}
-                  onHideAll={() => columns.mutate({ hidden: specs.filter((c) => c.kind !== 'code' && !ALWAYS_VISIBLE.has(c.id)).map((c) => c.id) })}
-                />
-                <MenuDivider />
                 <MenuHeading>Display</MenuHeading>
-                {densities.map((d) => (
-                  <MenuRadio key={d.id} name="density" checked={layout.density === d.id} onChange={() => setLayout({ density: d.id })}>{d.label} rows</MenuRadio>
+                {(['compact', 'normal', 'roomy'] as const).map((d) => (
+                  <MenuRadio key={d} name="density" checked={layout.density === d} onChange={() => setLayout({ density: d })}>{d === 'compact' ? 'Compact' : d === 'normal' ? 'Normal' : 'Roomy'} rows</MenuRadio>
                 ))}
                 <MenuDivider />
                 <LayoutSection layout={savedLayout} onClose={close}>

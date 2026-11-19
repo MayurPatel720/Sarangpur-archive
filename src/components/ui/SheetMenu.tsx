@@ -70,7 +70,7 @@ export function SheetMenu({ pos, onClose, label, children }: { pos: MenuPos; onC
       role="menu"
       aria-label={label}
       style={{ left: at.x, top: at.y }}
-      className="fixed z-[200] max-h-[min(80dvh,640px)] w-[290px] overflow-y-auto overscroll-contain rounded-[8px] border border-line bg-surface py-1 shadow-panel"
+      className="fixed z-[200] w-[250px] rounded-[8px] border border-line bg-surface py-1 shadow-panel"
       onContextMenu={(e) => e.preventDefault()}
     >
       {children}
@@ -84,6 +84,64 @@ const row =
 
 export function MenuHeading({ children }: { children: ReactNode }) {
   return <div className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-4">{children}</div>;
+}
+
+/**
+ * A menu row that opens a dropdown beside it (Columns, Display …). Opens on hover or click; the dropdown scrolls when
+ * it is long and flips to the left when there is no room on the right.
+ */
+export function MenuSub({ label, note, children }: { label: string; note?: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number; maxH: number }>({ left: 0, top: 0, maxH: 400 });
+
+  useLayoutEffect(() => {
+    if (!open || !wrap.current || !panel.current) return;
+    const r = wrap.current.getBoundingClientRect();
+    const w = panel.current.offsetWidth;
+    const maxH = Math.min(window.innerHeight - 16, 560);
+    const h = Math.min(panel.current.scrollHeight, maxH);
+    const left = r.right + w + 8 <= window.innerWidth ? r.right + 2 : Math.max(8, r.left - w - 2);
+    const top = Math.max(8, Math.min(r.top - 4, window.innerHeight - h - 8));
+    setAt({ left, top, maxH });
+  }, [open]);
+
+  return (
+    <div ref={wrap} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`${row} ${open ? 'bg-accent-soft' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {note ? <span className="text-[11px] text-ink-4">{note}</span> : null}
+        <span aria-hidden className="text-ink-4">
+          ▸
+        </span>
+      </button>
+      {open ? (
+        <div
+          ref={panel}
+          role="menu"
+          aria-label={label}
+          style={{ left: at.left, top: at.top, maxHeight: at.maxH }}
+          className="fixed z-[210] w-[290px] overflow-y-auto overscroll-contain rounded-[8px] border border-line bg-surface py-1 shadow-panel"
+        >
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function MenuDivider() {

@@ -29,8 +29,8 @@ import { MasterDecisionCell } from '@/components/master/MasterDecisionCell';
 import { AddMasterColumnDialog } from '@/components/master/AddMasterColumnDialog';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useMe } from '@/hooks/useCan';
-import { ExportMenu, ViewsMenu, toolbarButton } from '@/components/master/MasterMenus';
-import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
+import { ExportMenu, Menu, ViewsMenu, menuItem, toolbarButton } from '@/components/master/MasterMenus';
+import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, MenuSub, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
 
 /**
  * The Master Excel: every item of every lot (and its project) in one sheet. Read only, except the File
@@ -449,6 +449,47 @@ export function MasterExcel() {
   const headTop = filterRowOn ? ['top-0', 'top-7', 'top-16'] : ['top-0', 'top-7'];
   const first = (page - 1) * pageSize;
 
+  /** The Columns button's dropdown: whole sections, a searchable list of every column, columns lots added, reset, add. */
+  const columnsPanel = (close: () => void) => {
+        const lotCols = customDefs.data?.lotColumns ?? [];
+        const pickerColumns = [
+          ...viewCols.map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !view.hidden.includes(c.id), locked: false })),
+        ];
+        const toggleDept = (id: string, on: boolean) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) });
+    return (
+      <>
+                <div className="px-3 pb-1 text-[12px]">
+                  <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-ink-3 hover:text-ink" onClick={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {}, depts: DEFAULT_VIEW.depts, lotCols: [] })}>
+                    Reset columns
+                  </button>
+                  <span aria-hidden className="mx-2 text-ink-4">·</span>
+                  <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setAddColumn(true); }}>
+                    + Add a column
+                  </button>
+                </div>
+                {visibleBands.length > 1 ? (
+                  <>
+                    <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
+                    {visibleBands.map((b) => (
+                      <MenuCheck key={b.id} checked={shownDepts.includes(b.id)} onChange={(on) => toggleDept(b.id, on)}>{b.label}</MenuCheck>
+                    ))}
+                  </>
+                ) : null}
+                <ColumnsPicker
+                  columns={pickerColumns}
+                  onToggle={(id, on) => {
+                    if (id.startsWith('lcol:')) {
+                      const label = id.slice(5);
+                      setView((v) => ({ lotCols: on ? [...v.lotCols, label] : v.lotCols.filter((x) => x.toLowerCase() !== label.toLowerCase()) }));
+                    } else setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...v.hidden, id] }));
+                  }}
+                  onShowAll={() => setView({ hidden: [] })}
+                  onHideAll={() => setView({ hidden: viewCols.slice(1).map((c) => c.id) })}
+                />
+      </>
+    );
+  };
+
   return (
     <div className={`flex min-h-0 flex-col gap-3 ${full ? 'fixed inset-0 z-[90] bg-surface p-3 text-ink md:p-4' : ''}`}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -475,6 +516,53 @@ export function MasterExcel() {
           onDelete={deleteView}
           onReset={resetView}
         />
+        <Menu
+          label="Choose columns"
+          width={310}
+          trigger={
+            <>
+              Columns
+              {view.hidden.filter((id) => viewCols.some((c) => c.id === id)).length > 0 ? (
+                <span className="rounded-full bg-accent px-1.5 text-[11px] font-semibold tabular-nums text-white">{view.hidden.filter((id) => viewCols.some((c) => c.id === id)).length} hidden</span>
+              ) : null}
+            </>
+          }
+        >
+          {(close) => columnsPanel(close)}
+        </Menu>
+        <Menu label="Lot columns" width={300} trigger={<>Lot columns{view.lotCols.length > 0 ? ` (${view.lotCols.length})` : ''} ▾</>}>
+          {() => {
+            const available = customDefs.data?.lotColumns ?? [];
+            return (
+              <>
+                <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-4">Columns added to lots</div>
+                {available.length === 0 ? <p className="m-0 px-3 py-2 text-[12.5px] text-ink-3">No lot has added its own column yet.</p> : null}
+                {available.map((c) => {
+                  const on = view.lotCols.some((x) => x.toLowerCase() === c.label.toLowerCase());
+                  return (
+                    <button
+                      key={c.label.toLowerCase()}
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={on}
+                      className={menuItem}
+                      onClick={() => setView((v) => ({ lotCols: on ? v.lotCols.filter((x) => x.toLowerCase() !== c.label.toLowerCase()) : [...v.lotCols, c.label] }))}
+                    >
+                      {on ? '✓ ' : ''}
+                      {c.label}
+                      <span className="ml-1 text-ink-4">
+                        · {c.lots} {c.lots === 1 ? 'lot' : 'lots'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            );
+          }}
+        </Menu>
+        <button type="button" className={toolbarButton} onClick={() => setAddColumn(true)} title="Add a column to this sheet (for everyone)">
+          + Column
+        </button>
         {phone ? (
           <button type="button" className={toolbarButton} onClick={() => setPhoneFilters((v) => !v)} aria-pressed={phoneFilters}>
             Filters{activeFilters > 0 ? ` (${activeFilters})` : ''}
@@ -760,13 +848,6 @@ export function MasterExcel() {
         const pinned = col ? pinLeft.has(col.id) : false;
         const sortable = col ? SORTABLE.has(col.id) : false;
         const dir = col && sort === col.id ? view.dir : null;
-        const lotCols = customDefs.data?.lotColumns ?? [];
-        const pickerColumns = [
-          ...viewCols.map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !view.hidden.includes(c.id), locked: false })),
-          ...lotCols.map((c) => ({ id: `lcol:${c.label}`, label: `${c.label} · ${c.lots} ${c.lots === 1 ? 'lot' : 'lots'}`, group: 'Added to lots', checked: view.lotCols.some((x) => x.toLowerCase() === c.label.toLowerCase()), locked: false })),
-        ];
-        const toggleDept = (id: string, on: boolean) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) });
-        const densities = [{ id: 'compact', label: 'Compact' }, { id: 'normal', label: 'Normal' }, { id: 'roomy', label: 'Roomy' }] as const;
         return (
           <SheetMenu pos={sheetMenu.state.pos} onClose={close} label="Sheet options">
             {col ? (
@@ -780,8 +861,6 @@ export function MasterExcel() {
                   </>
                 ) : null}
                 <MenuAction onClose={close} onClick={() => setView((v) => ({ pinned: v.pinned.includes(col.id) ? v.pinned.filter((x) => x !== col.id) : [...v.pinned, col.id] }))}>{pinned ? 'Unpin column' : 'Pin to the left'}</MenuAction>
-                <MenuAction onClose={close} disabled={!(at > 0 && pinned === pinLeft.has(columns[at - 1]!.id))} onClick={() => setView((v) => ({ order: moveColumn(baseColumns, v, col.id, -1) }))}>Move left</MenuAction>
-                <MenuAction onClose={close} disabled={!(at >= 0 && at < columns.length - 1 && pinned === pinLeft.has(columns[at + 1]!.id))} onClick={() => setView((v) => ({ order: moveColumn(baseColumns, v, col.id, 1) }))}>Move right</MenuAction>
                 <MenuAction onClose={close} onClick={() => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== col.id)) }))}>Reset width</MenuAction>
                 <MenuAction onClose={close} onClick={() => (col.id.startsWith('lc_') ? setView((v) => ({ lotCols: v.lotCols.filter((l) => `lc_${l.trim().toLowerCase()}` !== col.id) })) : setView((v) => ({ hidden: [...v.hidden, col.id] })))}>Hide column</MenuAction>
                 <MenuAction onClose={close} onClick={() => setView({ hidden: baseColumns.filter((x) => x.id !== col.id).map((x) => x.id) })}>Show only this column</MenuAction>
@@ -789,39 +868,9 @@ export function MasterExcel() {
                 <MenuDivider />
               </>
             ) : null}
-            <MenuHeading>Columns</MenuHeading>
-            <div className="px-3 pb-1 text-[12px]">
-              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-ink-3 hover:text-ink" onClick={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {}, depts: DEFAULT_VIEW.depts, lotCols: [] })}>
-                Reset columns
-              </button>
-              <span aria-hidden className="mx-2 text-ink-4">·</span>
-              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setAddColumn(true); }}>
-                + Add a column
-              </button>
-            </div>
-            {visibleBands.length > 1 ? (
-              <>
-                <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
-                {visibleBands.map((b) => (
-                  <MenuCheck key={b.id} checked={shownDepts.includes(b.id)} onChange={(on) => toggleDept(b.id, on)}>{b.label}</MenuCheck>
-                ))}
-              </>
-            ) : null}
-            <ColumnsPicker
-              columns={pickerColumns}
-              onToggle={(id, on) => {
-                if (id.startsWith('lcol:')) {
-                  const label = id.slice(5);
-                  setView((v) => ({ lotCols: on ? [...v.lotCols, label] : v.lotCols.filter((x) => x.toLowerCase() !== label.toLowerCase()) }));
-                } else setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...v.hidden, id] }));
-              }}
-              onShowAll={() => setView({ hidden: [] })}
-              onHideAll={() => setView({ hidden: viewCols.slice(1).map((c) => c.id) })}
-            />
-            <MenuDivider />
             <MenuHeading>Display</MenuHeading>
-            {densities.map((d) => (
-              <MenuRadio key={d.id} name="density" checked={view.density === d.id} onChange={() => setView({ density: d.id })}>{d.label} rows</MenuRadio>
+            {(['compact', 'normal', 'roomy'] as const).map((d) => (
+              <MenuRadio key={d} name="density" checked={view.density === d} onChange={() => setView({ density: d })}>{d === 'compact' ? 'Compact' : d === 'normal' ? 'Normal' : 'Roomy'} rows</MenuRadio>
             ))}
             <MenuCheck checked={view.wrap} onChange={(on) => setView({ wrap: on })}>Wrap long text</MenuCheck>
             <MenuCheck checked={view.filterRow} onChange={(on) => setView({ filterRow: on })}>Show the filter row</MenuCheck>
