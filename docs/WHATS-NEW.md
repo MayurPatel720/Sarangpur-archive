@@ -94,11 +94,13 @@ You can undo it (see History below). It cannot be used on an item that is alread
 
 **Where:** Items tab, click an **Archive code**. In the window, the section **Only this item** now has a **Code letter** dropdown.
 
-- The letter in the middle of a code (the **R** in `NEG-MUM-0176-R-000`) can be changed for one item.
-- **R** (original) and **D** (duplicate) always exist. An **admin can add more letters** (such as **M** or **P**) under **Admin → Lists → Item code letters**. Letters are 1 to 3 capital letters.
+- A code has five parts: `NEG-MUM-0176-R-000` is **Abbreviation 1**, **Abbreviation 2**, **Number**, **Letter** and **Last 3 digits**. In **Only this item** all five can be changed for one item.
+- Changing the abbreviations gives the item the next free number of the new pair if the old number is taken there.
+- **R** (original), **D** (duplicate) and **M** exist from the start. An **admin can add more letters** (such as **P**) under **Admin → Lists → Item code letters**. Letters are 1 to 3 capital letters.
 - Choosing **D** asks for the **original's code** and then follows the normal "mark as duplicate" steps.
 - A duplicate (D) can be given another letter: it is unlinked from its original and gets the next free number.
 - Not possible when the item is tagged in MLS or is the original of a duplicate.
+- **Many items at once:** tick rows, press **Bulk edit** and choose a **Code letter**. Rows that cannot change are skipped and listed. **D** is not offered in bulk, because it needs an original.
 
 ---
 
@@ -124,6 +126,26 @@ The **Decision** columns (**Digital**, **Redigital**, **Discard**, **Decision re
 - The same rules as in the lot apply: once a lot's decision is recorded the cells are locked (a message tells you), and deciding the last item decides the lot.
 - Prasadi items have no decision, so they show a dash.
 - Every change is recorded in the lot's History, so it can be undone.
+
+---
+
+## 6c. Master Excel and the lot's Excel now match
+
+**One menu for everything about columns (both sheets)**
+Right-click anywhere on the sheet, or right-click / click a column heading (or its ⋮). One menu opens:
+- **This column** (when you click a heading): sort (Master Excel), Move left / right, Pin, Hide, Reset width, Show only this column, Delete or Remove for custom columns.
+- **Columns:** + Add a column, tick **whole sections**, search and tick any column to show or hide it. On the Master Excel the same list includes the columns lots added to their own Excel (File Size and so on); tick one and every row shows the value from its own lot.
+- **Display:** row height (and, on the Master Excel, wrap long text and the filter row).
+- **Layout:** **Save layout**, **Undo layout changes** (and, on the lot sheet, Reset column order and pins).
+The old Departments, Display, Columns, Lot columns, ⋯ and + Column buttons are gone from the toolbars.
+
+**Master Excel**
+- **Everything is editable:** text, dates, numbers, dropdowns and Yes/No cells. The lot's own rules and History apply, so a change can be undone from the lot.
+
+**Lot's Items tab**
+- **Import / Export** menu: **Copy all rows** (or **Copy N selected**) to paste into Excel.
+- **Drag to move:** every column heading has a grab handle (⠿). Drag a column left or right and drop it. On the lot's sheet a column moves inside its own department.
+- **Save layout** (both sheets): right-click and choose **Save layout**. Your changes (order, pins, widths, hidden columns, row height) are a draft until you save. The saved layout is kept on your account, so it follows you to any computer. **Undo layout changes** goes back to the saved one. If you reload without saving, the saved layout comes back.
 
 ---
 
@@ -168,6 +190,17 @@ The clock opens a **panel on the right**, and the sheet stays on screen. It work
 Next to the clock there is a **Changes** button. It highlights what changed on the **current** sheet: **Since my last session**, **Today**, or **Since** a saved version. It is off by default. Choose **Off** to switch it off.
 
 **Good to know:** history starts from the day this feature was switched on. Changes made earlier are not in it.
+
+---
+
+## 8. Machines: company, bills, repair comments and usage
+
+- **Add / Edit machine:** there is now a **Company name**. **Make** and **Version** are gone.
+- **Report a fault** and **Close repair** have a **Bill file path** box. It works like the Excel's File path: type it, paste it, or drop the file or folder on it.
+- **Close repair** also has a **Comment** box. The comment shows in the repair list and in the machine's History.
+- **Usage** (new tab on every machine): press **Add usage** and give the **date**, **what it captured** and **how many**. The tab shows every entry, the **total per type** and the **grand total**. The Machines list shows the total next to each machine.
+- **What it captured** comes from a list you manage under **Admin → Lists → Machine usage types**: Video (VHS, UMT, MDV and DVC, DVD players, VCD, Hi8, BetaCam, Misc), Audio (Tape Recorder, MDC, Misc), Photo (Scanner, Misc) and Misc (Mix machine). Add more there any time.
+- **Mark returned** has an optional **Captured while it was out** block. Each row you add becomes a usage entry dated the return day.
 
 ---
 

@@ -24,10 +24,12 @@ import {
   ResolveDialog,
   ReturnDialog,
   ServiceDialog,
+  UsageDialog,
+  useUsageTypes,
 } from '@/components/machines/MachineEventDialogs';
 import type { Machine, MachineEventBody, MachinePart, MachineRepair } from '@/types/machine';
 
-const TABS = ['overview', 'parts', 'lending', 'repairs', 'history'] as const;
+const TABS = ['overview', 'parts', 'lending', 'usage', 'repairs', 'history'] as const;
 type TabId = (typeof TABS)[number];
 
 type Dialog =
@@ -38,7 +40,8 @@ type Dialog =
   | { kind: 'return' }
   | { kind: 'repair' }
   | { kind: 'resolve'; repair: MachineRepair }
-  | { kind: 'service' };
+  | { kind: 'service' }
+  | { kind: 'usage' };
 
 const rupees = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 
@@ -70,6 +73,7 @@ export function MachineDetail({ machineId }: { machineId: string }) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const usageTypes = useUsageTypes();
 
   const detail = useQuery({
     queryKey: queryKeys.machines.detail(machineId),
@@ -147,6 +151,14 @@ export function MachineDetail({ machineId }: { machineId: string }) {
   const pastLoans = m.loans.filter((l) => l.returnedOn);
   const totalCost = m.repairs.reduce((sum, r) => sum + (r.cost ?? 0), 0);
   const lateBack = currentLoan?.expectedReturn && currentLoan.expectedReturn < today;
+  /** "Video · VHS" for a usage type value (the admin list's label and heading), falling back to the raw value. */
+  const usageLabel = (value: string) => {
+    const t = usageTypes.find((x) => x.value === value);
+    return t ? `${t.group} · ${t.label}` : value;
+  };
+  const usageTotals = [...m.usage.reduce((acc, u) => acc.set(u.type, (acc.get(u.type) ?? 0) + u.qty), new Map<string, number>())]
+    .map(([type, qty]) => ({ type, label: usageLabel(type), qty }))
+    .sort((a, b) => b.qty - a.qty);
   const submit = (body: MachineEventBody) => event.mutate(body);
   const common = { pending: event.isPending, error: dialogError, onSubmit: submit, onClose: close };
 
@@ -154,6 +166,7 @@ export function MachineDetail({ machineId }: { machineId: string }) {
     { id: 'overview', label: 'Overview' },
     { id: 'parts', label: `Spare parts (${m.parts.length})` },
     { id: 'lending', label: m.loanedTo ? 'Lending · out' : 'Lending' },
+    { id: 'usage', label: m.captured > 0 ? `Usage · ${m.captured.toLocaleString('en-IN')}` : 'Usage' },
     { id: 'repairs', label: openRepairs.length ? `Repairs (${openRepairs.length} open)` : 'Repairs' },
     { id: 'history', label: 'History' },
   ];
@@ -168,7 +181,7 @@ export function MachineDetail({ machineId }: { machineId: string }) {
           <p className="m-0 text-[12.5px] text-ink-3">
             <span className="tabular-nums">{m.code}</span>
             {m.category ? ` · ${m.category}` : ''}
-            {[m.make, m.model].filter(Boolean).length ? ` · ${[m.make, m.model].filter(Boolean).join(' ')}` : ''}
+            {[m.company, m.model].filter(Boolean).length ? ` · ${[m.company, m.model].filter(Boolean).join(' ')}` : ''}
           </p>
           <div className="flex flex-wrap items-center gap-1.5">
             <ConditionBadge condition={m.condition} />
@@ -192,15 +205,15 @@ export function MachineDetail({ machineId }: { machineId: string }) {
           <PanelHeader title="Details" />
           <div className="grid grid-cols-2 gap-x-4 gap-y-4 p-4 md:grid-cols-4 md:p-5">
             <Definition label="Category">{m.category ?? <EmptyValue />}</Definition>
-            <Definition label="Make">{m.make ?? <EmptyValue />}</Definition>
+            <Definition label="Company">{m.company ?? <EmptyValue />}</Definition>
             <Definition label="Model">{m.model ?? <EmptyValue />}</Definition>
-            <Definition label="Version">{m.version ?? <EmptyValue />}</Definition>
             <Definition label="Serial number">{m.serialNo ?? <EmptyValue />}</Definition>
             <Definition label="Location">{m.location ?? <EmptyValue />}</Definition>
             <Definition label="Condition">
               <ConditionBadge condition={m.condition} />
             </Definition>
             <Definition label="Usage">{m.inUse ? 'Currently in use' : 'Not in use'}</Definition>
+            <Definition label="Captured so far">{m.captured > 0 ? m.captured.toLocaleString('en-IN') : <EmptyValue />}</Definition>
           </div>
         </Panel>
         <Panel>
@@ -331,6 +344,56 @@ export function MachineDetail({ machineId }: { machineId: string }) {
         </Panel>
       </TabPanel>
 
+      <TabPanel id="usage" active={tab === 'usage'}>
+        <Panel className="overflow-hidden">
+          <PanelHeader title="What it captured">
+            {m.captured > 0 ? <span className="text-[12px] tabular-nums text-ink-3">Total {m.captured.toLocaleString('en-IN')}</span> : null}
+            {canManage ? (
+              <GhostButton className="ml-auto !h-8 !px-3 text-[12px]" onClick={() => setDialog({ kind: 'usage' })}>
+                Add usage
+              </GhostButton>
+            ) : null}
+          </PanelHeader>
+          {m.usage.length === 0 ? (
+            <Empty>Nothing logged yet. Add what this machine captured, with the date and how many.</Empty>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-1.5 border-b border-line-row px-4 py-3" aria-label="Totals per type">
+                {usageTotals.map((t) => (
+                  <Chip key={t.type} tone="plain">
+                    {t.label}: {t.qty.toLocaleString('en-IN')}
+                  </Chip>
+                ))}
+              </div>
+              {m.usage.map((u) => (
+                <Row key={u.id}>
+                  <div className="flex min-w-0 items-start gap-2">
+                    <span className="min-w-0 flex-1 break-words text-[14px] font-semibold text-ink">
+                      {usageLabel(u.type)} <span className="font-normal text-ink-3">× {u.qty.toLocaleString('en-IN')}</span>
+                    </span>
+                    {canManage ? (
+                      <button
+                        type="button"
+                        aria-label={`Remove the ${u.on} entry`}
+                        title="Remove this entry"
+                        className="h-7 w-7 shrink-0 cursor-pointer rounded-[6px] border-0 bg-transparent text-ink-3 hover:text-danger"
+                        onClick={() => event.mutate({ type: 'usage.remove', usageId: u.id })}
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
+                  <span className="text-[12px] text-ink-3">
+                    {date(u.on)} · {u.by}
+                    {u.note ? ` · ${u.note}` : ''}
+                  </span>
+                </Row>
+              ))}
+            </>
+          )}
+        </Panel>
+      </TabPanel>
+
       <TabPanel id="repairs" active={tab === 'repairs'}>
         <Panel className="overflow-hidden">
           <PanelHeader title="Repair history">
@@ -355,9 +418,14 @@ export function MachineDetail({ machineId }: { machineId: string }) {
                   {r.resolvedOn ? ` · fixed ${date(r.resolvedOn)}` : ''}
                   {r.vendor ? ` · ${r.vendor}` : ''}
                   {r.cost != null ? ` · ${rupees(r.cost)}` : ''}
-                  {r.billRef ? ` · bill ${r.billRef}` : ''}
                 </span>
                 {r.outcome ? <span className="text-[12px] text-ink-3">{r.outcome}</span> : null}
+                {r.comment ? <span className="break-words text-[12.5px] text-ink-2">Comment: {r.comment}</span> : null}
+                {r.billPath ? (
+                  <span className="break-all font-mono text-[11.5px] text-ink-3" title="Where the bill file is kept">
+                    Bill: {r.billPath}
+                  </span>
+                ) : null}
                 {canManage && !r.resolvedOn ? (
                   <div>
                     <GhostButton className="!h-8 !px-3 text-[12px]" onClick={() => setDialog({ kind: 'resolve', repair: r })}>
@@ -436,6 +504,7 @@ export function MachineDetail({ machineId }: { machineId: string }) {
       {dialog?.kind === 'repair' ? <RepairDialog machine={m} {...common} /> : null}
       {dialog?.kind === 'resolve' ? <ResolveDialog repair={dialog.repair} {...common} /> : null}
       {dialog?.kind === 'service' ? <ServiceDialog machine={m} {...common} /> : null}
+      {dialog?.kind === 'usage' ? <UsageDialog machine={m} {...common} /> : null}
     </div>
   );
 }

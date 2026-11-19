@@ -104,6 +104,7 @@ import {
   itemDuplicateResponseSchema,
   importResponseSchema,
   itemNumberResponseSchema,
+  itemLetterBulkResponseSchema,
   itemOrderResponseSchema,
   sheetCodeResponseSchema,
   itemsGridResponseSchema,
@@ -121,6 +122,8 @@ import {
   type ImportBody,
   type ImportResponse,
   type ItemNumberBody,
+  type ItemLetterBulkBody,
+  type ItemLetterBulkResponse,
   type ItemOrderBody,
   type SheetCodeBody,
   type SheetCodeResponse,
@@ -607,6 +610,8 @@ export const itemsGridApi = {
     sendJson<ItemStatusResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/status`, 'POST', body, itemStatusResponseSchema),
   setNumber: (lotId: string, body: ItemNumberBody) =>
     sendJson<{ code: string }>(`/api/lots/${encodeURIComponent(lotId)}/items/code`, 'PATCH', body, itemNumberResponseSchema),
+  setLetters: (lotId: string, body: ItemLetterBulkBody) =>
+    sendJson<ItemLetterBulkResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/code/letter`, 'PATCH', body, itemLetterBulkResponseSchema),
   markDuplicate: (lotId: string, body: ItemDuplicateBody) =>
     sendJson<ItemDuplicateResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/duplicate`, 'POST', body, itemDuplicateResponseSchema),
   reorder: (lotId: string, body: ItemOrderBody) =>
@@ -632,6 +637,14 @@ export const prasadiChecksApi = {
     ),
   markChecked: (body: PrasadiCheckDoneBody) =>
     sendJson<{ updated: number }>('/api/items/prasadi-checks', 'POST', body, prasadiCheckDoneResponseSchema),
+};
+
+import { layoutResponseSchema, type LayoutResponse, type LayoutSaveBody } from '@/types/layout';
+
+/** The caller's own saved sheet layouts (column order, pins, widths …), kept on their account. */
+export const layoutsApi = {
+  get: (scope: string) => getJson<LayoutResponse>(`/api/me/layouts?scope=${encodeURIComponent(scope)}`, layoutResponseSchema),
+  save: (body: LayoutSaveBody) => sendJson<LayoutResponse>('/api/me/layouts', 'PUT', body, layoutResponseSchema),
 };
 
 export const masterApi = {

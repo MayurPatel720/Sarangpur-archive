@@ -20,6 +20,8 @@ import type {
   ColumnsResponse,
   ItemDuplicateBody,
   ItemDuplicateResponse,
+  ItemLetterBulkBody,
+  ItemLetterBulkResponse,
   ItemNumberBody,
   ItemOrderBody,
   SheetCodeBody,
@@ -129,6 +131,39 @@ async function recodeSheetCore(lotId: string, body: SheetCodeBody, ctx: Mutation
  * Change ONE item's number and / or its last three digits (copy number) to free ones — the
  * abbreviations stay. The finished code must not belong to any other item in the archive.
  */
+/**
+ * Gives many items the same code letter (R, M, P …), one history entry for the lot. An item that cannot change
+ * (a duplicate, already tagged in MLS, the original of a duplicate …) is skipped and reported.
+ */
+export async function setItemLetters(lotId: string, body: ItemLetterBulkBody, ctx: MutationContext): Promise<ItemLetterBulkResponse> {
+  const ids = [...new Set(body.itemIds)].filter((id) => Types.ObjectId.isValid(id));
+  if (body.kind === KIND_DUPLICATE) {
+    throw new HttpError(400, 'D marks a duplicate of a particular original — do that one item at a time from its code.');
+  }
+  return tracked({
+    lotId,
+    ctx,
+    kind: 'recode',
+    label: `Changed the code letter to ${body.kind} on ${ids.length} item${ids.length === 1 ? '' : 's'}`,
+    scope: ids.map((id) => new Types.ObjectId(id)),
+    run: async () => {
+      const skipped: { code: string; reason: string }[] = [];
+      let changed = 0;
+      for (const id of ids) {
+        const row = (await LotItem.findOne({ _id: id, lot: lotId }).select('code').lean()) as { code: string } | null;
+        if (!row) continue;
+        try {
+          const r = await setItemNumberCore(lotId, { itemId: id, kind: body.kind }, ctx);
+          if (r.code !== row.code) changed += 1;
+        } catch (e) {
+          skipped.push({ code: row.code, reason: e instanceof HttpError ? e.message : 'Could not change.' });
+        }
+      }
+      return { changed, skipped };
+    },
+  });
+}
+
 /** Changes one item's number; recorded in the lot's version history. */
 export async function setItemNumber(lotId: string, body: ItemNumberBody, ctx: MutationContext): Promise<{ code: string }> {
   const scope = Types.ObjectId.isValid(body.itemId) ? [new Types.ObjectId(body.itemId)] : [];
@@ -168,16 +203,29 @@ async function setItemNumberCore(lotId: string, body: ItemNumberBody, ctx: Mutat
       if (parts.kind === KIND_DUPLICATE && !leavesDuplicate) {
         throw new HttpError(400, 'A duplicate takes its original’s number — change the original instead, or give it another letter.');
       }
-      const no = leavesDuplicate ? (await maxItemNumber(parts.abbr1, parts.abbr2, session)) + 1 : (body.no ?? parts.no);
+      const abbr1 = (body.abbr1 ?? parts.abbr1).trim();
+      const abbr2 = (body.abbr2 ?? parts.abbr2).trim();
+      const pairProblem = abbrError('First abbreviation', abbr1) ?? abbrError('Second abbreviation', abbr2);
+      if (pairProblem) throw new HttpError(400, pairProblem);
+      const pairChanged = abbr1 !== parts.abbr1 || abbr2 !== parts.abbr2;
+      if (pairChanged && parts.kind === KIND_DUPLICATE) {
+        throw new HttpError(400, 'A duplicate follows its original’s abbreviations — change the original instead.');
+      }
+      // A new abbreviation pair keeps the number when it is free there, else takes the pair's next free number.
+      let no = leavesDuplicate ? (await maxItemNumber(abbr1, abbr2, session)) + 1 : (body.no ?? parts.no);
+      if (pairChanged && !leavesDuplicate && body.no === undefined) {
+        const used = await usedItemNumbers(abbr1, abbr2, no, no, session);
+        if (used.has(no)) no = (await maxItemNumber(abbr1, abbr2, session)) + 1;
+      }
       const copy = leavesDuplicate ? 0 : (body.copy ?? parts.copy);
-      if (!leavesDuplicate && no === parts.no && copy === parts.copy && kind === parts.kind) return { code: it.code };
-      if (!leavesDuplicate && parts.no !== no) {
-        const used = await usedItemNumbers(parts.abbr1, parts.abbr2, no, no, session);
+      if (!leavesDuplicate && !pairChanged && no === parts.no && copy === parts.copy && kind === parts.kind) return { code: it.code };
+      if (!leavesDuplicate && (parts.no !== no || pairChanged)) {
+        const used = await usedItemNumbers(abbr1, abbr2, no, no, session);
         if (used.has(no)) {
-          throw new HttpError(409, `${parts.abbr1}-${parts.abbr2}-${String(no).padStart(4, '0')} is already used.`);
+          throw new HttpError(409, `${abbr1}-${abbr2}-${String(no).padStart(4, '0')} is already used.`);
         }
       }
-      const code = buildItemCode({ ...parts, no, copy, kind });
+      const code = buildItemCode({ abbr1, abbr2, no, copy, kind });
       if (await LotItem.exists({ code, _id: { $ne: it._id } }).session(session)) {
         throw new HttpError(409, `${code} is already used by another item.`);
       }

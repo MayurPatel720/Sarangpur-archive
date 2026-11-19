@@ -17,6 +17,8 @@ export const masterQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   /** Media format; also bounded by the caller's `format:*` grants. */
   format: text,
+  /** Custom columns of the lots to show as columns: their names, separated by `|` (a name matches in every lot that has it). */
+  lotCols: z.string().max(600).optional(),
   /** Column to sort by (an item column id, see MASTER_SORT_PATHS) and its direction. Default: lot order. */
   sort: text,
   dir: z.enum(['asc', 'desc']).optional(),
@@ -91,7 +93,9 @@ export const masterColumnSchema = z.object({
   kind: z.enum(MASTER_COLUMN_KINDS),
   source: z.enum(LOT_SOURCE_IDS).nullable(),
 });
-export const masterColumnsResponseSchema = z.object({ columns: z.array(masterColumnSchema) });
+/** A column some lot added to its own Excel, merged by name across lots (offered under "Lot columns"). */
+export const lotColumnSchema = z.object({ label: z.string(), type: z.enum(['text', 'number', 'yesno', 'date']), lots: z.number().int() });
+export const masterColumnsResponseSchema = z.object({ columns: z.array(masterColumnSchema), lotColumns: z.array(lotColumnSchema) });
 export type MasterColumnsResponse = z.output<typeof masterColumnsResponseSchema>;
 
 /** PATCH /api/items/master/columns — add a column, or (admins) remove one. */

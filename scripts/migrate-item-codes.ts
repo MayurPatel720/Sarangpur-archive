@@ -24,7 +24,14 @@ async function main() {
   const seed = catalogList('itemCodeKind');
   if (!seed) throw new Error('No catalog list "itemCodeKind".');
   if (await ReferenceList.exists({ key: 'itemCodeKind' })) {
-    console.log('code letters list: already there.');
+    // add any letter the catalog has gained since the list was created (e.g. M)
+    const have = new Set(((await ReferenceList.findOne({ key: 'itemCodeKind' }).lean())?.items ?? []).map((i) => i.value));
+    const missing = seed.items.filter((i) => !have.has(i.value));
+    if (missing.length > 0) {
+      const add = missing.map((i, n) => ({ ...i, usageCount: 0, sortOrder: have.size + n }));
+      await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $push: { items: { $each: add } } });
+    }
+    console.log(`code letters list: already there${missing.length ? `, added ${missing.map((m) => m.value).join(', ')}` : ''}.`);
   } else {
     await ReferenceList.create(catalogToSeedDoc(seed));
     console.log('code letters list: created (R, D).');

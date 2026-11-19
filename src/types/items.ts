@@ -222,13 +222,28 @@ export type SheetCodeResponse = z.output<typeof sheetCodeResponseSchema>;
 export const itemNumberBodySchema = z
   .object({
     itemId: objectIdSchema,
+    /** The two abbreviations of this one item (the rest of the sheet is untouched). */
+    abbr1: z.string().trim().min(1).max(12).optional(),
+    abbr2: z.string().trim().min(1).max(12).optional(),
     no: z.number().int().min(1).max(9_999_999).optional(),
     copy: z.number().int().min(0).max(999).optional(),
     /** The kind letter (R, M, P …; admin list `itemCodeKind`). D is set by marking a duplicate instead. */
     kind: z.string().regex(/^[A-Z]{1,3}$/, 'The code letter must be 1–3 capital letters.').optional(),
   })
-  .refine((b) => b.no !== undefined || b.copy !== undefined || b.kind !== undefined, { message: 'Nothing to change.' });
+  .refine((b) => b.no !== undefined || b.copy !== undefined || b.kind !== undefined || b.abbr1 !== undefined || b.abbr2 !== undefined, { message: 'Nothing to change.' });
 export type ItemNumberBody = z.input<typeof itemNumberBodySchema>;
+
+/** PATCH …/items/code/letter — give the same code letter (R, M, P …) to many items at once. */
+export const itemLetterBulkBodySchema = z.object({
+  itemIds: z.array(objectIdSchema).min(1).max(20000),
+  kind: z.string().regex(/^[A-Z]{1,3}$/, 'The code letter must be 1–3 capital letters.'),
+});
+export type ItemLetterBulkBody = z.input<typeof itemLetterBulkBodySchema>;
+export const itemLetterBulkResponseSchema = z.object({
+  changed: z.number().int(),
+  skipped: z.array(z.object({ code: z.string(), reason: z.string() })),
+});
+export type ItemLetterBulkResponse = z.output<typeof itemLetterBulkResponseSchema>;
 export const itemNumberResponseSchema = z.object({ code: z.string() });
 
 /* --------------------------------------------------------------- duplicates */

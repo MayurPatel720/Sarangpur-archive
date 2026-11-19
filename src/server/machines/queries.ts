@@ -14,7 +14,7 @@ export function shapeSummary(d: Lean): MachineSummary {
     code: d.code,
     name: d.name,
     category: d.category ?? null,
-    make: d.make ?? null,
+    company: d.company ?? null,
     model: d.model ?? null,
     serialNo: d.serialNo ?? null,
     location: d.location ?? null,
@@ -22,6 +22,7 @@ export function shapeSummary(d: Lean): MachineSummary {
     inUse: d.inUse,
     loanedTo: d.loanedTo ?? null,
     openRepairs: d.openRepairs,
+    captured: d.capturedTotal ?? 0,
     nextServiceDue: d.nextServiceDue ?? null,
   };
 }
@@ -29,7 +30,6 @@ export function shapeSummary(d: Lean): MachineSummary {
 export function shapeMachine(d: Lean): MachineShape {
   return {
     ...shapeSummary(d),
-    version: d.version ?? null,
     sourceType: d.sourceType,
     sourceName: d.sourceName ?? null,
     sourceContact: d.sourceContact ?? null,
@@ -65,10 +65,22 @@ export function shapeMachine(d: Lean): MachineShape {
         resolvedOn: r.resolvedOn ?? null,
         vendor: r.vendor ?? null,
         cost: r.cost ?? null,
-        billRef: r.billRef ?? null,
+        billPath: r.billPath ?? null,
         outcome: r.outcome ?? null,
+        comment: r.comment ?? null,
       }))
       .reverse(),
+    usage: (d.usage ?? [])
+      .map((u) => ({
+        id: String((u as { _id: unknown })._id),
+        on: u.on,
+        type: u.type,
+        qty: u.qty,
+        note: u.note ?? null,
+        by: u.by,
+        loanId: u.loanId ? String(u.loanId) : null,
+      }))
+      .sort((a, b) => (a.on < b.on ? 1 : a.on > b.on ? -1 : 0)),
     history: d.history.map((h) => ({ at: new Date(h.at).toISOString(), by: h.by, kind: h.kind, text: h.text })),
     createdAt: (d.createdAt ?? new Date(0)).toISOString(),
   };
@@ -85,7 +97,7 @@ export async function listMachines(query: MachineListQuery): Promise<MachineList
   const filter: Record<string, unknown> = {};
   if (query.q) {
     const rx = new RegExp(escapeRegex(query.q), 'i');
-    filter.$or = [{ name: rx }, { code: rx }, { make: rx }, { model: rx }, { serialNo: rx }, { location: rx }, { category: rx }];
+    filter.$or = [{ name: rx }, { code: rx }, { company: rx }, { model: rx }, { serialNo: rx }, { location: rx }, { category: rx }];
   }
   if (query.condition) filter.condition = query.condition;
   if (query.usage) filter.inUse = query.usage === 'in_use';

@@ -36,9 +36,8 @@ export function MachineDialog({
 }) {
   const [name, setName] = useState(machine?.name ?? '');
   const [category, setCategory] = useState(machine?.category ?? '');
-  const [make, setMake] = useState(machine?.make ?? '');
+  const [company, setCompany] = useState(machine?.company ?? '');
   const [model, setModel] = useState(machine?.model ?? '');
-  const [version, setVersion] = useState(machine?.version ?? '');
   const [serialNo, setSerialNo] = useState(machine?.serialNo ?? '');
   const [sourceType, setSourceType] = useState<MachineSource>(machine?.sourceType ?? 'purchased');
   const [sourceName, setSourceName] = useState(machine?.sourceName ?? '');
@@ -64,9 +63,8 @@ export function MachineDialog({
           onSave({
             name: name.trim(),
             category,
-            make,
+            company,
             model,
-            version,
             serialNo,
             sourceType,
             sourceName,
@@ -93,14 +91,11 @@ export function MachineDialog({
               ))}
             </datalist>
           </Field>
-          <Field label="Make">
-            <TextInput value={make} onChange={(e) => setMake(e.target.value)} maxLength={80} name="make" autoComplete="off" aria-label="Make" />
+          <Field label="Company name">
+            <TextInput value={company} onChange={(e) => setCompany(e.target.value)} maxLength={120} name="company" autoComplete="off" placeholder="Sony, Zoom, Canon…" aria-label="Company name" />
           </Field>
           <Field label="Model">
             <TextInput value={model} onChange={(e) => setModel(e.target.value)} maxLength={80} name="model" autoComplete="off" aria-label="Model" />
-          </Field>
-          <Field label="Version">
-            <TextInput value={version} onChange={(e) => setVersion(e.target.value)} maxLength={60} name="version" autoComplete="off" placeholder="Firmware or edition…" aria-label="Version" />
           </Field>
           <Field label="Serial number">
             <TextInput value={serialNo} onChange={(e) => setSerialNo(e.target.value)} maxLength={80} name="serialNo" autoComplete="off" spellCheck={false} aria-label="Serial number" />

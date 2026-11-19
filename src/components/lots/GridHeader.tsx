@@ -1,108 +1,61 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { IHeaderGroupParams, IHeaderParams } from 'ag-grid-community';
 
-/**
- * Column header of the lot's Excel. A left click opens a small menu — "Hide column", and
- * "Delete column" for columns the team added. (The ⋯ button above the grid brings hidden
- * columns back.) Replaces AG Grid's own header so there is no sort or filter chrome.
- */
-export interface GridHeaderParams extends IHeaderParams {
+/** What the sheet menu needs to know about one column heading. */
+export interface ColumnMenuInfo {
+  id: string;
+  label: string;
   /** Offer "Hide column". False for the Archive code. */
   hideable: boolean;
   onHide: () => void;
   /** Set for a column the team added: offers "Delete column…". */
   onDelete?: () => void;
+  /** Move the column one place left (-1) or right (1) inside its department; pin / unpin it. */
+  onMove?: (step: -1 | 1) => void;
+  canMoveLeft?: boolean;
+  canMoveRight?: boolean;
+  pinned?: boolean;
+  onPin?: () => void;
+}
+
+/**
+ * Column header of the lot's Excel. A click on it, or a right-click, opens the sheet's one menu (this column's
+ * actions first, then columns / display / layout) — see ItemsGrid. Replaces AG Grid's own header so there is no
+ * sort or filter chrome.
+ */
+export interface GridHeaderParams extends IHeaderParams {
+  info: ColumnMenuInfo;
+  onOpenMenu: (pos: { x: number; y: number }, info: ColumnMenuInfo) => void;
   hint?: string;
 }
 
 export function GridHeader(p: GridHeaderParams) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const interactive = p.hideable || Boolean(p.onDelete);
-
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-      if (e instanceof MouseEvent && menuRef.current?.contains(e.target as Node)) return;
-      setMenu(null);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', close);
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-    };
-  }, [menu]);
-
-  const item =
-    'block w-full text-left bg-transparent border-0 px-3 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-accent-soft';
-
+  const open = (x: number, y: number) => p.onOpenMenu({ x, y }, p.info);
   return (
     <div
-      className={`flex h-full w-full items-center ${interactive ? 'cursor-pointer' : ''}`}
+      className="flex h-full w-full cursor-pointer items-center"
       title={p.hint}
-      onClick={(e) => {
-        if (!interactive) return;
-        setMenu({ x: Math.min(e.clientX, window.innerWidth - 190), y: e.clientY + 6 });
+      onClick={(e) => open(e.clientX, e.clientY + 6)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        open(e.clientX, e.clientY);
       }}
     >
+      {p.info.onMove ? (
+        <span aria-hidden title="Drag the heading to move this column" className="mr-1 shrink-0 cursor-grab select-none text-[12px] leading-none text-ink-4 hover:text-accent">
+          ⠿
+        </span>
+      ) : null}
       <span className="truncate font-semibold text-ink-3">{p.displayName}</span>
-      {menu
-        ? createPortal(
-            <div
-              ref={menuRef}
-              role="menu"
-              style={{ left: menu.x, top: menu.y }}
-              className="fixed z-[200] min-w-[170px] rounded-[8px] border border-line bg-surface py-1 shadow-panel"
-            >
-              {p.hideable ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={item}
-                  onClick={() => {
-                    setMenu(null);
-                    p.onHide();
-                  }}
-                >
-                  Hide column
-                </button>
-              ) : null}
-              {p.onDelete ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={`${item} text-danger`}
-                  onClick={() => {
-                    setMenu(null);
-                    p.onDelete?.();
-                  }}
-                >
-                  Delete column…
-                </button>
-              ) : null}
-            </div>,
-            document.body,
-          )
-        : null}
     </div>
   );
 }
 
-/**
- * Department band above the columns. A left click opens a menu: show only this department's
- * columns (a view for you — nothing is saved) or all of them again, or hide the whole department
- * (saved on the lot like any hidden column).
- */
-export interface DeptHeaderParams extends IHeaderGroupParams {
+/** What the sheet menu needs to know about a department band. */
+export interface SectionMenuInfo {
+  label: string;
   /** This department is the only one showing. */
   active: boolean;
   onShowOnly: () => void;
@@ -110,64 +63,29 @@ export interface DeptHeaderParams extends IHeaderGroupParams {
   onHideAll: () => void;
 }
 
+/**
+ * Department band above the columns. A click or right-click opens the sheet's one menu with this section's actions
+ * (show only it, show every section, hide it) first.
+ */
+export interface DeptHeaderParams extends IHeaderGroupParams {
+  info: SectionMenuInfo;
+  onOpenSectionMenu: (pos: { x: number; y: number }, info: SectionMenuInfo) => void;
+}
+
 export function DeptHeader(p: DeptHeaderParams) {
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-      if (e instanceof MouseEvent && menuRef.current?.contains(e.target as Node)) return;
-      setMenu(null);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    window.addEventListener('scroll', close, true);
-    return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('keydown', close);
-      window.removeEventListener('scroll', close, true);
-    };
-  }, [menu]);
-
-  const item =
-    'block w-full text-left bg-transparent border-0 px-3 py-1.5 text-[12.5px] text-ink cursor-pointer hover:bg-accent-soft';
-  const pick = (fn: () => void) => () => {
-    setMenu(null);
-    fn();
-  };
-
+  const open = (x: number, y: number) => p.onOpenSectionMenu({ x, y }, p.info);
   return (
     <div
-      className="flex h-full w-full cursor-pointer items-center"
-      onClick={(e) => setMenu({ x: Math.min(e.clientX, window.innerWidth - 230), y: e.clientY + 6 })}
+      className="flex h-full w-full cursor-pointer items-center gap-1.5"
+      onClick={(e) => open(e.clientX, e.clientY + 6)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        open(e.clientX, e.clientY);
+      }}
     >
-      <span className={`truncate font-semibold ${p.active ? 'text-accent' : 'text-ink-2'}`}>{p.displayName}</span>
-      {menu
-        ? createPortal(
-            <div
-              ref={menuRef}
-              role="menu"
-              style={{ left: menu.x, top: menu.y }}
-              className="fixed z-[200] min-w-[210px] rounded-[8px] border border-line bg-surface py-1 shadow-panel"
-            >
-              {p.active ? (
-                <button type="button" role="menuitem" className={item} onClick={pick(p.onShowAll)}>
-                  Show all departments
-                </button>
-              ) : (
-                <button type="button" role="menuitem" className={item} onClick={pick(p.onShowOnly)}>
-                  Show only {p.displayName}
-                </button>
-              )}
-              <button type="button" role="menuitem" className={item} onClick={pick(p.onHideAll)}>
-                Hide {p.displayName} columns
-              </button>
-            </div>,
-            document.body,
-          )
-        : null}
+      <span className="truncate font-semibold text-ink-2">{p.displayName}</span>
+      {p.info.active ? <span className="rounded-full bg-accent-soft px-1.5 text-[10px] font-semibold text-accent">only</span> : null}
     </div>
   );
 }

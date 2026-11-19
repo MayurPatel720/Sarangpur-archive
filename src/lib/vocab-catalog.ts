@@ -110,11 +110,37 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
     tier: 'open',
     protected: true,
     metaSchema: NO_META,
-    // The letter in the middle of an archive code (NEG-MUM-0176-R-000). R and D always exist; an admin adds more
-    // (1–3 capitals, e.g. M, P), and a person can then give an item any of them from its code dialog.
+    // The letter in the middle of an archive code (NEG-MUM-0176-R-000). R and D always exist; M comes ready-made and an admin adds more
+    // (1–3 capitals, e.g. P, S), and a person can then give an item any of them from its code dialog.
     items: items([
       { value: 'R', label: 'R — original' },
       { value: 'D', label: 'D — duplicate' },
+      { value: 'M', label: 'M — master' },
+    ]),
+  },
+  {
+    key: 'machineUsageType',
+    label: 'Machine usage types',
+    group: 'Media',
+    tier: 'open',
+    protected: true,
+    metaSchema: [{ field: 'group', type: 'string', required: true, unique: false }],
+    // What a machine can capture; usage entries (date · type · quantity) use these. `meta.group` is the heading.
+    items: items([
+      { value: 'video.vhs', label: 'VHS', meta: { group: 'Video' } },
+      { value: 'video.umt', label: 'UMT', meta: { group: 'Video' } },
+      { value: 'video.mdv_dvc', label: 'MDV and DVC', meta: { group: 'Video' } },
+      { value: 'video.dvd_players', label: 'DVD players', meta: { group: 'Video' } },
+      { value: 'video.vcd', label: 'VCD', meta: { group: 'Video' } },
+      { value: 'video.hi8', label: 'Hi8', meta: { group: 'Video' } },
+      { value: 'video.betacam', label: 'BetaCam', meta: { group: 'Video' } },
+      { value: 'video.misc', label: 'Misc (tape cleaning machine, blowers etc.)', meta: { group: 'Video' } },
+      { value: 'audio.tape_recorder', label: 'Tape Recorder', meta: { group: 'Audio' } },
+      { value: 'audio.mdc', label: 'MDC', meta: { group: 'Audio' } },
+      { value: 'audio.misc_duplicator', label: 'Misc (Duplicator)', meta: { group: 'Audio' } },
+      { value: 'photo.scanner', label: 'Scanner', meta: { group: 'Photo' } },
+      { value: 'photo.misc', label: 'Misc', meta: { group: 'Photo' } },
+      { value: 'misc.mix_machine', label: 'Mix machine of audio, tape, DVD player', meta: { group: 'Misc' } },
     ]),
   },
   {

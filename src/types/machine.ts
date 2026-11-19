@@ -17,7 +17,7 @@ export const machineSummarySchema = z.object({
   code: z.string(),
   name: z.string(),
   category: z.string().nullable(),
-  make: z.string().nullable(),
+  company: z.string().nullable(),
   model: z.string().nullable(),
   serialNo: z.string().nullable(),
   location: z.string().nullable(),
@@ -25,6 +25,8 @@ export const machineSummarySchema = z.object({
   inUse: z.boolean(),
   loanedTo: z.string().nullable(),
   openRepairs: z.number(),
+  /** Total quantity of everything it has captured (see usage). */
+  captured: z.number(),
   nextServiceDue: z.string().nullable(),
 });
 export type MachineSummary = z.output<typeof machineSummarySchema>;
@@ -58,10 +60,25 @@ export const machineRepairSchema = z.object({
   resolvedOn: z.string().nullable(),
   vendor: z.string().nullable(),
   cost: z.number().nullable(),
-  billRef: z.string().nullable(),
+  /** Where the bill file is kept (a file path). */
+  billPath: z.string().nullable(),
   outcome: z.string().nullable(),
+  /** Written when the repair is closed. */
+  comment: z.string().nullable(),
 });
 export type MachineRepair = z.output<typeof machineRepairSchema>;
+
+export const machineUsageSchema = z.object({
+  id: z.string(),
+  on: z.string(),
+  /** A value of the admin list `machineUsageType`. */
+  type: z.string(),
+  qty: z.number(),
+  note: z.string().nullable(),
+  by: z.string(),
+  loanId: z.string().nullable(),
+});
+export type MachineUsage = z.output<typeof machineUsageSchema>;
 
 export const machineHistorySchema = z.object({
   at: z.string(),
@@ -72,7 +89,6 @@ export const machineHistorySchema = z.object({
 export type MachineHistory = z.output<typeof machineHistorySchema>;
 
 export const machineSchema = machineSummarySchema.extend({
-  version: z.string().nullable(),
   sourceType: machineSourceSchema,
   sourceName: z.string().nullable(),
   sourceContact: z.string().nullable(),
@@ -83,6 +99,7 @@ export const machineSchema = machineSummarySchema.extend({
   parts: z.array(machinePartSchema),
   loans: z.array(machineLoanSchema),
   repairs: z.array(machineRepairSchema),
+  usage: z.array(machineUsageSchema),
   history: z.array(machineHistorySchema),
   createdAt: z.string(),
 });
@@ -130,9 +147,8 @@ const text = (max: number) => z.string().trim().max(max);
 export const machineCreateBodySchema = z.object({
   name: text(120).min(1, 'Give the machine a name.'),
   category: text(60).optional(),
-  make: text(80).optional(),
+  company: text(120).optional(),
   model: text(80).optional(),
-  version: text(60).optional(),
   serialNo: text(80).optional(),
   sourceType: machineSourceSchema.default('purchased'),
   sourceName: text(160).optional(),
@@ -151,9 +167,8 @@ export const machinePatchBodySchema = z
   .object({
     name: text(120).min(1),
     category: text(60).nullable(),
-    make: text(80).nullable(),
+    company: text(120).nullable(),
     model: text(80).nullable(),
-    version: text(60).nullable(),
     serialNo: text(80).nullable(),
     sourceType: machineSourceSchema,
     sourceName: text(160).nullable(),
@@ -202,12 +217,15 @@ export const machineEventBodySchema = z.discriminatedUnion('type', [
     returnedOn: day,
     conditionIn: machineConditionSchema,
     note: text(300).optional(),
+    /** What it captured while it was out: each row becomes a usage entry dated the return day. */
+    captured: z.array(z.object({ type: text(60).min(1), qty: z.number().int().min(1).max(10_000_000) })).max(30).optional(),
   }),
   z.object({
     type: z.literal('repair.add'),
     fault: text(400).min(1, 'Describe the fault.'),
     reportedOn: day,
     vendor: text(120).optional(),
+    billPath: text(1000).optional(),
   }),
   z.object({
     type: z.literal('repair.resolve'),
@@ -215,11 +233,20 @@ export const machineEventBodySchema = z.discriminatedUnion('type', [
     resolvedOn: day,
     vendor: text(120).optional(),
     cost: z.number().min(0).max(100_000_000).optional(),
-    billRef: text(120).optional(),
+    billPath: text(1000).optional(),
     outcome: text(400).optional(),
+    comment: text(1000).optional(),
     /** Condition after the repair. */
     condition: machineConditionSchema.default('working'),
   }),
+  z.object({
+    type: z.literal('usage.add'),
+    on: day,
+    usageType: text(60).min(1, 'Choose what it captured.'),
+    qty: z.number().int().min(1, 'Enter how many.').max(10_000_000),
+    note: text(300).optional(),
+  }),
+  z.object({ type: z.literal('usage.remove'), usageId: z.string() }),
   z.object({ type: z.literal('history.note'), text: text(400).min(1, 'Write a note first.') }),
   z.object({ type: z.literal('service.log'), servicedOn: day, note: text(300).optional() }),
 ]);

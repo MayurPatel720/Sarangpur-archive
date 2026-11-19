@@ -159,6 +159,14 @@ that lot) and `customColumns[]` (`{ key, label, type: text|number|yesno|date, de
 
 Custom columns of the Master Excel only, shared by everyone: `key` (`mc_…`, unique), `label`, `kind` (`text` = typed per row, stored on the item; `lot` = fetched live from a lot detail such as owner name / phone, see `src/lib/master-custom.ts`), `source`, `createdBy`. Never shown on a lot's own Items sheet.
 
+## `machines` — changes (`src/models/Machine.ts`)
+
+`make` and `version` were removed; `company` was added. Repairs: `billRef` became `billPath` (a file path) and a closing `comment` was added. New embedded `usage[]`: `{ on (YYYY-MM-DD), type (a value of the admin list machineUsageType), qty, note, by, loanId? }`, plus the denormalised `capturedTotal` (sum of `qty`). `npm run db:migrate-machines` creates the list and drops the removed fields.
+
+## `userlayouts` — DONE (`src/models/UserLayout.ts`)
+
+One person's saved layout of one sheet: `user`, `scope` (`items` = a lot's Items sheet, `master:<format>` / `master:all`), `data` (column order, pins, widths, hidden columns, row height). Unique per (`user`, `scope`); only the owner reads or writes it.
+
 ## `activitylogs` — DONE (`src/models/ActivityLog.ts`)
 
 Append-only audit trail. **Never updated, never deleted.**

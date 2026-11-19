@@ -9,9 +9,11 @@ import { refOptions, type RefLists } from '@/lib/ref-lists';
 import { Field, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { Dialog } from '@/components/ui/Dialog';
 import { Tabs } from '@/components/ui/primitives';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 
 const SEARCH_FROM = 12;
+const q0 = (s: string) => s.trim().toLowerCase();
 
 /**
  * "Set the same value on every ticked row". Every field comes from the column registry and the
@@ -35,7 +37,7 @@ export function BulkEditBar({
   lists: RefLists;
   canDecide: boolean;
   pending: boolean;
-  onApply: (set: ItemsBulkSet) => void;
+  onApply: (set: ItemsBulkSet, codeLetter?: string) => void;
   onClear: () => void;
   /** Close the dialog (the selection stays). */
   onClose: () => void;
@@ -51,6 +53,15 @@ export function BulkEditBar({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<DeptId>('details');
+  /** The code letter to give every ticked row (R, M …; the admin list "Item code letters"). D needs an original, so it is not offered here. */
+  const [letter, setLetter] = useState('');
+  const kindList = useReferenceList('itemCodeKind');
+  const letterOptions = (() => {
+    const base = (kindList.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
+    if (!base.some((b) => b.value === 'R')) base.unshift({ value: 'R', label: 'R' });
+    return base.filter((o) => o.value !== 'D');
+  })();
+  const showLetter = !q0(query) || 'code letter'.includes(q0(query));
 
   const setValue = (id: string, v: string) => {
     setValues((p) => ({ ...p, [id]: v }));
@@ -63,10 +74,10 @@ export function BulkEditBar({
 
   const q = query.trim().toLowerCase();
   const visible = q ? fields.filter((f) => f.label.toLowerCase().includes(q)) : fields;
-  const groups = DEPARTMENTS.map((d) => ({ dept: d, fields: visible.filter((f) => f.dept === d.id) })).filter((g) => g.fields.length > 0);
+  const groups = DEPARTMENTS.map((d) => ({ dept: d, fields: visible.filter((f) => f.dept === d.id) })).filter((g) => g.fields.length > 0 || (g.dept.id === 'details' && showLetter));
   /** The tab shown: the chosen one, or the first that still has a field (a search can empty a tab). */
   const activeGroup = groups.find((g) => g.dept.id === tab) ?? groups[0];
-  const filled = (list: BulkField[]) => list.filter((f) => (values[f.id] ?? '') !== '').length;
+  const filled = (list: BulkField[], dept?: string) => list.filter((f) => (values[f.id] ?? '') !== '').length + (dept === 'details' && letter ? 1 : 0);
 
   const apply = () => {
     const { set, errors: errs } = buildBulkSet(fields, values);
@@ -77,8 +88,8 @@ export function BulkEditBar({
       if (bad) setTab(bad.dept);
       return;
     }
-    if (Object.keys(set).length === 0) return;
-    onApply(set);
+    if (Object.keys(set).length === 0 && !letter) return;
+    onApply(set, letter || undefined);
   };
 
   const control = (f: BulkField) => {
@@ -202,12 +213,24 @@ export function BulkEditBar({
             value={activeGroup?.dept.id ?? ''}
             onChange={(id) => setTab(id as DeptId)}
             tabs={groups.map((g) => {
-              const n = filled(g.fields);
+              const n = filled(g.fields, g.dept.id);
               return { id: g.dept.id, label: n > 0 ? `${g.dept.label} · ${n}` : g.dept.label };
             })}
           />
           {activeGroup ? (
             <div role="tabpanel" aria-label={activeGroup.dept.label} className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2">
+              {activeGroup.dept.id === 'details' && showLetter ? (
+                <Field label="Code letter" hint="Letters come from Admin → Lists. Rows that cannot change are skipped.">
+                  <Select value={letter} onChange={(e) => setLetter(e.target.value)} aria-label="Code letter for selected items">
+                    <option value="">— leave as is —</option>
+                    {letterOptions.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              ) : null}
               {activeGroup.fields.map((f) => (
                 <Field
                   key={f.id}

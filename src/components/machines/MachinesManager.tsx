@@ -175,7 +175,7 @@ export function MachinesManager() {
             name="q"
             autoComplete="off"
             spellCheck={false}
-            placeholder="Name, code, make, model, serial, location…"
+            placeholder="Name, code, company, model, serial, location…"
             aria-label="Search machines"
           />
         </div>
@@ -209,7 +209,8 @@ export function MachinesManager() {
                   <span className="break-words text-[15px] font-semibold leading-snug">{m.name}</span>
                   <span className="truncate text-[12px] text-ink-3">
                     <span className="tabular-nums">{m.code}</span>
-                    {[m.make, m.model].filter(Boolean).length ? ` · ${[m.make, m.model].filter(Boolean).join(' ')}` : ''}
+                    {[m.company, m.model].filter(Boolean).length ? ` · ${[m.company, m.model].filter(Boolean).join(' ')}` : ''}
+                    {m.captured > 0 ? ` · captured ${m.captured.toLocaleString('en-IN')}` : ''}
                     {m.serialNo ? ` · S/N ${m.serialNo}` : ''}
                     {m.location ? ` · ${m.location}` : ''}
                   </span>

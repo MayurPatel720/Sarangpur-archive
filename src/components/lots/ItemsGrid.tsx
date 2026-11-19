@@ -9,6 +9,7 @@ import { dateTime12 } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { useReferenceLists } from '@/hooks/useReferenceLists';
 import { refLabel as refLabelOf } from '@/lib/ref-lists';
+import { cellText } from '@/lib/item-cells';
 import { ITEM_STATUSES, ITEM_STATUS_LABELS, itemStatus, type ItemStatus } from '@/lib/item-status';
 import { Badge, ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { GhostButton } from '@/components/ui/Form';
@@ -16,7 +17,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { IconChevronDown, IconImportExport, IconPlus } from '@/components/ui/icons';
 import { Menu, menuItem } from '@/components/master/MasterMenus';
 import { useToast } from '@/components/ui/Toast';
-import { allColumns, BUILTIN_COLUMNS, forFormat, shownOnSheet, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { allColumns, ALWAYS_VISIBLE, BUILTIN_COLUMNS, deptLabel, forFormat, shownOnSheet, PRASADI_FORMAT, DEPARTMENTS, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import type { ColumnsBody, GridItem, ItemsBulkSet, ItemsGridResponse } from '@/types/items';
 import { AddItemDialog } from './AddItemDialog';
 import { AddColumnDialog } from './AddColumnDialog';
@@ -26,13 +27,15 @@ import { BulkEditBar } from './BulkEditBar';
 import { ItemPhotosDialog } from './ItemPhotosDialog';
 import { ItemStatusDialog } from './ItemStatusDialog';
 import { ItemPhotoViewer } from './ItemPhotoViewer';
-import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
 import { SetPathDialog } from './SetPathDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { ItemFamilyGrid, PHOTO_ROW_PX, type HistoryMarks } from './ItemFamilyGrid';
 import { HistoryControls } from './HistoryControls';
 import { useLotHistory } from '@/hooks/useLotHistory';
+import { useServerLayout } from '@/hooks/useServerLayout';
+import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
+import type { ColumnMenuInfo, SectionMenuInfo } from './GridHeader';
 import { useMe } from '@/hooks/useCan';
 
 /**
@@ -44,17 +47,27 @@ import { useMe } from '@/hooks/useCan';
  * decides the lot, and the lot's stage then follows capture / MLS / logging by itself.
  */
 
-type Filter = 'all' | 'undecided' | 'archive' | 'discard';
+type Filter = 'all' | 'undecided' | 'archive' | 'discard' | 'returned';
 const FILTERS: { id: Filter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'undecided', label: 'Undecided' },
   { id: 'archive', label: 'Digitize' },
   { id: 'discard', label: 'Discard' },
+  { id: 'returned', label: 'Returned' },
 ];
 
 const ROW_PX = 42;
+/** Row heights of the Display menu. */
+const DENSITY_PX = { compact: 32, normal: ROW_PX, roomy: 56 } as const;
+type Density = keyof typeof DENSITY_PX;
+interface SheetLayout {
+  order: string[];
+  pinned: string[];
+  density: Density;
+}
+const DEFAULT_LAYOUT: SheetLayout = { order: [], pinned: [], density: 'normal' };
 const matchesFilter = (r: GridItem, f: Filter) =>
-  f === 'all' ? true : f === 'undecided' ? !r.result : r.result === f;
+  f === 'all' ? true : f === 'undecided' ? !r.result : f === 'returned' ? r.disposition === 'return' : r.result === f;
 
 const SELECTION_CLEAR: Record<number, string[]> = {};
 
@@ -151,6 +164,12 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     },
   });
 
+  const letters = useMutation({
+    mutationFn: (v: { itemIds: string[]; kind: string }) => itemsGridApi.setLetters(lotId, v),
+    onSuccess: refresh,
+    onError: (e) => toast.error('Could not change the code letter', e instanceof ApiRequestError ? e.message : undefined),
+  });
+
   const reorder = useMutation({
     mutationFn: (v: { lineIndex: number; orderedIds: string[] }) => itemsGridApi.reorder(lotId, v),
     onSuccess: refresh,
@@ -232,9 +251,31 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     [specs, hiddenIds, lotFormats],
   );
   /** Visible columns per media format: a Prasadi sheet gets Prasadi columns, a video sheet its tape / case columns. */
+  /** This person's layout of the sheets (column order, pinned columns, row height), kept in this browser. */
+  const [layout, setLayoutState] = useState<SheetLayout>(DEFAULT_LAYOUT);
+  const setLayout = useCallback((patch: Partial<SheetLayout>) => setLayoutState((prev) => ({ ...prev, ...patch })), []);
+  /** Drafts stay on screen until "Save layout"; the saved layout (kept on the person's account) opens with the sheet. */
+  const savedLayout = useServerLayout('items', layout, setLayoutState);
+  /** The sheet's one menu: this column / section first, then columns, display and layout. */
+  type MenuTarget = { kind: 'column'; info: ColumnMenuInfo } | { kind: 'section'; info: SectionMenuInfo };
+  const sheetMenu = useSheetMenu<MenuTarget>();
+  const onOpenMenu = useCallback((pos: { x: number; y: number }, info: ColumnMenuInfo) => sheetMenu.openAt(pos, { kind: 'column', info }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const onOpenSectionMenu = useCallback((pos: { x: number; y: number }, info: SectionMenuInfo) => sheetMenu.openAt(pos, { kind: 'section', info }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const onPin = useCallback((id: string) => setLayout({ pinned: layout.pinned.includes(id) ? layout.pinned.filter((x) => x !== id) : [...layout.pinned, id] }), [layout.pinned, setLayout]);
+  const onOrder = useCallback((order: string[]) => setLayout({ order }), [setLayout]);
+  const rowPx = DENSITY_PX[layout.density];
   const columnsByFormat = useMemo(
-    () => new Map(lotFormats.map((f) => [f, forFormat(visibleSpecs, f)])),
-    [lotFormats, visibleSpecs],
+    () =>
+      new Map(
+        lotFormats.map((f) => {
+          const cols = forFormat(visibleSpecs, f);
+          const rank = new Map(layout.order.map((id, i) => [id, i]));
+          // Listed columns keep the saved order (each stays in its own department band); the rest keep the registry order.
+          const ordered = cols.some((c) => rank.has(c.id)) ? [...cols].sort((a, b) => (rank.get(a.id) ?? 9999) - (rank.get(b.id) ?? 9999)) : cols;
+          return [f, ordered] as const;
+        }),
+      ),
+    [lotFormats, visibleSpecs, layout.order],
   );
 
   /** One sheet per media line, in intake order, with every item (for progress) and the filtered rows. */
@@ -299,6 +340,25 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const onOpenCode = useCallback((item: GridItem) => setCodeFor(item), []);
   const onDuplicate = useCallback((item: GridItem, code: string) => setDuplicateFor({ item, code }), []);
 
+  /** Copies the rows (the ticked ones, else every row on the sheets) as tab-separated text, ready to paste into Excel. */
+  const copyRows = async () => {
+    const ids = new Set(selected);
+    const picked = (data?.items ?? []).filter((i) => ids.size === 0 || ids.has(i.id));
+    if (picked.length === 0) return;
+    const cols = (columnsByFormat.get(picked[0]!.format) ?? visibleSpecs).filter((c) => c.kind !== 'photo');
+    const label = (list: string, v: string | null) => refLabelOf(refLists, list, v);
+    const TAB = String.fromCharCode(9);
+    const NL = String.fromCharCode(10);
+    const clean = (t: string) => t.split(NL).join(' ').split(TAB).join(' ').split(String.fromCharCode(13)).join(' ');
+    const text = [cols.map((c) => clean(c.label)).join(TAB), ...picked.map((r) => cols.map((c) => clean(cellText(r, c, label))).join(TAB))].join(NL);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success('Copied', `${picked.length} ${picked.length === 1 ? 'row' : 'rows'}: paste into Excel or Sheets.`);
+    } catch {
+      toast.error('Could not copy', 'Your browser did not allow clipboard access.');
+    }
+  };
+
   const exportExcel = async () => {
     if (!data) return;
     try {
@@ -358,10 +418,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const single = sheets.length <= 1;
   const canReorder = canDetails && filter === 'all';
 
-  const gridHeight = (rowCount: number, rowPx = ROW_PX) => {
+  const gridHeight = (rowCount: number, px: number = rowPx) => {
     if (single) return fullscreen ? '100%' : 'max(420px, calc(100dvh - 320px))';
-    const natural = 100 + rowCount * rowPx;
-    return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, rowPx > ROW_PX ? 780 : 560)}px`;
+    const natural = 100 + rowCount * px;
+    return fullscreen ? `min(${natural}px, calc(100dvh - 200px))` : `${Math.min(natural, px > 56 ? 780 : 560)}px`;
   };
 
   /** Look of a GhostButton, for the buttons that open a menu. */
@@ -399,7 +459,10 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   );
 
   const iconBtn =
-    'inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-line bg-surface text-ink-2 cursor-pointer hover:bg-accent-soft disabled:opacity-50';
+    'inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-line bg-surface text-ink-2 cursor-pointer hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50';
+  /** A tool button with a text label: same height as the icon buttons. */
+  const toolBtn =
+    'inline-flex h-8 items-center gap-1.5 rounded-[6px] border border-line bg-surface px-2.5 text-[12px] font-semibold text-ink-2 cursor-pointer hover:bg-accent-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50';
 
   return (
     <div className="transition-[padding] duration-150" style={{ paddingRight: panelOpen && !fullscreen ? 392 : 0 }}>
@@ -514,7 +577,8 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           ) : null}
 
           {/* Sticky toolbar: stays at the top of the page while the sheets scroll (-top cancels the page's top padding). */}
-          <div className={`flex flex-wrap items-center gap-2 ${fullscreen ? '' : 'sticky -top-4 md:-top-[22px] z-30 -mx-3 border-b border-line-soft bg-surface px-3 py-2 md:-mx-4 md:px-4'}`}>
+          <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${fullscreen ? '' : 'sticky -top-4 md:-top-[22px] z-30 -mx-3 border-b border-line-soft bg-surface px-3 py-2 md:-mx-4 md:px-4'}`}>
+            <div className="contents">
             <div role="group" aria-label="Show items" className={prasadiOnly ? 'hidden' : 'flex flex-wrap gap-1.5'}>
               {FILTERS.map((f) => (
                 <button
@@ -551,39 +615,23 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 })}
               </div>
             ) : null}
-            <div role="group" aria-label="Departments" className="flex flex-wrap gap-x-3 text-[12px] text-ink-2">
-              {lotDepts.map((d) => (
-                <label key={d.id} className="flex items-center gap-1.5 min-h-[32px] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-accent"
-                    checked={shownDepts.includes(d.id)}
-                    onChange={(e) =>
-                      setShownDepts((prev) =>
-                        e.target.checked ? DEPARTMENTS.map((x) => x.id).filter((x) => x === d.id || prev.includes(x)) : prev.filter((x) => x !== d.id),
-                      )
-                    }
-                  />
-                  {d.label}
-                </label>
-              ))}
             </div>
-            <div role="toolbar" aria-label="Excel tools" className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+            <div role="toolbar" aria-label="Excel tools" className="flex flex-wrap items-center gap-1.5 lg:ml-auto">
               {selected.length > 0 && canDetails ? (
                 <button
                   type="button"
                   onClick={() => setShowBulk(true)}
                   title="Set the same values on the ticked rows"
-                  className="inline-flex h-10 cursor-pointer items-center rounded-[6px] border border-accent bg-accent-soft px-4 text-[13px] font-semibold text-accent"
+                  className="inline-flex h-8 cursor-pointer items-center rounded-[6px] border border-accent bg-accent-soft px-3 text-[12px] font-semibold text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 >
                   Bulk edit
                   <span className="ml-1.5 rounded-full bg-accent px-1.5 text-[11px] font-bold leading-[18px] text-white tabular-nums">{selected.length}</span>
                 </button>
               ) : null}
               {canDetails && pathItems.length > 0 ? (
-                <GhostButton onClick={() => setShowPath(true)} title="Fill the File path column from one parent folder">Set path</GhostButton>
+                <button type="button" className={toolBtn} onClick={() => setShowPath(true)} title="Fill the File path column from one parent folder">Set path</button>
               ) : null}
-              <Menu label="Import / Export" width={200} align="right" className={iconBtn} trigger={<IconImportExport size={16} />}>
+              <Menu label="Import / Export" width={200} className={toolBtn} trigger={<><IconImportExport size={15} aria-hidden /> Import / Export</>}>
                 {(close) => (
                   <>
                     {canDetails ? (
@@ -591,30 +639,96 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                         Import from Excel
                       </button>
                     ) : null}
+                    <button type="button" role="menuitem" className={menuItem} disabled={s.total === 0} onClick={() => { void copyRows(); close(); }}>
+                      {selected.length > 0 ? `Copy ${selected.length} selected` : 'Copy all rows'}
+                    </button>
                     <button type="button" role="menuitem" className={menuItem} disabled={s.total === 0} onClick={() => { void exportExcel(); close(); }}>
                       Export to Excel
                     </button>
                   </>
                 )}
               </Menu>
-              {canDetails ? (
-                <button
-                  type="button"
-                  className={iconBtn}
-                  aria-label="Add a column"
-                  title="Add a column"
-                  onClick={() => {
-                    setColumnError(null);
-                    setShowAddColumn(true);
-                  }}
-                >
-                  <IconPlus size={15} />
-                </button>
-              ) : null}
-              <HiddenColumnsMenu hidden={hiddenSpecs} onShow={showColumn} onShowAll={() => columns.mutate({ hidden: [] })} />
+              <div className="ml-auto flex items-center gap-1.5">
               <HistoryControls history={history} canEdit={canDetails} lotId={lotId} view={histView} onView={setHistView} showChanges={showChanges} onShowChanges={setShowChanges} onPanelChange={setPanelOpen} />
+              </div>
             </div>
           </div>
+
+          {sheetMenu.state ? (() => {
+            const close = sheetMenu.close;
+            const target = sheetMenu.state.column;
+            const pickerColumns = specs
+              .filter((c) => c.kind !== 'code' && (lotFormats.length === 0 || lotFormats.some((f) => shownOnSheet(c, f))))
+              .map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !hiddenIds.has(c.id) }));
+            const densities = [{ id: 'compact', label: 'Compact' }, { id: 'normal', label: 'Normal' }, { id: 'roomy', label: 'Roomy' }] as const;
+            return (
+              <SheetMenu pos={sheetMenu.state.pos} onClose={close} label="Sheet options">
+                {target?.kind === 'column' ? (
+                  <>
+                    <MenuHeading>{target.info.label}</MenuHeading>
+                    {target.info.onMove ? (
+                      <>
+                        <MenuAction onClose={close} disabled={!target.info.canMoveLeft} onClick={() => target.info.onMove?.(-1)}>Move left</MenuAction>
+                        <MenuAction onClose={close} disabled={!target.info.canMoveRight} onClick={() => target.info.onMove?.(1)}>Move right</MenuAction>
+                      </>
+                    ) : null}
+                    {target.info.onPin ? <MenuAction onClose={close} onClick={() => target.info.onPin?.()}>{target.info.pinned ? 'Unpin column' : 'Pin column'}</MenuAction> : null}
+                    {target.info.hideable ? <MenuAction onClose={close} onClick={target.info.onHide}>Hide column</MenuAction> : null}
+                    {target.info.onDelete ? <MenuAction danger onClose={close} onClick={() => target.info.onDelete?.()}>Delete column…</MenuAction> : null}
+                    <MenuDivider />
+                  </>
+                ) : null}
+                {target?.kind === 'section' ? (
+                  <>
+                    <MenuHeading>{target.info.label}</MenuHeading>
+                    <MenuAction onClose={close} onClick={target.info.onShowOnly} disabled={target.info.active}>Show only this section</MenuAction>
+                    <MenuAction onClose={close} onClick={target.info.onShowAll}>Show every section</MenuAction>
+                    <MenuAction onClose={close} onClick={target.info.onHideAll}>Hide this section</MenuAction>
+                    <MenuDivider />
+                  </>
+                ) : null}
+                <MenuHeading>Columns</MenuHeading>
+                {canDetails ? (
+                  <div className="px-3 pb-1 text-[12px]">
+                    <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setColumnError(null); setShowAddColumn(true); }}>
+                      + Add a column
+                    </button>
+                  </div>
+                ) : null}
+                {lotDepts.length > 1 ? (
+                  <>
+                    <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
+                    {lotDepts.map((d) => (
+                      <MenuCheck
+                        key={d.id}
+                        checked={shownDepts.includes(d.id)}
+                        onChange={(on) => setShownDepts((prev) => (on ? DEPARTMENTS.map((x) => x.id).filter((x) => x === d.id || prev.includes(x)) : prev.filter((x) => x !== d.id)))}
+                      >
+                        {d.label}
+                      </MenuCheck>
+                    ))}
+                  </>
+                ) : null}
+                <ColumnsPicker
+                  columns={pickerColumns}
+                  onToggle={(id, on) => (on ? showColumn(id) : hideColumn(id))}
+                  onShowAll={() => columns.mutate({ hidden: [] })}
+                  onHideAll={() => columns.mutate({ hidden: specs.filter((c) => c.kind !== 'code' && !ALWAYS_VISIBLE.has(c.id)).map((c) => c.id) })}
+                />
+                <MenuDivider />
+                <MenuHeading>Display</MenuHeading>
+                {densities.map((d) => (
+                  <MenuRadio key={d.id} name="density" checked={layout.density === d.id} onChange={() => setLayout({ density: d.id })}>{d.label} rows</MenuRadio>
+                ))}
+                <MenuDivider />
+                <LayoutSection layout={savedLayout} onClose={close}>
+                  <MenuAction onClose={close} disabled={layout.order.length === 0 && layout.pinned.length === 0} onClick={() => setLayout({ order: [], pinned: [] })}>
+                    Reset column order and pins
+                  </MenuAction>
+                </LayoutSection>
+              </SheetMenu>
+            );
+          })() : null}
 
           {showBulk && selected.length > 0 && canDetails ? (
             <BulkEditBar
@@ -624,23 +738,32 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
               lists={refLists}
               canDecide={canDecide}
               pending={save.isPending}
-              onApply={(set) =>
-                save.mutate(
-                  { itemIds: selected, set },
+              onApply={(set, codeLetter) => {
+                const finish = (msg: string) => {
+                  toast.success(msg, undefined, undoLink);
+                  deselectAll();
+                  setShowBulk(false);
+                };
+                const saveFields = (note: string) =>
+                  Object.keys(set).length === 0
+                    ? finish(note)
+                    : save.mutate({ itemIds: selected, set }, { onSuccess: (res) => finish(`${note}Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`) });
+                if (!codeLetter) return saveFields('');
+                letters.mutate(
+                  { itemIds: selected, kind: codeLetter },
                   {
-                    onSuccess: (res) => {
-                      toast.success(`Updated ${res.updated} ${res.updated === 1 ? 'item' : 'items'}`, undefined, undoLink);
-                      deselectAll();
-                      setShowBulk(false);
+                    onSuccess: (r) => {
+                      if (r.skipped.length > 0) toast.error(`${r.skipped.length} not changed`, `${r.skipped[0]!.code}: ${r.skipped[0]!.reason}`);
+                      saveFields(`Code letter ${codeLetter} on ${r.changed} ${r.changed === 1 ? 'item' : 'items'}. `);
                     },
                   },
-                )
-              }
+                );
+              }}
               onClear={deselectAll}
             />
           ) : null}
 
-          <div className={fullscreen ? 'flex-1 min-h-0 overflow-y-auto flex flex-col gap-3' : 'flex flex-col gap-3'}>
+          <div onContextMenu={(e) => sheetMenu.onContextMenu(e)} className={fullscreen ? 'flex-1 min-h-0 overflow-y-auto flex flex-col gap-3' : 'flex flex-col gap-3'}>
             {sheets.length === 0 ? <p className="m-0 text-[12.5px] text-ink-3">No items yet.</p> : null}
             {sheets.map((sh, i) => {
               const open = isOpen(sh.lineIndex, i);
@@ -655,8 +778,14 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   refLists={refLists}
                   onOpenPhotos={setPhotosFor}
                   onViewPhotos={setViewing}
+                  onOpenMenu={onOpenMenu}
+                  onOpenSectionMenu={onOpenSectionMenu}
+                  pinnedIds={layout.pinned}
+                  onOrder={onOrder}
+                  onPin={onPin}
+                  rowPx={rowPx}
                   onOpenStatus={setStatusFor}
-                  height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : ROW_PX)}
+                  height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : rowPx)}
                   onOpenCode={onOpenCode}
                   onClearCode={setClearCodeFor}
                   marks={marks}

@@ -29,3 +29,4 @@ export { LotImage, type LotImageDoc } from './LotImage';
 export { Machine, type MachineDoc } from './Machine';
 export { MasterColumn, type MasterColumnDoc } from './MasterColumn';
 export { LotChangeSet, LotChangeRow, LotVersion, type LotChangeSetDoc, type LotChangeRowDoc, type LotVersionDoc } from './LotChangeSet';
+export { UserLayout, type UserLayoutDoc } from './UserLayout';

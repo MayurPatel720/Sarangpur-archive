@@ -20,14 +20,17 @@ import { FORMAT_LABELS, type Format } from '@/lib/domain';
 import { num } from '@/lib/format';
 import type { MasterRow } from '@/types/master';
 import { buildItemsWorkbook } from '@/components/lots/excel-io';
-import { applyView, DEFAULT_VIEW, MAX_WIDTH, MIN_WIDTH, moveColumn, ROW_PADDING, useMasterView } from '@/components/master/master-view';
+import { applyView, DEFAULT_VIEW, MAX_WIDTH, MIN_WIDTH, moveColumn, moveColumnTo, ROW_PADDING, useMasterView } from '@/components/master/master-view';
 import { MasterPathCell } from '@/components/master/MasterPathCell';
 import { MasterCustomCell } from '@/components/master/MasterCustomCell';
+import { useServerLayout } from '@/hooks/useServerLayout';
+import { MasterEditCell, isMasterEditable } from '@/components/master/MasterEditCell';
 import { MasterDecisionCell } from '@/components/master/MasterDecisionCell';
 import { AddMasterColumnDialog } from '@/components/master/AddMasterColumnDialog';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useMe } from '@/hooks/useCan';
-import { ColumnsMenu, DisplayMenu, ExportMenu, HeaderMenu, ViewsMenu, toolbarButton } from '@/components/master/MasterMenus';
+import { ExportMenu, ViewsMenu, toolbarButton } from '@/components/master/MasterMenus';
+import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
 
 /**
  * The Master Excel: every item of every lot (and its project) in one sheet. Read only, except the File
@@ -147,6 +150,8 @@ export function MasterExcel() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const me = useMe();
+  const format = useFormatContext();
+  const { view, setView, saved, saveView, deleteView } = useMasterView(format ?? 'all');
   /** The Master Excel's own custom columns (shared by everyone). */
   const customDefs = useQuery({ queryKey: queryKeys.master.columns, queryFn: () => masterApi.columns(), staleTime: 30_000 });
   const allColumns = useMemo<ColumnSpec[]>(
@@ -155,11 +160,22 @@ export function MasterExcel() {
       ...(customDefs.data?.columns ?? []).map(
         (c): ColumnSpec => ({ id: c.key, label: c.label, dept: 'custom', kind: c.kind === 'text' ? 'text' : 'readonly', width: 170 }),
       ),
+      // Columns lots added to their own Excel, picked from the "Lot columns" menu (read-only; each row shows its own lot's value).
+      ...view.lotCols.map((label): ColumnSpec => ({ id: `lc_${label.trim().toLowerCase()}`, label, dept: 'custom', kind: 'readonly', width: 170, hint: 'A column added to some lots’ own Excel.' })),
     ],
-    [customDefs.data],
+    [customDefs.data, view.lotCols],
   );
   const [addColumn, setAddColumn] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
   const [removeFor, setRemoveFor] = useState<ColumnSpec | null>(null);
+  const layoutNow = useMemo(
+    () => ({ hidden: view.hidden, order: view.order, pinned: view.pinned, widths: view.widths, depts: view.depts, lotCols: view.lotCols }),
+    [view.hidden, view.order, view.pinned, view.widths, view.depts, view.lotCols],
+  );
+  const layout = useServerLayout(`master:${format ?? 'all'}`, layoutNow, (l) => setView(l));
+  const sheetMenu = useSheetMenu<string>();
+  const canEditItems = Boolean(me.data?.grants.includes('lot:edit'));
   const canRemoveColumns = Boolean(me.data?.grants.includes('lists:manage'));
   const removeColumn = useMutation({
     mutationFn: (key: string) => masterApi.updateColumns({ removeKey: key }),
@@ -170,7 +186,6 @@ export function MasterExcel() {
     },
     onError: (e) => toast.error('Could not remove the column', e instanceof ApiRequestError ? e.message : undefined),
   });
-  const format = useFormatContext();
   const stages = useReferenceList('stage');
   const photoSubtypes = useReferenceList('mediaSubtype.photo');
   const videoSubtypes = useReferenceList('mediaSubtype.video');
@@ -188,7 +203,6 @@ export function MasterExcel() {
     }
     return [...seen].map(([value, label]) => ({ value, label }));
   }, [photoSubtypes.data, videoSubtypes.data, audioSubtypes.data]);
-  const { view, setView, saved, saveView, deleteView } = useMasterView(format ?? 'all');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [applied, setApplied] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
@@ -241,9 +255,9 @@ export function MasterExcel() {
 
   const sort = view.sort && SORTABLE.has(view.sort) ? view.sort : '';
   const params = useMemo(() => {
-    const p: Record<string, string | number | undefined> = { ...applied, format, page, pageSize, sort: sort || undefined, dir: sort ? view.dir : undefined };
+    const p: Record<string, string | number | undefined> = { ...applied, format, page, pageSize, sort: sort || undefined, dir: sort ? view.dir : undefined, lotCols: view.lotCols.length > 0 ? view.lotCols.join('|') : undefined };
     return p;
-  }, [applied, format, page, pageSize, sort, view.dir]);
+  }, [applied, format, page, pageSize, sort, view.dir, view.lotCols]);
   const key = JSON.stringify(params);
   const list = useQuery({
     queryKey: queryKeys.master.list(key),
@@ -336,7 +350,7 @@ export function MasterExcel() {
   const fetchAll = async (): Promise<MasterRow[]> => {
     const out: MasterRow[] = [];
     for (let p = 1; out.length < EXPORT_CAP; p += 1) {
-      const res = await masterApi.list({ ...applied, format, sort: sort || undefined, dir: sort ? view.dir : undefined, page: p, pageSize: EXPORT_PAGE });
+      const res = await masterApi.list({ ...applied, format, sort: sort || undefined, dir: sort ? view.dir : undefined, lotCols: view.lotCols.length > 0 ? view.lotCols.join('|') : undefined, page: p, pageSize: EXPORT_PAGE });
       out.push(...res.rows);
       if (out.length >= res.total || res.rows.length === 0) break;
     }
@@ -405,6 +419,8 @@ export function MasterExcel() {
         </Link>
       );
     }
+    // The lot's own columns are edited here too (same rules and history as the lot's Excel).
+    if (canEditItems && isMasterEditable(c)) return <MasterEditCell row={row} spec={c} lists={refLists} refLabel={refLabel} />;
     // The one editable cell: a file path is pasted in long after intake (see MasterPathCell).
     if (c.id === 'fileName') return <MasterPathCell row={row} />;
     // The Decision columns are edited here too; the lot's own rules apply (a decided lot is locked).
@@ -459,18 +475,6 @@ export function MasterExcel() {
           onDelete={deleteView}
           onReset={resetView}
         />
-        <ColumnsMenu
-          columns={viewCols}
-          view={view}
-          setView={setView}
-          depts={visibleBands.map((b) => ({ id: b.id, label: b.label }))}
-          shownDepts={shownDepts}
-          onToggleDept={(id, on) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) })}
-        />
-        <DisplayMenu view={view} setView={setView} />
-        <button type="button" className={toolbarButton} onClick={() => setAddColumn(true)} title="Add a column to this sheet (for everyone)">
-          + Column
-        </button>
         {phone ? (
           <button type="button" className={toolbarButton} onClick={() => setPhoneFilters((v) => !v)} aria-pressed={phoneFilters}>
             Filters{activeFilters > 0 ? ` (${activeFilters})` : ''}
@@ -550,7 +554,7 @@ export function MasterExcel() {
               </span>
             </div>
           ) : null}
-          <div className={`overflow-auto overscroll-contain ${full ? 'min-h-0 flex-1' : 'max-h-[calc(100dvh-236px)]'}`}>
+          <div onContextMenu={(e) => sheetMenu.onContextMenu(e)} className={`overflow-auto overscroll-contain ${full ? 'min-h-0 flex-1' : 'max-h-[calc(100dvh-236px)]'}`}>
             <table className="min-w-full border-separate border-spacing-0 text-[12.5px] text-ink-2">
               <thead>
                 <tr>
@@ -579,12 +583,42 @@ export function MasterExcel() {
                     return (
                       <th
                         key={c.id}
+                        onContextMenu={(e) => sheetMenu.onContextMenu(e, c.id)}
+                        onDragOver={(e) => {
+                          if (dragId && dragId !== c.id && pinLeft.has(dragId) === pinned) {
+                            e.preventDefault();
+                            if (overId !== c.id) setOverId(c.id);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          if (dragId && dragId !== c.id && pinLeft.has(dragId) === pinned) setView((v) => ({ order: moveColumnTo(baseColumns, v, dragId, c.id) }));
+                          setDragId(null);
+                          setOverId(null);
+                        }}
                         aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none'}
                         style={{ ...(fixed ? { width: w, minWidth: w, maxWidth: w } : { minWidth: c.width }), ...(pinned ? { left: pinLeft.get(c.id) } : {}) }}
-                        className={`sticky ${headTop[1]} ${pinned ? 'z-30' : 'z-20'} h-9 border-b border-r border-line-soft bg-surface-sunken px-2 text-left text-[12px] font-semibold text-ink-2`}
+                        className={`sticky ${headTop[1]} ${pinned ? 'z-30' : 'z-20'} h-9 border-b border-r border-line-soft bg-surface-sunken px-2 text-left text-[12px] font-semibold text-ink-2 ${overId === c.id && dragId !== c.id ? 'shadow-[inset_3px_0_0_var(--color-accent)]' : ''} ${dragId === c.id ? 'opacity-50' : ''}`}
                         title={c.hint}
                       >
                         <div className="flex min-w-0 items-center gap-0.5">
+                          <span
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', c.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                              setDragId(c.id);
+                            }}
+                            onDragEnd={() => {
+                              setDragId(null);
+                              setOverId(null);
+                            }}
+                            title="Drag to move this column"
+                            aria-hidden
+                            className="mr-0.5 inline-flex h-6 w-4 shrink-0 cursor-grab select-none items-center justify-center rounded-[4px] text-[12px] leading-none text-ink-4 hover:bg-accent-soft hover:text-accent active:cursor-grabbing"
+                          >
+                            ⠿
+                          </span>
                           {sortable ? (
                             <button type="button" onClick={() => cycleSort(c.id)} className="flex min-w-0 cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-left text-[12px] font-semibold text-ink-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-accent">
                               <span className="truncate">{c.label}</span>
@@ -594,23 +628,18 @@ export function MasterExcel() {
                             <span className="truncate">{c.label}</span>
                           )}
                           <span className="ml-auto shrink-0">
-                            <HeaderMenu
-                              column={c}
-                              sortable={sortable}
-                              sorted={dir}
-                              pinned={pinned}
-                              canMoveLeft={i > 0 && pinned === pinLeft.has(columns[i - 1]!.id)}
-                              canMoveRight={i < columns.length - 1 && pinned === pinLeft.has(columns[i + 1]!.id)}
-                              actions={{
-                                sort: (d) => setView(d ? { sort: c.id, dir: d } : { sort: '', dir: 'asc' }),
-                                hide: () => setView((v) => ({ hidden: [...v.hidden, c.id] })),
-                                showOnly: () => setView({ hidden: baseColumns.filter((x) => x.id !== c.id).map((x) => x.id) }),
-                                pin: () => setView((v) => ({ pinned: v.pinned.includes(c.id) ? v.pinned.filter((x) => x !== c.id) : [...v.pinned, c.id] })),
-                                move: (step) => setView((v) => ({ order: moveColumn(baseColumns, v, c.id, step) })),
-                                resetWidth: () => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== c.id)) })),
-                                ...(c.dept === 'custom' && canRemoveColumns ? { remove: () => setRemoveFor(c) } : {}),
+                            <button
+                              type="button"
+                              aria-label={`${c.label} column options`}
+                              aria-haspopup="menu"
+                              onClick={(e) => {
+                                const r = e.currentTarget.getBoundingClientRect();
+                                sheetMenu.openAt({ x: r.left, y: r.bottom + 4 }, c.id);
                               }}
-                            />
+                              className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-[4px] border-0 bg-transparent text-[14px] leading-none text-ink-3 hover:bg-accent-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-accent"
+                            >
+                              <span aria-hidden>⋮</span>
+                            </button>
                           </span>
                         </div>
                         <span
@@ -723,6 +752,84 @@ export function MasterExcel() {
         </Panel>
       )}
       {addColumn ? <AddMasterColumnDialog onClose={() => setAddColumn(false)} /> : null}
+      {sheetMenu.state ? (() => {
+        const close = sheetMenu.close;
+        const colId = sheetMenu.state.column;
+        const col = colId ? columns.find((x) => x.id === colId) : undefined;
+        const at = col ? columns.findIndex((x) => x.id === col.id) : -1;
+        const pinned = col ? pinLeft.has(col.id) : false;
+        const sortable = col ? SORTABLE.has(col.id) : false;
+        const dir = col && sort === col.id ? view.dir : null;
+        const lotCols = customDefs.data?.lotColumns ?? [];
+        const pickerColumns = [
+          ...viewCols.map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !view.hidden.includes(c.id), locked: false })),
+          ...lotCols.map((c) => ({ id: `lcol:${c.label}`, label: `${c.label} · ${c.lots} ${c.lots === 1 ? 'lot' : 'lots'}`, group: 'Added to lots', checked: view.lotCols.some((x) => x.toLowerCase() === c.label.toLowerCase()), locked: false })),
+        ];
+        const toggleDept = (id: string, on: boolean) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) });
+        const densities = [{ id: 'compact', label: 'Compact' }, { id: 'normal', label: 'Normal' }, { id: 'roomy', label: 'Roomy' }] as const;
+        return (
+          <SheetMenu pos={sheetMenu.state.pos} onClose={close} label="Sheet options">
+            {col ? (
+              <>
+                <MenuHeading>{col.label}</MenuHeading>
+                {sortable ? (
+                  <>
+                    <MenuAction onClose={close} onClick={() => setView({ sort: col.id, dir: 'asc' })} note={dir === 'asc' ? '✓' : undefined}>Sort A → Z</MenuAction>
+                    <MenuAction onClose={close} onClick={() => setView({ sort: col.id, dir: 'desc' })} note={dir === 'desc' ? '✓' : undefined}>Sort Z → A</MenuAction>
+                    {dir ? <MenuAction onClose={close} onClick={() => setView({ sort: '', dir: 'asc' })}>Clear sort</MenuAction> : null}
+                  </>
+                ) : null}
+                <MenuAction onClose={close} onClick={() => setView((v) => ({ pinned: v.pinned.includes(col.id) ? v.pinned.filter((x) => x !== col.id) : [...v.pinned, col.id] }))}>{pinned ? 'Unpin column' : 'Pin to the left'}</MenuAction>
+                <MenuAction onClose={close} disabled={!(at > 0 && pinned === pinLeft.has(columns[at - 1]!.id))} onClick={() => setView((v) => ({ order: moveColumn(baseColumns, v, col.id, -1) }))}>Move left</MenuAction>
+                <MenuAction onClose={close} disabled={!(at >= 0 && at < columns.length - 1 && pinned === pinLeft.has(columns[at + 1]!.id))} onClick={() => setView((v) => ({ order: moveColumn(baseColumns, v, col.id, 1) }))}>Move right</MenuAction>
+                <MenuAction onClose={close} onClick={() => setView((v) => ({ widths: Object.fromEntries(Object.entries(v.widths).filter(([k]) => k !== col.id)) }))}>Reset width</MenuAction>
+                <MenuAction onClose={close} onClick={() => (col.id.startsWith('lc_') ? setView((v) => ({ lotCols: v.lotCols.filter((l) => `lc_${l.trim().toLowerCase()}` !== col.id) })) : setView((v) => ({ hidden: [...v.hidden, col.id] })))}>Hide column</MenuAction>
+                <MenuAction onClose={close} onClick={() => setView({ hidden: baseColumns.filter((x) => x.id !== col.id).map((x) => x.id) })}>Show only this column</MenuAction>
+                {col.dept === 'custom' && !col.id.startsWith('lc_') && canRemoveColumns ? <MenuAction danger onClose={close} onClick={() => setRemoveFor(col)}>Remove column…</MenuAction> : null}
+                <MenuDivider />
+              </>
+            ) : null}
+            <MenuHeading>Columns</MenuHeading>
+            <div className="px-3 pb-1 text-[12px]">
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-ink-3 hover:text-ink" onClick={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {}, depts: DEFAULT_VIEW.depts, lotCols: [] })}>
+                Reset columns
+              </button>
+              <span aria-hidden className="mx-2 text-ink-4">·</span>
+              <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setAddColumn(true); }}>
+                + Add a column
+              </button>
+            </div>
+            {visibleBands.length > 1 ? (
+              <>
+                <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
+                {visibleBands.map((b) => (
+                  <MenuCheck key={b.id} checked={shownDepts.includes(b.id)} onChange={(on) => toggleDept(b.id, on)}>{b.label}</MenuCheck>
+                ))}
+              </>
+            ) : null}
+            <ColumnsPicker
+              columns={pickerColumns}
+              onToggle={(id, on) => {
+                if (id.startsWith('lcol:')) {
+                  const label = id.slice(5);
+                  setView((v) => ({ lotCols: on ? [...v.lotCols, label] : v.lotCols.filter((x) => x.toLowerCase() !== label.toLowerCase()) }));
+                } else setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...v.hidden, id] }));
+              }}
+              onShowAll={() => setView({ hidden: [] })}
+              onHideAll={() => setView({ hidden: viewCols.slice(1).map((c) => c.id) })}
+            />
+            <MenuDivider />
+            <MenuHeading>Display</MenuHeading>
+            {densities.map((d) => (
+              <MenuRadio key={d.id} name="density" checked={view.density === d.id} onChange={() => setView({ density: d.id })}>{d.label} rows</MenuRadio>
+            ))}
+            <MenuCheck checked={view.wrap} onChange={(on) => setView({ wrap: on })}>Wrap long text</MenuCheck>
+            <MenuCheck checked={view.filterRow} onChange={(on) => setView({ filterRow: on })}>Show the filter row</MenuCheck>
+            <MenuDivider />
+            <LayoutSection layout={layout} onClose={close} />
+          </SheetMenu>
+        );
+      })() : null}
       {removeFor ? (
         <ConfirmDialog
           title="Remove this column?"

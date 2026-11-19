@@ -27,6 +27,7 @@ export function ItemCodeDialog({
   onClose,
   onDone,
   onDuplicate,
+  itemOnly = false,
 }: {
   lotId: string;
   item: GridItem;
@@ -37,6 +38,8 @@ export function ItemCodeDialog({
   onDone: () => void;
   /** The kind D was chosen with an original's code: open the duplicate flow. */
   onDuplicate: (item: GridItem, otherCode: string) => void;
+  /** Only this item's five parts (the Master Excel has no whole-sheet view). */
+  itemOnly?: boolean;
 }) {
   const toast = useToast();
   const kindList = useReferenceList('itemCodeKind');
@@ -52,6 +55,8 @@ export function ItemCodeDialog({
   const [start, setStart] = useState(firstParts ? String(firstParts.no) : '');
   const [startTouched, setStartTouched] = useState(false);
   const [highest, setHighest] = useState<number | null>(null);
+  const [itemAbbr1, setItemAbbr1] = useState(parts?.abbr1 ?? '');
+  const [itemAbbr2, setItemAbbr2] = useState(parts?.abbr2 ?? '');
   const [number, setNumber] = useState(parts ? String(parts.no) : '');
   const [copy, setCopy] = useState(parts ? String(parts.copy).padStart(3, '0') : '000');
   const [kind, setKind] = useState(parts?.kind ?? KIND_ORIGINAL);
@@ -101,8 +106,10 @@ export function ItemCodeDialog({
   const captured = recodable.filter((i) => i.captured).length;
 
   const makesDuplicate = kind === KIND_DUPLICATE && !isDuplicate;
-  const itemOk = /^\d+$/.test(number) && Number(number) >= 1 && /^\d{1,3}$/.test(copy) && (!makesDuplicate || original.trim() !== '');
-  const itemChanged = Number(number) !== parts?.no || Number(copy) !== parts?.copy || kind !== parts?.kind;
+  const itemPairError = isDuplicate ? null : (abbrError('First abbreviation', itemAbbr1) ?? abbrError('Second abbreviation', itemAbbr2));
+  const itemOk = !itemPairError && /^\d+$/.test(number) && Number(number) >= 1 && /^\d{1,3}$/.test(copy) && (!makesDuplicate || original.trim() !== '');
+  const itemPairChanged = itemAbbr1.trim() !== parts?.abbr1 || itemAbbr2.trim() !== parts?.abbr2;
+  const itemChanged = itemPairChanged || Number(number) !== parts?.no || Number(copy) !== parts?.copy || kind !== parts?.kind;
 
   const fail = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : 'Could not change the code.');
   const done = (title: string, detail: string) => {
@@ -121,6 +128,8 @@ export function ItemCodeDialog({
     mutationFn: () =>
       itemsGridApi.setNumber(lotId, {
         itemId: item.id,
+        ...(!isDuplicate && itemAbbr1.trim() !== parts?.abbr1 ? { abbr1: itemAbbr1.trim() } : {}),
+        ...(!isDuplicate && itemAbbr2.trim() !== parts?.abbr2 ? { abbr2: itemAbbr2.trim() } : {}),
         ...(!isDuplicate && Number(number) !== parts?.no ? { no: Number(number) } : {}),
         ...(!isDuplicate && Number(copy) !== parts?.copy ? { copy: Number(copy) } : {}),
         ...(kind !== parts?.kind ? { kind } : {}),
@@ -145,7 +154,7 @@ export function ItemCodeDialog({
             ordinary item again (it is unlinked and gets the next free number), or change the original.
           </p>
         ) : null}
-        {isDuplicate ? null : (
+        {isDuplicate || itemOnly ? null : (
         <section className="flex flex-col gap-3" aria-label="Code for this whole sheet">
           <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">Code for this sheet</h3>
           <div className="grid grid-cols-3 gap-3">
@@ -208,9 +217,19 @@ export function ItemCodeDialog({
         </section>
         )}
 
-        <section className={`flex flex-col gap-3 ${isDuplicate ? '' : 'border-t border-line-soft pt-4'}`} aria-label="Number of this item">
-          <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">Only this item</h3>
+        <section className={`flex flex-col gap-3 ${isDuplicate || itemOnly ? '' : 'border-t border-line-soft pt-4'}`} aria-label="Number of this item">
+          <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">Only this item (all five parts)</h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {isDuplicate ? null : (
+              <>
+                <Field label="Abbreviation 1">
+                  <TextInput value={itemAbbr1} onChange={(e) => setItemAbbr1(e.target.value)} maxLength={12} autoComplete="off" />
+                </Field>
+                <Field label="Abbreviation 2">
+                  <TextInput value={itemAbbr2} onChange={(e) => setItemAbbr2(e.target.value)} maxLength={12} autoComplete="off" />
+                </Field>
+              </>
+            )}
             <Field label="Code letter">
               <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Code letter">
                 {kindOptions
@@ -262,8 +281,10 @@ export function ItemCodeDialog({
               'Type the code of the original this item duplicates; you will see the new code before anything is saved.'
             ) : itemOk ? (
               <>
-                <span className="font-mono text-ink-2">{buildItemCode({ ...parts, no: Number(number), copy: Number(copy), kind })}</span> — any combination not used by another item.
+                <span className="font-mono text-ink-2">{buildItemCode({ abbr1: itemAbbr1.trim(), abbr2: itemAbbr2.trim(), no: Number(number), copy: Number(copy), kind })}</span> — any combination not used by another item.
               </>
+            ) : itemPairError ? (
+              itemPairError
             ) : (
               'The number needs digits, and the last 3 digits can be 000 to 999.'
             )}

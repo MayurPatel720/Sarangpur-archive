@@ -10,7 +10,8 @@ import { LotItem } from '@/models/LotItem';
 import { Project } from '@/models/Project';
 import { MasterColumn } from '@/models/MasterColumn';
 import type { LotSource } from '@/lib/master-custom';
-import { lotDetailText, type LotDetails } from '@/server/lots/master-columns';
+import { lotColumnId, lotDetailText, type LotDetails } from '@/server/lots/master-columns';
+import { isoDayToDmy } from '@/lib/date-range';
 import { getReferenceList } from '@/server/reference';
 import { requireFormatScope } from '@/server/format-scope';
 import { can } from '@/server/permissions';
@@ -71,6 +72,17 @@ function tri(f: Filter, path: string, v: string | undefined) {
 function flag(f: Filter, path: string, v: string | undefined) {
   if (v === 'yes') f[path] = true;
   else if (v === 'no' || v === 'blank') f[path] = { $ne: true };
+}
+
+/** What a lot's own custom column shows for one item (by the column's name in that lot; '' when the lot has no such column). */
+function lotColumnText(lot: { customColumns?: { key: string; label: string; type: string }[] }, custom: Record<string, unknown>, label: string): string {
+  const def = (lot.customColumns ?? []).find((c) => c.label.trim().toLowerCase() === label.trim().toLowerCase());
+  if (!def) return '';
+  const v = custom[def.key];
+  if (v === null || v === undefined) return '';
+  if (def.type === 'yesno') return v === true ? 'Yes' : v === false ? 'No' : '';
+  if (def.type === 'date') return isoDayToDmy(String(v));
+  return String(v);
 }
 
 export async function listMasterItems(query: MasterQuery, ctx: MutationContext): Promise<MasterResponse> {
@@ -215,7 +227,7 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   // ---- the page's lots, projects and duplicate back-links (one query each)
   const lotIds = [...new Set(items.map((i) => String(i.lot)))].map((id) => new Types.ObjectId(id));
   const lots = await ArchiveLot.find({ _id: { $in: lotIds } })
-    .select('lotReference stage format dataType mediaSubtype mediaLines syncProjectId projectIds assigneeName owner pointsOfContact facilitator locationReceiver originSource dateReceived')
+    .select('lotReference stage format dataType mediaSubtype mediaLines syncProjectId projectIds assigneeName owner pointsOfContact facilitator locationReceiver originSource dateReceived customColumns')
     .lean();
   const lotById = new Map(lots.map((l) => [String(l._id), l]));
   const projectIds = [...new Set(lots.flatMap((l) => (l.syncProjectId ? [l.syncProjectId] : (l.projectIds ?? []).slice(0, 1))).map(String))];
@@ -244,6 +256,9 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
   // The Master Excel's own custom columns: typed text (on the item) or a detail fetched from the lot.
   const customCols = await MasterColumn.find().select('key kind source').lean();
 
+  // Columns the lots added to their own Excel: by name, so each lot's own key for it is looked up per row.
+  const wantedLotCols = (query.lotCols ?? '').split('|').map((s) => s.trim()).filter(Boolean).slice(0, 30);
+
   const rows: MasterResponse['rows'] = [];
   for (const it of items) {
     const lot = lotById.get(String(it.lot));
@@ -268,14 +283,17 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
       projectCode: project?.code ?? '',
       projectName: project?.name ?? '',
       assigneeName: lot.assigneeName ?? '',
-      extra: Object.fromEntries(
+      extra: {
+        ...Object.fromEntries(wantedLotCols.map((label) => [lotColumnId(label), lotColumnText(lot as { customColumns?: { key: string; label: string; type: string }[] }, row.custom, label)])),
+        ...Object.fromEntries(
         customCols.map((c) => [
           c.key,
           c.kind === 'lot' && c.source
             ? lotDetailText(lot as LotDetails, c.source as LotSource)
             : String(((it as { masterCustom?: Record<string, unknown> }).masterCustom ?? {})[c.key] ?? ''),
         ]),
-      ),
+        ),
+      },
     });
   }
   return { rows, total, page: query.page, pageSize: query.pageSize };

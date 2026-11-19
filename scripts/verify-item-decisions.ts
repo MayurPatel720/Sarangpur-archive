@@ -20,7 +20,7 @@ import type { MutationContext } from '../src/lib/api';
 import { ALL_PERMISSIONS } from '../src/server/permissions';
 import { createIntake } from '../src/server/lots/mutations';
 import { bulkUpdateItems, getItemsGrid, listItemDispositions, markItemDispositionsDone } from '../src/server/lots/item-grid';
-import { markDuplicate, recodeSheet, reorderItems, setItemNumber, updateColumns } from '../src/server/lots/item-codes';
+import { markDuplicate, recodeSheet, reorderItems, setItemLetters, setItemNumber, updateColumns } from '../src/server/lots/item-codes';
 import { importItems } from '../src/server/lots/item-import';
 import { listPrasadiChecks, markPrasadiChecked } from '../src/server/lots/prasadi-checks';
 import { parseDateRange, formatDateRange, isoDayToDmy } from '../src/lib/date-range';
@@ -490,20 +490,27 @@ async function main() {
     await createItem(physPhoto.id, { quantity: 3 }, admin);
     const kItems = (await grid(physPhoto.id)).items.filter((i) => !/DISCARD_/.test(i.code));
     const [k1, k2, k3] = [kItems[0]!, kItems[1]!, kItems[2]!];
-    await rejects('a letter that is not in the admin list is refused', () => setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'M' }, admin), 400);
+    await rejects('a letter that is not in the admin list is refused', () => setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'P' }, admin), 400);
     await rejects('making an item a duplicate by letter needs an original', () => setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'D' }, admin), 400);
-    await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $push: { items: { value: 'M', label: 'M — master', active: true, sortOrder: 9, usageCount: 0, meta: {} } } });
+    await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $push: { items: { value: 'P', label: 'P — print', active: true, sortOrder: 9, usageCount: 0, meta: {} } } });
     invalidateReferenceCache('itemCodeKind');
     try {
-      const m = await setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'M' }, admin);
-      check('an admin-added letter can be given to an item', /-M-000$/.test(m.code) && m.code.replace('-M-', '-R-') === k1.code, [k1.code, m.code]);
+      const m = await setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'P' }, admin);
+      check('an admin-added letter can be given to an item', /-P-000$/.test(m.code) && m.code.replace('-P-', '-R-') === k1.code, [k1.code, m.code]);
       const dup = await markDuplicate(physPhoto.id, { itemId: k2.id, otherCode: k3.code, confirm: true }, admin);
       check('marking a duplicate still works', /-D-\d{3}$/.test((await LotItem.findById(k2.id).lean())!.code), dup);
       const back = await setItemNumber(physPhoto.id, { itemId: k2.id, kind: 'R' }, admin);
       const backDoc = (await LotItem.findById(k2.id).lean())!;
       check('a duplicate given another letter becomes an ordinary item again', /-R-000$/.test(back.code) && back.code !== backDoc.duplicateCode && !backDoc.duplicateCode, [back.code, backDoc.duplicateCode]);
+      const st = (await LotItem.findById(k1.id).lean())!.code;
+      const pr = parseItemCodeParts(st)!;
+      const moved = await setItemNumber(physPhoto.id, { itemId: k1.id, abbr1: 'ZZZ', abbr2: 'YYY' }, admin);
+      check('one item can take other abbreviations (all five parts are editable)', moved.code.startsWith('ZZZ-YYY-') && moved.code.endsWith(`-${pr.kind}-${String(pr.copy).padStart(3, '0')}`), [st, moved.code]);
+      const lettersRes = await setItemLetters(physPhoto.id, { itemIds: [k1.id, k3.id], kind: 'R' }, admin);
+      check('the code letter can be changed on many items at once', lettersRes.changed >= 1 && /-R-\d{3}$/.test((await LotItem.findById(k1.id).lean())!.code), lettersRes);
+      await rejects('a duplicate letter D in bulk is refused', () => setItemLetters(physPhoto.id, { itemIds: [k1.id], kind: 'D' }, admin), 400);
     } finally {
-      await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $pull: { items: { value: 'M' } } });
+      await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $pull: { items: { value: 'P' } } });
       invalidateReferenceCache('itemCodeKind');
     }
 

@@ -4,6 +4,7 @@ import { HttpError } from '@/lib/api';
 import { connectToDatabase } from '@/lib/mongo';
 import { isoDayToDmy } from '@/lib/date-range';
 import { LOT_SOURCES, MASTER_COLUMN_PREFIX, type LotSource, type MasterColumnDef } from '@/lib/master-custom';
+import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { MasterColumn } from '@/models/MasterColumn';
 import { can } from '@/server/permissions';
@@ -19,8 +20,22 @@ export async function listMasterColumns(): Promise<MasterColumnsResponse> {
     kind: d.kind,
     source: (d.source as LotSource | null) ?? null,
   }));
-  return { columns };
+  return { columns, lotColumns: await listLotColumns() };
 }
+
+/** The custom columns lots added to their own Excel, merged by name (case-insensitive) across all lots. */
+export async function listLotColumns(): Promise<{ label: string; type: 'text' | 'number' | 'yesno' | 'date'; lots: number }[]> {
+  const rows = await ArchiveLot.aggregate<{ _id: string; label: string; type: 'text' | 'number' | 'yesno' | 'date'; lots: number }>([
+    { $match: { 'customColumns.0': { $exists: true } } },
+    { $unwind: '$customColumns' },
+    { $group: { _id: { $toLower: '$customColumns.label' }, label: { $first: '$customColumns.label' }, type: { $first: '$customColumns.type' }, lots: { $sum: 1 } } },
+    { $sort: { _id: 1 } },
+  ]);
+  return rows.map((r) => ({ label: r.label, type: r.type, lots: r.lots }));
+}
+
+/** Column id of a lot column in the Master Excel. */
+export const lotColumnId = (label: string): string => `lc_${label.trim().toLowerCase()}`;
 
 /**
  * Adds a column (anyone who can open the Master Excel) or removes one (admins: `lists:manage`).

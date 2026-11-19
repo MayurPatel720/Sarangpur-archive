@@ -42,6 +42,9 @@ export const MACHINE_CATEGORY_SUGGESTIONS = [
   'Other',
 ] as const;
 
+/** The admin list of what a machine can capture (Admin → Lists → Machine usage types). */
+export const MACHINE_USAGE_LIST = 'machineUsageType';
+
 export const MACHINE_HISTORY_KINDS = ['created', 'edited', 'condition', 'usage', 'loan', 'repair', 'service', 'part', 'note'] as const;
 export type MachineHistoryKind = (typeof MACHINE_HISTORY_KINDS)[number];
 

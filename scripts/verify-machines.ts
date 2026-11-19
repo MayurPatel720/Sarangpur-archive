@@ -52,7 +52,7 @@ async function main() {
   try {
     console.log('create');
     const { machine } = await createMachine(
-      { name: `${TAG} recorder`, make: 'Zoom', model: 'H6', condition: 'working', inUse: true, sourceType: 'donated', serviceEveryMonths: 6, acquiredOn: '2026-01-10' },
+      { name: `${TAG} recorder`, company: 'Zoom', model: 'H6', condition: 'working', inUse: true, sourceType: 'donated', serviceEveryMonths: 6, acquiredOn: '2026-01-10' },
       ctx,
     );
     id = machine.id;
@@ -106,8 +106,9 @@ async function main() {
       () => applyMachineEvent(id, { type: 'loan.return', returnedOn: '2026-09-01', conditionIn: 'working' }, ctx),
       400,
     );
-    r = await applyMachineEvent(id, { type: 'loan.return', returnedOn: '2026-10-12', conditionIn: 'needs_repair', note: 'scratched' }, ctx);
+    r = await applyMachineEvent(id, { type: 'loan.return', returnedOn: '2026-10-12', conditionIn: 'needs_repair', note: 'scratched', captured: [{ type: 'video.vhs', qty: 5 }] }, ctx);
     check('returned, no longer lent', r.machine.loanedTo === null && r.machine.loans[0]?.returnedOn === '2026-10-12');
+    check('what it captured while out became usage tied to the loan', r.machine.captured === 5 && r.machine.usage.length === 1 && r.machine.usage[0]!.loanId === r.machine.loans[0]!.id && r.machine.usage[0]!.on === '2026-10-12', r.machine.usage);
     check('a worse condition on return updates the machine', r.machine.condition === 'needs_repair');
 
     console.log('repairs');
@@ -116,10 +117,21 @@ async function main() {
     const repairId = r.machine.repairs[0]!.id;
     r = await applyMachineEvent(
       id,
-      { type: 'repair.resolve', repairId, resolvedOn: '2026-10-15', vendor: 'Sound Care', cost: 1500, billRef: 'B-77', condition: 'working' },
+      { type: 'repair.resolve', repairId, resolvedOn: '2026-10-15', vendor: 'Sound Care', cost: 1500, billPath: 'D:\\Bills\\B-77.pdf', comment: 'Replaced the left speaker', condition: 'working' },
       ctx,
     );
-    check('repair closes with cost and bill', r.machine.openRepairs === 0 && r.machine.repairs[0]?.cost === 1500 && r.machine.repairs[0]?.billRef === 'B-77');
+    check('repair closes with cost, bill file path and comment', r.machine.openRepairs === 0 && r.machine.repairs[0]?.cost === 1500 && r.machine.repairs[0]?.billPath === 'D:\\Bills\\B-77.pdf' && r.machine.repairs[0]?.comment === 'Replaced the left speaker');
+    check('the comment is in the history', r.machine.history.some((h) => h.kind === 'repair' && h.text.includes('Replaced the left speaker')));
+    console.log('usage');
+    r = await applyMachineEvent(id, { type: 'usage.add', on: '2026-10-16', usageType: 'video.vhs', qty: 8, note: 'Batch 1' }, ctx);
+    r = await applyMachineEvent(id, { type: 'usage.add', on: '2026-10-17', usageType: 'video.vhs', qty: 4 }, ctx);
+    r = await applyMachineEvent(id, { type: 'usage.add', on: '2026-10-17', usageType: 'audio.tape_recorder', qty: 2 }, ctx);
+    check('usage entries are kept, newest date first', r.machine.usage.length === 4 && r.machine.usage[0]!.on >= r.machine.usage[3]!.on, r.machine.usage);
+    check('the machine total counts every quantity', r.machine.captured === 19, r.machine.captured);
+    await rejects('a type that is not in the list is refused', () => applyMachineEvent(id, { type: 'usage.add', on: '2026-10-17', usageType: 'nonsense', qty: 1 }, ctx), 400);
+    const firstUsage = r.machine.usage.find((u) => u.qty === 8)!;
+    r = await applyMachineEvent(id, { type: 'usage.remove', usageId: firstUsage.id }, ctx);
+    check('removing an entry lowers the total', r.machine.captured === 11 && r.machine.usage.length === 3, r.machine.captured);
     check('condition set after repair', r.machine.condition === 'working');
     await rejects(
       'closing twice is refused',

@@ -25,7 +25,7 @@ import { cleanPath, loadBaseFolder, readDrop } from '@/lib/file-path';
 import { isDiscardCode } from '@/lib/item-code';
 import { LocateFolderDialog } from './LocateFolderDialog';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
-import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
+import { DeptHeader, GridHeader, type ColumnMenuInfo, type DeptHeaderParams, type GridHeaderParams, type SectionMenuInfo } from './GridHeader';
 
 /**
  * One AG Grid = one sheet of the lot's Excel (one media type). Columns come from
@@ -230,6 +230,12 @@ export function ItemFamilyGrid({
   onOpenStatus,
   height,
   onOpenCode,
+  onOpenMenu,
+  onOpenSectionMenu,
+  pinnedIds,
+  onOrder,
+  onPin,
+  rowPx,
   onClearCode,
   onDuplicate,
   onHide,
@@ -262,6 +268,14 @@ export function ItemFamilyGrid({
   /** CSS height of the grid box. */
   height: string;
   onOpenCode: (item: GridItem) => void;
+  /** Columns pinned to the left, a column order (this person's layout, kept by the Items tab) and the row height. */
+  /** A heading was clicked or right-clicked: the sheet opens its one menu. */
+  onOpenMenu: GridHeaderParams['onOpenMenu'];
+  onOpenSectionMenu: DeptHeaderParams['onOpenSectionMenu'];
+  pinnedIds: string[];
+  onOrder: (order: string[]) => void;
+  onPin: (columnId: string) => void;
+  rowPx: number;
   /** Discard → "Yes and clear code" was picked for this row (the parent asks, then saves). */
   onClearCode: (item: GridItem) => void;
   onDuplicate: (item: GridItem, otherCode: string) => void;
@@ -283,7 +297,7 @@ export function ItemFamilyGrid({
   const hasPhotoColumn = columns.some((c) => c.kind === 'photo');
   // The row height goes into the theme (not the rowHeight prop) so the grid also sizes the text line to it —
   // that is what keeps every cell's text centred up and down in the taller rows.
-  const gridTheme = useMemo(() => (hasPhotoColumn ? agGridTheme.withParams({ rowHeight: PHOTO_ROW_PX }) : agGridTheme), [hasPhotoColumn]);
+  const gridTheme = useMemo(() => agGridTheme.withParams({ rowHeight: hasPhotoColumn ? PHOTO_ROW_PX : rowPx }), [hasPhotoColumn, rowPx]);
   const specById = useMemo(() => new Map(columns.map((c) => [c.id, c])), [columns]);
 
   const columnDefs = useMemo<(ColDef<GridItem> | ColGroupDef<GridItem>)[]>(() => {
@@ -291,10 +305,35 @@ export function ItemFamilyGrid({
       headerName: spec.label,
       headerComponent: GridHeader,
       headerComponentParams: {
-        hideable: !ALWAYS_VISIBLE.has(spec.id),
-        onHide: () => onHide(spec.id),
-        ...(spec.custom ? { onDelete: () => onDeleteColumn(spec.custom!) } : {}),
+        onOpenMenu,
         hint: spec.hint,
+        info: {
+          id: spec.id,
+          label: spec.label,
+          hideable: !ALWAYS_VISIBLE.has(spec.id),
+          onHide: () => onHide(spec.id),
+          ...(spec.custom ? { onDelete: () => onDeleteColumn(spec.custom!) } : {}),
+          ...(spec.kind === 'code'
+            ? {}
+            : (() => {
+                const band = columns.filter((c) => c.dept === spec.dept && c.kind !== 'code');
+                const at = band.findIndex((c) => c.id === spec.id);
+                return {
+                  canMoveLeft: at > 0,
+                  canMoveRight: at >= 0 && at < band.length - 1,
+                  pinned: pinnedIds.includes(spec.id),
+                  onPin: () => onPin(spec.id),
+                  onMove: (step: -1 | 1) => {
+                    const ids = columns.map((c) => c.id);
+                    const a = ids.indexOf(spec.id);
+                    const b = ids.indexOf(band[at + step]!.id);
+                    if (a < 0 || b < 0) return;
+                    [ids[a], ids[b]] = [ids[b]!, ids[a]!];
+                    onOrder(ids);
+                  },
+                };
+              })()),
+        } satisfies ColumnMenuInfo,
       } satisfies Partial<GridHeaderParams>,
     });
 
@@ -310,7 +349,7 @@ export function ItemFamilyGrid({
     });
 
     const build = (spec: Spec): ColDef<GridItem> => {
-      const base: ColDef<GridItem> = { colId: spec.id, width: spec.width, ...header(spec) };
+      const base: ColDef<GridItem> = { colId: spec.id, width: spec.width, ...(pinnedIds.includes(spec.id) ? { pinned: 'left' as const } : {}), ...header(spec) };
       const textEdit = (): ColDef<GridItem> => ({
         ...base,
         field: (spec.field ?? spec.id) as keyof GridItem & string,
@@ -643,12 +682,17 @@ export function ItemFamilyGrid({
     const codeCol = columns.find((c) => c.kind === 'code');
     const groups: ColGroupDef<GridItem>[] = DEPARTMENTS.map((d) => ({
       headerName: deptLabel(d.id),
+      marryChildren: true,
       headerGroupComponent: DeptHeader,
       headerGroupComponentParams: {
-        active: onlyDept === d.id,
-        onShowOnly: () => onShowOnly(d.id),
-        onShowAll: () => onShowOnly(null),
-        onHideAll: () => onHideDept(d.id),
+        onOpenSectionMenu,
+        info: {
+          label: deptLabel(d.id),
+          active: onlyDept === d.id,
+          onShowOnly: () => onShowOnly(d.id),
+          onShowAll: () => onShowOnly(null),
+          onHideAll: () => onHideDept(d.id),
+        } satisfies SectionMenuInfo,
       } satisfies Partial<DeptHeaderParams>,
       children: columns.filter((c) => c.dept === d.id && c.kind !== 'code').map(build),
     })).filter((g) => g.children.length > 0);
@@ -671,7 +715,7 @@ export function ItemFamilyGrid({
       ...groups,
     ];
     return all.map(lockInactive).map(withMarks(marks));
-  }, [marks, columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onClearCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+  }, [marks, columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onClearCode, onDuplicate, onOpenMenu, onOpenSectionMenu, pinnedIds, onOrder, onPin, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;
@@ -711,7 +755,13 @@ export function ItemFamilyGrid({
         theme={gridTheme}
         rowData={rows}
         columnDefs={columnDefs}
-        defaultColDef={{ sortable: false, suppressMovable: true, resizable: true }}
+        defaultColDef={{ sortable: false, suppressMovable: false, resizable: true }}
+        onColumnMoved={(e) => {
+          // Dropped (not still dragging): remember the new order of the columns of this sheet.
+          if (!e.finished || !e.api || e.source !== 'uiColumnMoved') return;
+          const ids = e.api.getAllDisplayedColumns().map((c) => c.getColId()).filter((id) => specById.has(id));
+          if (ids.length > 0 && ids.join() !== columns.map((c) => c.id).join()) onOrder(ids);
+        }}
         getRowId={(p) => p.data.id}
         getRowClass={(p) => {
           const mark = p.data ? marks?.rows.get(p.data.id) : undefined;
@@ -719,7 +769,7 @@ export function ItemFamilyGrid({
           return p.data && isInactive(p.data) ? 'opacity-60' : undefined;
         }}
         rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
-        selectionColumnDef={{ pinned: 'left', width: 44 }}
+        selectionColumnDef={{ pinned: 'left', width: 44, lockPosition: 'left' }}
         rowDragManaged={canReorder}
         animateRows={canReorder}
         onRowDragEnd={onRowDragEnd}

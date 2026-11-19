@@ -9,6 +9,8 @@ import {
   type MachineHistoryKind,
 } from '@/lib/machine';
 import { Machine, type MachineDoc } from '@/models/Machine';
+import { MACHINE_USAGE_LIST } from '@/lib/machine';
+import { getReferenceList } from '@/server/reference';
 import { nextSequence } from '@/server/codes';
 import { assertRealDay } from '@/server/tasks/mutations';
 import { shapeMachine } from '@/server/machines/queries';
@@ -42,7 +44,17 @@ function recompute(doc: Doc): void {
   const open = doc.loans.find((l) => !l.returnedOn);
   doc.loanedTo = open ? open.borrower : null;
   doc.openRepairs = doc.repairs.filter((r) => !r.resolvedOn).length;
+  doc.capturedTotal = (doc.usage ?? []).reduce((sum, u) => sum + u.qty, 0);
   doc.nextServiceDue = nextServiceDue(doc.serviceEveryMonths ?? null, doc.lastServicedOn ?? null, doc.acquiredOn ?? null);
+}
+
+/** The type must be an active value of the admin list "Machine usage types"; returns its label for the history line. */
+async function usageLabel(value: string): Promise<string> {
+  const items = await getReferenceList(MACHINE_USAGE_LIST);
+  const hit = items.find((i) => i.value === value && i.active);
+  if (!hit) throw new HttpError(400, `“${value}” is not one of the usage types (an admin adds them under Admin → Lists).`);
+  const group = (hit.meta as { group?: string } | undefined)?.group;
+  return group ? `${group} · ${hit.label}` : hit.label;
 }
 
 const cond = (c: keyof typeof MACHINE_CONDITION_LABELS) => MACHINE_CONDITION_LABELS[c];
@@ -64,9 +76,8 @@ export async function createMachine(body: MachineCreateBody, ctx: MutationContex
     code: `MCH-${String(seq).padStart(4, '0')}`,
     name: body.name,
     category: clean(body.category),
-    make: clean(body.make),
+    company: clean(body.company),
     model: clean(body.model),
-    version: clean(body.version),
     serialNo: clean(body.serialNo),
     sourceType: body.sourceType ?? 'purchased',
     sourceName: clean(body.sourceName),
@@ -107,9 +118,8 @@ export async function updateMachine(id: string, body: MachinePatchBody, ctx: Mut
   };
   if (body.name !== undefined) set('name', body.name);
   if (body.category !== undefined) set('category', clean(body.category));
-  if (body.make !== undefined) set('make', clean(body.make));
+  if (body.company !== undefined) set('company', clean(body.company));
   if (body.model !== undefined) set('model', clean(body.model));
-  if (body.version !== undefined) set('version', clean(body.version));
   if (body.serialNo !== undefined) set('serialNo', clean(body.serialNo));
   if (body.sourceType !== undefined) set('sourceType', body.sourceType);
   if (body.sourceName !== undefined) set('sourceName', clean(body.sourceName));
@@ -190,6 +200,12 @@ export async function applyMachineEvent(id: string, body: MachineEventBody, ctx:
       if (!loan) throw new HttpError(400, 'This machine is not lent out.');
       assertRealDay(body.returnedOn);
       if (body.returnedOn < loan.issuedOn) throw new HttpError(400, 'Returned before it was issued.');
+      // What it captured while it was out becomes usage, tied to this loan.
+      for (const row of body.captured ?? []) {
+        const label = await usageLabel(row.type);
+        doc.usage.push({ on: body.returnedOn, type: row.type, qty: row.qty, note: `While lent to ${loan.borrower}`, by: ctx.userName, loanId: (loan as { _id: unknown })._id } as never);
+        log(doc, ctx, 'usage', `Captured ${row.qty} × ${label} (while lent to ${loan.borrower})`);
+      }
       loan.returnedOn = body.returnedOn;
       loan.conditionIn = body.conditionIn;
       if (body.note) loan.note = [loan.note, body.note].filter(Boolean).join(' · ');
@@ -202,7 +218,7 @@ export async function applyMachineEvent(id: string, body: MachineEventBody, ctx:
     }
     case 'repair.add': {
       assertRealDay(body.reportedOn);
-      doc.repairs.push({ fault: body.fault, reportedOn: body.reportedOn, vendor: clean(body.vendor) } as never);
+      doc.repairs.push({ fault: body.fault, reportedOn: body.reportedOn, vendor: clean(body.vendor), billPath: clean(body.billPath) } as never);
       log(doc, ctx, 'repair', `Repair opened: ${body.fault}`);
       if (doc.condition === 'working') {
         log(doc, ctx, 'condition', `Condition: ${cond('working')} → ${cond('needs_repair')} (repair opened)`);
@@ -219,9 +235,10 @@ export async function applyMachineEvent(id: string, body: MachineEventBody, ctx:
       repair.resolvedOn = body.resolvedOn;
       if (body.vendor !== undefined) repair.vendor = clean(body.vendor);
       repair.cost = body.cost ?? null;
-      repair.billRef = clean(body.billRef);
+      if (body.billPath !== undefined && clean(body.billPath)) repair.billPath = clean(body.billPath);
       repair.outcome = clean(body.outcome);
-      log(doc, ctx, 'repair', `Repair closed: ${repair.fault}${body.cost ? ` (₹${body.cost})` : ''}`);
+      repair.comment = clean(body.comment);
+      log(doc, ctx, 'repair', `Repair closed: ${repair.fault}${body.cost ? ` (₹${body.cost})` : ''}${repair.comment ? ` — ${repair.comment}` : ''}`);
       const after = body.condition ?? 'working';
       if (after !== doc.condition) {
         log(doc, ctx, 'condition', `Condition: ${cond(doc.condition)} → ${cond(after)} (after repair)`);
@@ -229,7 +246,22 @@ export async function applyMachineEvent(id: string, body: MachineEventBody, ctx:
       }
       break;
     }
+    case 'usage.add': {
+      assertRealDay(body.on);
+      const label = await usageLabel(body.usageType);
+      doc.usage.push({ on: body.on, type: body.usageType, qty: body.qty, note: clean(body.note), by: ctx.userName, loanId: null } as never);
+      log(doc, ctx, 'usage', `Captured ${body.qty} × ${label}${body.note ? ` — ${body.note}` : ''}`);
+      break;
+    }
+    case 'usage.remove': {
+      const row = doc.usage.find((u) => String((u as { _id: unknown })._id) === body.usageId);
+      if (!row) throw new HttpError(404, 'That usage entry was not found.');
+      doc.usage.splice(doc.usage.indexOf(row), 1);
+      log(doc, ctx, 'usage', `Usage entry removed: ${row.qty} × ${row.type} (${row.on})`);
+      break;
+    }
     case 'history.note': {
+      if (!body.text.trim()) throw new HttpError(400, 'Write a note first.');
       log(doc, ctx, 'note', body.text);
       break;
     }

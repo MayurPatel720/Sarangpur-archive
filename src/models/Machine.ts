@@ -41,8 +41,23 @@ const repairSchema = new Schema(
     resolvedOn: day,
     vendor: { type: String, trim: true, default: null, maxlength: 120 },
     cost: { type: Number, default: null, min: 0 },
-    billRef: { type: String, trim: true, default: null, maxlength: 120 },
+    billPath: { type: String, trim: true, default: null, maxlength: 1000 }, // where the bill file is kept (a file path, like the Excel's File path)
     outcome: { type: String, trim: true, default: null, maxlength: 400 },
+    comment: { type: String, trim: true, default: null, maxlength: 1000 }, // written when the repair is closed
+  },
+  { timestamps: false },
+);
+
+/** What the machine captured: a date, a type from the admin list `machineUsageType`, and how many. */
+const usageSchema = new Schema(
+  {
+    on: { ...day, required: true },
+    type: { type: String, required: true, trim: true, maxlength: 60 },
+    qty: { type: Number, required: true, min: 1, max: 10_000_000 },
+    note: { type: String, trim: true, default: null, maxlength: 300 },
+    by: { type: String, required: true, trim: true },
+    /** Set when it was logged while marking a loan returned. */
+    loanId: { type: Schema.Types.ObjectId, default: null },
   },
   { timestamps: false },
 );
@@ -62,9 +77,8 @@ const machineSchema = new Schema(
     code: { type: String, required: true, unique: true }, // MCH-0001
     name: { type: String, required: true, trim: true, maxlength: 120 },
     category: { type: String, trim: true, default: null, maxlength: 60 },
-    make: { type: String, trim: true, default: null, maxlength: 80 },
+    company: { type: String, trim: true, default: null, maxlength: 120 },
     model: { type: String, trim: true, default: null, maxlength: 80 },
-    version: { type: String, trim: true, default: null, maxlength: 60 },
     serialNo: { type: String, trim: true, default: null, maxlength: 80 },
 
     // Where we got it from
@@ -86,11 +100,13 @@ const machineSchema = new Schema(
     parts: { type: [partSchema], default: [] },
     loans: { type: [loanSchema], default: [] },
     repairs: { type: [repairSchema], default: [] },
+    usage: { type: [usageSchema], default: [] }, // what it captured (date · type · quantity)
     history: { type: [historySchema], default: [] }, // newest first, capped
 
     // Denormalised for the list
     loanedTo: { type: String, default: null },
     openRepairs: { type: Number, required: true, default: 0 },
+    capturedTotal: { type: Number, required: true, default: 0 }, // sum of usage quantities
   },
   { timestamps: true, collection: 'machines' },
 );

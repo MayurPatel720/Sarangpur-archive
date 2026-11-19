@@ -21,6 +21,8 @@ export interface MasterView {
   wrap: boolean;
   filterRow: boolean;
   depts: string[] | null;
+  /** Names of lot-added custom columns shown as columns ("Lot columns" menu). */
+  lotCols: string[];
   sort: string;
   dir: 'asc' | 'desc';
 }
@@ -34,6 +36,7 @@ export const DEFAULT_VIEW: MasterView = {
   wrap: false,
   filterRow: true,
   depts: null,
+  lotCols: [],
   sort: '',
   dir: 'asc',
 };
@@ -88,6 +91,17 @@ export function moveColumn(base: ColumnSpec[], view: MasterView, id: string, ste
   const a = ids.indexOf(id);
   const b = ids.indexOf(swap);
   [ids[a], ids[b]] = [ids[b]!, ids[a]!];
+  return ids;
+}
+
+/** The whole ordering after dragging column `id` onto column `targetId` (it takes that column's place). */
+export function moveColumnTo(base: ColumnSpec[], view: MasterView, id: string, targetId: string): string[] {
+  const ids = [...view.order.filter((x) => base.some((c) => c.id === x)), ...base.map((c) => c.id).filter((x) => !view.order.includes(x))];
+  const from = ids.indexOf(id);
+  const to = ids.indexOf(targetId);
+  if (from < 0 || to < 0 || from === to) return ids;
+  ids.splice(from, 1);
+  ids.splice(to, 0, id);
   return ids;
 }
 
