@@ -142,7 +142,7 @@ export function AddItemDialog({
             Cancel
           </GhostButton>
           <PrimaryButton type="submit" disabled={!canSubmit}>
-            {create.isPending ? 'Adding…' : !quantityInvalid && quantity > 1 ? `Add ${quantity} items` : 'Add item'}
+            {create.isPending ? 'Adding…' : !quantityInvalid && quantity > 1 ? `Add ${quantity} items` : 'Add items'}
           </PrimaryButton>
         </div>
       </form>

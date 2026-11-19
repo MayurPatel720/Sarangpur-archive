@@ -29,6 +29,7 @@ import { reorderItems } from '../src/server/lots/item-codes';
 import { setLotAssignee } from '../src/server/projects/mutations';
 import {
   changeDetail,
+  getHistoryView,
   itemHistory,
   listHistory,
   previewRestore,
@@ -97,7 +98,7 @@ async function main() {
     const COVERED: Record<string, string> = {
       'server/lots/item-grid.ts': 'applyItemEdits + the disposition queue are wrapped',
       'server/lots/items.ts': 'createItem is wrapped',
-      'server/lots/item-codes.ts': 'recode / number / duplicate / reorder / columns are wrapped',
+      'server/lots/item-codes.ts': 'recode / number / letter / duplicate / reorder / columns are wrapped',
       'server/lots/item-status.ts': 'changeItemStatus is wrapped',
       'server/lots/prasadi-checks.ts': 'markPrasadiChecked is wrapped',
       'server/returns/record.ts': 'recordReturn is wrapped',
@@ -178,11 +179,11 @@ async function main() {
     const imgBefore = await dbImage(target.id);
     await bulkUpdateItems(lot, { itemIds: [target.id], set: { discardClearCode: true } }, admin);
     const cleared = (await LotItem.findById(target.id).lean())!;
-    check('the code was cleared', /^discard-\d+$/.test(cleared.code) && cleared.clearedCode === codeBefore, cleared.code);
+    check('the code was cleared', /-DISCARD_\d+$/.test(cleared.code) && cleared.clearedCode === codeBefore, cleared.code);
     r = await undoLast(lot, admin);
     check('undo brings the code, the answers and the position back', r.done && (await dbImage(target.id)) === imgBefore, r);
     r = await redoLast(lot, admin);
-    check('redo clears it again', r.done && /^discard-\d+$/.test((await LotItem.findById(target.id).lean())!.code), r);
+    check('redo clears it again', r.done && /-DISCARD_\d+$/.test((await LotItem.findById(target.id).lean())!.code), r);
     await undoLast(lot, admin);
 
     /* ------------------------------------------------------------ re-order */
@@ -246,6 +247,41 @@ async function main() {
     const restoredBack = await Promise.all(l3.map((i) => dbImage(i.id)));
     check('the restore itself can be undone', r.done && (await place(l3[0]!.id)) === 'Changed' && (await place(l3[1]!.id)) === 'Changed' && restoredBack.length === snapshot.length);
     await rejects('an unknown version is refused', () => previewRestore(lot3, { versionId: '0'.repeat(24) }), 404);
+
+    /* -------------------------------------------- the sheet as it was (view) */
+    console.log('the sheet as it was, with its changed cells');
+    const lot4 = await makeLot(4);
+    const l4 = await grid(lot4);
+    await bulkUpdateItems(lot4, { itemIds: [l4[0]!.id], set: { place: 'One', remarks: 'first' } }, other);
+    const sess1 = (await listHistory(lot4, admin)).sessions[0]!;
+    await bulkUpdateItems(lot4, { itemIds: [l4[0]!.id], set: { place: 'Two' } }, admin);
+    await saveVersion(lot4, 'View test', admin);
+    const ver = (await listHistory(lot4, admin)).versions[0]!;
+    await createItem(lot4, { quantity: 2 }, admin);
+    await bulkUpdateItems(lot4, { itemIds: [l4[0]!.id], set: { place: 'Three' } }, admin);
+
+    const vs = await getHistoryView(lot4, admin, { mode: 'session', sessionId: sess1.id });
+    const rowA = vs.grid!.items.find((i) => i.id === l4[0]!.id)!;
+    check('a session view shows the sheet right after that session', rowA.place === 'One' && rowA.remarks === 'first', rowA.place);
+    check('the view is read only', vs.grid!.editable.details === false && vs.grid!.editable.decision === false);
+    check('its changed cells are listed with old and new values, and who', vs.changes.length === 1 && vs.changes[0]!.cells.some((c) => c.path === 'place' && c.from === '—' && c.to === 'One' && c.by === other.userName && c.column === 'place'), vs.changes);
+    check('rows added later are not in the old sheet', vs.grid!.items.length === 4, vs.grid!.items.length);
+    check('the current sheet still has the later value', (await place(l4[0]!.id)) === 'Three');
+
+    const vv = await getHistoryView(lot4, admin, { mode: 'version', versionId: ver.id });
+    check('a version view shows the sheet at that version', vv.grid!.items.find((i) => i.id === l4[0]!.id)!.place === 'Two' && vv.grid!.items.length === 4, vv.grid!.items.length);
+    check('and highlights what changed since: old → new', vv.changes.some((c) => c.cells.some((x) => x.path === 'place' && x.from === 'Two' && x.to === 'Three')), vv.changes);
+    check('rows added since are counted as added', vv.changes.filter((c) => c.added).length === 2, vv.changes.map((c) => c.added));
+
+    const vl = await getHistoryView(lot4, admin, { mode: 'since', ref: 'last' });
+    check('show changes (since my last session) returns changes without a grid', vl.grid === null && vl.changes.length > 0, vl);
+    const vt = await getHistoryView(lot4, admin, { mode: 'since', ref: 'today' });
+    check('show changes (today) covers the whole day', vt.cellCount >= vl.cellCount && vt.actors.length >= 1, [vt.cellCount, vl.cellCount]);
+    const todayPlace = vt.changes.find((c) => c.itemId === l4[0]!.id)!.cells.find((x) => x.path === 'place')!;
+    check('show changes shows each cell\'s last edit (the value just before → the new one), not the net since the start', todayPlace.from === 'Two' && todayPlace.to === 'Three', todayPlace);
+    const vsv = await getHistoryView(lot4, admin, { mode: 'since', ref: ver.id });
+    check('show changes (since a version) matches the version view', vsv.rowCount === vv.rowCount, [vsv.rowCount, vv.rowCount]);
+    await rejects('an unknown session is refused', () => getHistoryView(lot4, admin, { mode: 'session', sessionId: 'nope' }), 404);
 
     /* ---------------------------------------------------------- item history */
     console.log('who changed this');

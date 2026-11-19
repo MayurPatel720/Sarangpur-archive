@@ -149,7 +149,7 @@ export const itemsBulkBodySchema = z.object({
       digital: tri,
       redigital: tri,
       discard: tri,
-      /** Discard → "Yes and clear code": discard = Yes, the archive code is cleared, the row becomes discard-N and moves to the end of its sheet. */
+      /** Discard → "Yes and clear code": discard = Yes, the archive code is cleared, the row becomes PREFIX-DISCARD_n (e.g. NEG-MUM-R-DISCARD_1) and moves to the end of its sheet. */
       discardClearCode: z.boolean().optional(),
       decisionRemark: text(2000),
       captured: z.boolean().optional(),
@@ -224,8 +224,10 @@ export const itemNumberBodySchema = z
     itemId: objectIdSchema,
     no: z.number().int().min(1).max(9_999_999).optional(),
     copy: z.number().int().min(0).max(999).optional(),
+    /** The kind letter (R, M, P …; admin list `itemCodeKind`). D is set by marking a duplicate instead. */
+    kind: z.string().regex(/^[A-Z]{1,3}$/, 'The code letter must be 1–3 capital letters.').optional(),
   })
-  .refine((b) => b.no !== undefined || b.copy !== undefined, { message: 'Nothing to change.' });
+  .refine((b) => b.no !== undefined || b.copy !== undefined || b.kind !== undefined, { message: 'Nothing to change.' });
 export type ItemNumberBody = z.input<typeof itemNumberBodySchema>;
 export const itemNumberResponseSchema = z.object({ code: z.string() });
 

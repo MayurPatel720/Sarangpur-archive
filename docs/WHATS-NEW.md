@@ -45,7 +45,7 @@ Older lots, and intakes with only one format, show no linked lots.
   - Leave it on **Last group (continue)** to keep adding where the lot left off.
 - The numbers (codes) are given automatically, one after another.
 
-The old extra fields (**Selected for digitization**, **Reason**, **File name**) were removed. New items are always selected for digitization, and the file name is filled in later.
+The button is now called **Add items**. The old extra fields (**Selected for digitization**, **Reason**, **File name**) were removed. New items are always selected for digitization, and the file name is filled in later.
 
 ---
 
@@ -82,11 +82,23 @@ The Discard dropdown now has a third choice: **Yes and clear code**. Use it when
 
 When you choose it (the app asks you to confirm first):
 1. The row is marked **Discard**.
-2. Its archive code is cleared and the row is renamed **discard-1**, then **discard-2**, **discard-3** and so on.
+2. Its archive code is cleared and the row is renamed with the **first three parts of its old code, then DISCARD and a number**. For example an item `NEG-MUM-0176-R-000` becomes **NEG-MUM-R-DISCARD_1**, the next one with the same start **NEG-MUM-R-DISCARD_2**, and so on. Each different start (for example `POS-AHM-R`) counts on its own, across all lots.
 3. The row moves to the **end** of its sheet.
 4. The old code number is **retired** and will not be used again.
 
 You can undo it (see History below). It cannot be used on an item that is already tagged in MLS, or on the original of a duplicate.
+
+---
+
+## 5b. Changing an item's code letter (R, D, M, P …)
+
+**Where:** Items tab, click an **Archive code**. In the window, the section **Only this item** now has a **Code letter** dropdown.
+
+- The letter in the middle of a code (the **R** in `NEG-MUM-0176-R-000`) can be changed for one item.
+- **R** (original) and **D** (duplicate) always exist. An **admin can add more letters** (such as **M** or **P**) under **Admin → Lists → Item code letters**. Letters are 1 to 3 capital letters.
+- Choosing **D** asks for the **original's code** and then follows the normal "mark as duplicate" steps.
+- A duplicate (D) can be given another letter: it is unlinked from its original and gets the next free number.
+- Not possible when the item is tagged in MLS or is the original of a duplicate.
 
 ---
 
@@ -101,6 +113,17 @@ Two kinds:
 - **From the lot:** the app fills it in for you from details already entered at intake, such as owner name, owner phone, owner email, owner place, origin, date received, contact, facilitator or receiver. You cannot type over these.
 
 New columns appear at the right end under **Custom**. You can hide them from the **Columns** menu. Only an admin can remove a column (column menu **⋮ → Remove column**).
+
+---
+
+## 6b. Master Excel: decisions
+
+The **Decision** columns (**Digital**, **Redigital**, **Discard**, **Decision remark**, **Result**) now show in the Master Excel for **All formats** too.
+
+- Click a **Digital / Redigital / Discard** cell and pick **Yes**, **No** or empty. Click **Decision remark** to type.
+- The same rules as in the lot apply: once a lot's decision is recorded the cells are locked (a message tells you), and deciding the last item decides the lot.
+- Prasadi items have no decision, so they show a dash.
+- Every change is recorded in the lot's History, so it can be undone.
 
 ---
 
@@ -126,13 +149,23 @@ The app never overwrites someone's later work. It tells you which rows changed s
 ### Reopening a decision
 Undoing the change that decided a lot **reopens the decision** and puts the lot back to its earlier stage. This is allowed only if nothing has happened since: it is refused once items have been digitalized, tagged in MLS, or marked returned or discarded.
 
-### The History window (clock button)
-Three tabs:
-- **Sessions:** your work grouped by time. A new session starts after 30 minutes without edits. Open a session to see each change; press **Cells** to see the old and new values. You can **Undo this**, **Undo session**, or look at the **Sheet before this**.
-- **Versions:** press **Save version** to give the current sheet a name, for example "Before the Mumbai import". The app also saves a version by itself before an Excel import, a large Bulk edit, or a restore. **Compare / Restore** shows exactly what would change (how many rows and cells) before you confirm.
-- **Find a row:** type an archive code to see who changed that row, when, and from what.
+### See the changes right in the sheet (clock button)
 
-Restoring is saved as a **new change**, so a restore can also be undone.
+The clock opens a **panel on the right**, and the sheet stays on screen. It works like Google Sheets version history.
+
+- **Sessions:** your work grouped by time (a new session starts after 30 minutes without edits). **Click a session** and the sheet itself switches to how it looked right after it. The cells that session changed are **highlighted**:
+  - the cell is drawn **like a code diff**: the **last value in red** with a minus (struck through) and the **new value in green** with a plus, one above the other;
+  - a thin **bar at the left edge** of the cell is the color of the person who changed it (the bar above the sheet shows who is which color); **hover** the cell to see who and when;
+  - **added rows** are green; **removed rows** are faded and struck through;
+  - a bar above the sheet names the session, counts the highlighted cells and shows who is which color.
+- **Versions:** press **Save** to give the current sheet a name, for example "Before the Mumbai import". The app also saves one by itself before an Excel import, a large Bulk edit, or a restore. **Click a version** to see the sheet as it was then. The cells that **changed since** that version are highlighted.
+- **Find a row:** type an archive code to see who changed that row, when, and from what.
+- In the bar above the sheet: **Back to current** leaves the history view, and **Restore this** puts the sheet back to that point (it asks first). Restoring is saved as a **new change**, so a restore can also be undone.
+- While you look at the past, the sheet is **read only**.
+
+### Show changes on the normal sheet
+
+Next to the clock there is a **Changes** button. It highlights what changed on the **current** sheet: **Since my last session**, **Today**, or **Since** a saved version. It is off by default. Choose **Off** to switch it off.
 
 **Good to know:** history starts from the day this feature was switched on. Changes made earlier are not in it.
 

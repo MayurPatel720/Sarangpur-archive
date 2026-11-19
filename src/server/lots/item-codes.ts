@@ -3,7 +3,8 @@ import type { MutationContext } from '@/lib/api';
 import { HttpError } from '@/lib/api';
 import { tracked } from '@/server/lots/history-core';
 import { connectToDatabase } from '@/lib/mongo';
-import { abbrError, buildItemCode, parseItemCodeParts } from '@/lib/item-code';
+import { abbrError, buildItemCode, KIND_DUPLICATE, KIND_ORIGINAL, kindError, parseItemCodeParts } from '@/lib/item-code';
+import { activeValues } from '@/server/reference/runtime';
 import { ALWAYS_VISIBLE, BUILTIN_COLUMNS } from '@/lib/item-columns';
 import { ActivityLog } from '@/models/ActivityLog';
 import { ArchiveLot } from '@/models/ArchiveLot';
@@ -87,7 +88,10 @@ async function recodeSheetCore(lotId: string, body: SheetCodeBody, ctx: Mutation
         .select('code taggedInMls digitized')
         .session(session)
         .lean()) as ItemRow[];
-      const own = items.filter((i) => parseItemCodeParts(i.code)?.kind === 'R');
+      const own = items.filter((i) => {
+        const k = parseItemCodeParts(i.code)?.kind;
+        return k !== undefined && k !== KIND_DUPLICATE;
+      });
       if (own.length === 0) throw new HttpError(400, 'This sheet has no items to re-code.');
       const tagged = own.filter((i) => i.taggedInMls);
       if (tagged.length > 0) {
@@ -111,7 +115,7 @@ async function recodeSheetCore(lotId: string, body: SheetCodeBody, ctx: Mutation
         throw new HttpError(409, `${abbr1}-${abbr2}-${String(first).padStart(4, '0')} is already used by another item. Pick a different start number.`);
       }
       // Each item keeps its own last three digits (a custom copy number is not reset to 000).
-      const codes = own.map((row, idx) => buildItemCode({ abbr1, abbr2, no: start + idx, kind: 'R', copy: parseItemCodeParts(row.code)?.copy ?? 0 }));
+      const codes = own.map((row, idx) => buildItemCode({ abbr1, abbr2, no: start + idx, kind: parseItemCodeParts(row.code)?.kind ?? KIND_ORIGINAL, copy: parseItemCodeParts(row.code)?.copy ?? 0 }));
       await LotItem.bulkWrite(
         own.map((i, idx) => ({ updateOne: { filter: { _id: i._id }, update: { $set: { code: codes[idx]! } } } })),
         { session },
@@ -145,25 +149,43 @@ async function setItemNumberCore(lotId: string, body: ItemNumberBody, ctx: Mutat
       if (!it) throw new HttpError(404, 'Item not found on this lot.');
       const parts = parseItemCodeParts(it.code);
       if (!parts) throw new HttpError(400, 'This item has no editable code.');
-      if (parts.kind !== 'R') throw new HttpError(400, 'A duplicate takes its original’s number — change the original instead.');
       if (it.taggedInMls) throw new HttpError(409, 'This item is already tagged in MLS, so its code can no longer change.');
       if ((await referencedBy([it.code], session)).length > 0) {
         throw new HttpError(409, 'This item is the original of a duplicate, so its code can no longer change.');
       }
-      const no = body.no ?? parts.no;
-      const copy = body.copy ?? parts.copy;
-      if (no === parts.no && copy === parts.copy) return { code: it.code };
-      if (parts.no !== no) {
+      const kind = body.kind ?? parts.kind;
+      const kindProblem = kindError(kind);
+      if (kindProblem) throw new HttpError(400, kindProblem);
+      if (kind === KIND_DUPLICATE && parts.kind !== KIND_DUPLICATE) {
+        throw new HttpError(400, 'To make this item a duplicate, say which original it duplicates (use "Mark as duplicate").');
+      }
+      if (kind !== parts.kind && kind !== KIND_ORIGINAL && !(await activeValues('itemCodeKind')).includes(kind)) {
+        throw new HttpError(400, `"${kind}" is not one of the code letters (an admin adds them under Admin → Lists).`);
+      }
+      // A duplicate shares its original's number. Giving it another letter makes it an ordinary item again:
+      // it is unlinked and takes the next free number.
+      const leavesDuplicate = parts.kind === KIND_DUPLICATE && kind !== KIND_DUPLICATE;
+      if (parts.kind === KIND_DUPLICATE && !leavesDuplicate) {
+        throw new HttpError(400, 'A duplicate takes its original’s number — change the original instead, or give it another letter.');
+      }
+      const no = leavesDuplicate ? (await maxItemNumber(parts.abbr1, parts.abbr2, session)) + 1 : (body.no ?? parts.no);
+      const copy = leavesDuplicate ? 0 : (body.copy ?? parts.copy);
+      if (!leavesDuplicate && no === parts.no && copy === parts.copy && kind === parts.kind) return { code: it.code };
+      if (!leavesDuplicate && parts.no !== no) {
         const used = await usedItemNumbers(parts.abbr1, parts.abbr2, no, no, session);
         if (used.has(no)) {
           throw new HttpError(409, `${parts.abbr1}-${parts.abbr2}-${String(no).padStart(4, '0')} is already used.`);
         }
       }
-      const code = buildItemCode({ ...parts, no, copy });
+      const code = buildItemCode({ ...parts, no, copy, kind });
       if (await LotItem.exists({ code, _id: { $ne: it._id } }).session(session)) {
         throw new HttpError(409, `${code} is already used by another item.`);
       }
-      await LotItem.updateOne({ _id: it._id }, { $set: { code } }, { session });
+      await LotItem.updateOne(
+        { _id: it._id },
+        { $set: { code, ...(leavesDuplicate ? { duplicateCode: null } : {}) } },
+        { session },
+      );
       return { code };
     },
   });

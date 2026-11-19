@@ -9,6 +9,8 @@
  * finalized the lot …) can be reversed the same way.
  */
 
+import { BUILTIN_COLUMNS } from '@/lib/item-columns';
+
 export type ItemImage = Record<string, unknown>;
 
 /** Item fields kept in an image. */
@@ -94,6 +96,71 @@ export function valueAt(image: ItemImage | null, path: string): unknown {
   let v: unknown = image[head!];
   for (const k of rest) v = v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined;
   return v;
+}
+
+const PATH_NAMES: Record<string, string> = {
+  item: 'The row itself',
+  code: 'Archive code',
+  clearedCode: 'Old archive code',
+  groupNo: 'Group',
+  itemNo: 'Position in group',
+  lineIndex: 'Sheet',
+  sortOrder: 'Row position',
+  selectedForDigitization: 'Selected for digitization',
+  notDigitizedReason: 'Reason not selected',
+  digitized: 'Digitalized',
+  dateFrom: 'Date from',
+  dateTo: 'Date to',
+  nameOnTape: 'Name on tape',
+  nameOnCase: 'Name on case',
+  physicalSource: 'Phy source',
+  remarks: 'Details remark',
+  lotReference: 'Lot number',
+  'decision.remark': 'Decision remark',
+  'decision.disposition': 'Return / discard',
+  'decision.verdict': 'Decision result',
+  'decision.decidedBy': 'Decided by',
+  'decision.decidedAt': 'Decided on',
+  dispositionStatus: 'Return / discard status',
+  dispositionDoneAt: 'Return / discard done on',
+  dispositionDoneByName: 'Return / discard done by',
+};
+
+const prettify = (s: string) => s.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+/** The grid column a stored field path appears in (`decision.digital` → "digital"), or null when the sheet has none. */
+export function columnIdOfPath(path: string): string | null {
+  const special: Record<string, string> = {
+    dateFrom: 'dateRange',
+    dateTo: 'dateRange',
+    name: 'itemName',
+    digitized: 'captured',
+    code: 'code',
+    'decision.remark': 'decisionRemark',
+    'decision.disposition': 'disposition',
+  };
+  if (special[path]) return special[path]!;
+  const [head, ...rest] = path.split('.');
+  const key = rest.join('.');
+  if (head === 'decision') return BUILTIN_COLUMNS.find((c) => c.dept === 'decision' && c.field === key)?.id ?? null;
+  if (head === 'attrs') return BUILTIN_COLUMNS.find((c) => c.attr && c.id === key)?.id ?? null;
+  if (head === 'custom') return key;
+  if (head === 'masterCustom' || head === 'returnInfo') return null;
+  return BUILTIN_COLUMNS.find((c) => c.field === path || c.id === path)?.id ?? null;
+}
+
+/** What a stored field path is called on screen: `decision.digital` → "Digital", `place` → "Place". */
+export function pathLabel(path: string): string {
+  if (PATH_NAMES[path]) return PATH_NAMES[path]!;
+  const [head, ...rest] = path.split('.');
+  const key = rest.join('.');
+  const byColumn = (k: string) => BUILTIN_COLUMNS.find((c) => c.field === k || c.id === k)?.label;
+  if (head === 'decision') return byColumn(key) ?? prettify(key);
+  if (head === 'attrs') return byColumn(key) ?? prettify(key);
+  if (head === 'custom') return 'Custom column';
+  if (head === 'masterCustom') return 'Master Excel column';
+  if (head === 'returnInfo') return `Return · ${prettify(key)}`;
+  return byColumn(path) ?? prettify(path);
 }
 
 /** Sessions: one person's edits on one lot with less than this between them are one session. */

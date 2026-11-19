@@ -7,6 +7,57 @@
  * component references a token rather than a hex code. Tailwind v4 turns each entry
  * into a utility automatically: --color-rail becomes `bg-rail`, `text-rail`, etc.
  */
+/* History view of a lot's Excel: a changed cell reads like a code diff (red = last value, green = new value);
+   the thin bar at its left edge is the colour of the person who changed it (--hc). */
+.ag-cell.hist-cell {
+  box-shadow: inset 3px 0 0 var(--hc, #2563eb);
+  padding-left: 8px;
+}
+.hist-diff {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  font-size: 11.5px;
+  line-height: 1.25;
+}
+.hist-diff > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.hist-diff > span > b {
+  margin-right: 5px;
+  font-weight: 700;
+}
+.hist-diff-old {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--color-danger-mark) 70%, transparent);
+}
+.hist-diff-old > b {
+  text-decoration: none;
+  display: inline-block;
+}
+.hist-diff-new {
+  background: var(--color-good-bg);
+  color: var(--color-good);
+  font-weight: 600;
+}
+.ag-row.hist-row-added .ag-cell {
+  background-color: color-mix(in srgb, var(--color-good-mark) 16%, transparent);
+}
+.ag-row.hist-row-removed .ag-cell {
+  background-color: color-mix(in srgb, var(--color-danger-mark) 12%, transparent);
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
 @theme {
   /* The graphite rail */
   --color-rail: #0f1319;

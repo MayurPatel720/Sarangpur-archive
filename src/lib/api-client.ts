@@ -130,6 +130,7 @@ import {
   historyActionResponseSchema,
   historyChangeDetailSchema,
   historyItemResponseSchema,
+  historyViewResponseSchema,
   historyListResponseSchema,
   historyPreviewSchema,
   type HistoryActionBody,
@@ -138,6 +139,8 @@ import {
   type HistoryItemResponse,
   type HistoryListResponse,
   type HistoryPreview,
+  type HistoryViewQuery,
+  type HistoryViewResponse,
 } from '@/types/history';
 import {
   masterColumnsResponseSchema,
@@ -568,6 +571,11 @@ export const historyApi = {
     if (target.seq !== undefined) qs.set('seq', String(target.seq));
     if (target.versionId) qs.set('versionId', target.versionId);
     return getJson<HistoryPreview>(`/api/lots/${encodeURIComponent(lotId)}/history/preview?${qs}`, historyPreviewSchema);
+  },
+  view: (lotId: string, q: HistoryViewQuery) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) qs.set(k, String(v));
+    return getJson<HistoryViewResponse>(`/api/lots/${encodeURIComponent(lotId)}/history/view?${qs}`, historyViewResponseSchema);
   },
   item: (lotId: string, q: { itemId?: string; code?: string; path?: string }) => {
     const qs = new URLSearchParams();

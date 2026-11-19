@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { itemsGridResponseSchema } from './items';
 
 /** Version history of a lot's Excel (see src/lib/item-history.ts and src/server/lots/history.ts). */
 
@@ -114,6 +115,55 @@ export const historyConflictSchema = z.object({
   paths: z.array(z.string()),
 });
 export type HistoryConflict = z.output<typeof historyConflictSchema>;
+
+/* ------------------------------------------------- the sheet itself, as it was */
+
+/** GET /api/lots/[lotId]/history/view — the sheet at a point in history, with its changed cells to highlight. */
+export const historyViewQuerySchema = z.object({
+  /** session: the sheet right after that session, showing its changes. version: the sheet at a saved version, showing what changed since.
+   *  since: the CURRENT sheet's changes since a point (no grid is returned). */
+  mode: z.enum(['session', 'version', 'since']),
+  sessionId: z.string().max(40).optional(),
+  versionId: objectId.optional(),
+  /** For mode `since`: `last` (the caller's latest session), `today`, or a version id. */
+  ref: z.string().max(40).optional(),
+});
+export type HistoryViewQuery = z.input<typeof historyViewQuerySchema>;
+
+export const historyViewCellSchema = z.object({
+  path: z.string(),
+  /** The grid column it shows in (null: not a column of the sheet). */
+  column: z.string().nullable(),
+  from: z.string(),
+  to: z.string(),
+  by: z.string(),
+  byId: z.string(),
+  at: z.string(),
+});
+export const historyViewChangeSchema = z.object({
+  itemId: z.string(),
+  code: z.string().nullable(),
+  added: z.boolean(),
+  removed: z.boolean(),
+  cells: z.array(historyViewCellSchema),
+});
+export const historyViewResponseSchema = z.object({
+  mode: z.enum(['session', 'version', 'since']),
+  /** e.g. "19/11/2026, 10:22 am · Admin" */
+  title: z.string(),
+  at: z.string().nullable(),
+  seq: z.number(),
+  versionId: z.string().nullable(),
+  sessionId: z.string().nullable(),
+  /** Who changed something here (each gets a color). */
+  actors: z.array(z.object({ id: z.string(), name: z.string() })),
+  /** The sheet at that point (null for mode `since`: the current sheet is already on screen). */
+  grid: itemsGridResponseSchema.nullable(),
+  changes: z.array(historyViewChangeSchema),
+  rowCount: z.number(),
+  cellCount: z.number(),
+});
+export type HistoryViewResponse = z.output<typeof historyViewResponseSchema>;
 
 /** POST /api/lots/[lotId]/history */
 export const historyActionBodySchema = z.discriminatedUnion('action', [

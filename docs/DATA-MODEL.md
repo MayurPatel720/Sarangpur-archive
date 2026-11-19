@@ -127,7 +127,7 @@ individually, and the 16MB document ceiling would eventually be hit.
 | `logged` / `loggedAt` / `loggerName` | Boolean / Date / String | Logging date / logger. `logged` is no longer a sheet column (hidden); `taggedInMls` now sits in the Logging band |
 | `custom` | Mixed | Values of the lot's added columns, by column key (`ArchiveLot.customColumns`) |
 | `masterCustom` | Mixed | Values of the Master Excel's free-text columns, by column key (`mastercolumns`) |
-| `clearedCode` | String | null | Set by Discard → "Yes and clear code": the archive code the row had before it became `discard-N` (running count `discardCode` in `counters`). That number stays retired — `maxItemNumber` still counts it |
+| `clearedCode` | String | null | Set by Discard → "Yes and clear code": the archive code the row had before it became `NEG-MUM-R-DISCARD_n` (its first three parts, then DISCARD_n; one count per prefix, `discardCode:<prefix>` in `counters`). That number stays retired — `maxItemNumber` still counts it |
 | `decision.verdict` | `archive` \| `return_or_discard` \| null | Legacy mirror of the result, written so old guards ("items already decided") keep working |
 | `name`, `description`, `event`, `people`, `year`, `month`, `itemCondition`, `decision.existsInMls` … | | Retired from the Excel; old values stay in the database |
 | `dispositionDoneAt` / `dispositionDoneByName` / `lotReference` | | Denormalised for the item queues |

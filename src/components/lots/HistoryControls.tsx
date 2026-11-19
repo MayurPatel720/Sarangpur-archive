@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import type { LotHistory } from '@/hooks/useLotHistory';
+import type { HistView, ShowChanges } from '@/lib/history-view';
 import { Dialog } from '@/components/ui/Dialog';
 import { GhostButton, PrimaryButton } from '@/components/ui/Form';
 import { IconClock } from '@/components/ui/icons';
+import { Menu, menuItem } from '@/components/master/MasterMenus';
 import { HistoryPanel } from './HistoryPanel';
 
 const iconBtn =
@@ -19,17 +21,42 @@ function typingIn(target: EventTarget | null): boolean {
 }
 
 /**
- * Undo / Redo buttons, the History panel, the keyboard shortcuts (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y) and the
- * conflict dialog of a lot's Excel.
+ * Undo / Redo buttons, the History side panel, "Show changes" (highlights on the current sheet), the keyboard
+ * shortcuts (Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y) and the conflict dialog of a lot's Excel.
  */
-export function HistoryControls({ history, canEdit, lotId }: { history: LotHistory; canEdit: boolean; lotId: string }) {
+export function HistoryControls({
+  history,
+  canEdit,
+  lotId,
+  view,
+  onView,
+  showChanges,
+  onShowChanges,
+  onPanelChange,
+}: {
+  history: LotHistory;
+  canEdit: boolean;
+  lotId: string;
+  /** The sheet currently showing a past state (null = the current sheet). */
+  view: HistView | null;
+  onView: (v: HistView | null) => void;
+  showChanges: ShowChanges | null;
+  onShowChanges: (v: ShowChanges | null) => void;
+  /** Tells the sheet when the side panel opens / closes, so it can make room instead of sitting under it. */
+  onPanelChange?: (open: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    onPanelChange?.(open);
+    return () => onPanelChange?.(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const { data, pending } = history;
-  const canUndo = canEdit && Boolean(data?.canUndo) && !pending;
-  const canRedo = canEdit && Boolean(data?.canRedo) && !pending;
+  const canUndo = canEdit && !view && Boolean(data?.canUndo) && !pending;
+  const canRedo = canEdit && !view && Boolean(data?.canRedo) && !pending;
 
   useEffect(() => {
-    if (!canEdit) return;
+    if (!canEdit || view) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.altKey || typingIn(e.target)) return;
       const k = e.key.toLowerCase();
@@ -45,13 +72,14 @@ export function HistoryControls({ history, canEdit, lotId }: { history: LotHisto
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canEdit, canUndo, canRedo, history]);
+  }, [canEdit, view, canUndo, canRedo, history]);
 
   const conflict = history.conflict;
+  const changesOn = showChanges !== null && !view;
 
   return (
     <>
-      {canEdit ? (
+      {canEdit && !view ? (
         <>
           <button
             type="button"
@@ -75,11 +103,62 @@ export function HistoryControls({ history, canEdit, lotId }: { history: LotHisto
           </button>
         </>
       ) : null}
-      <button type="button" className={iconBtn} onClick={() => setOpen(true)} aria-label="History" title="History: sessions and saved versions">
+      <button
+        type="button"
+        className={`${iconBtn} ${open ? '!border-accent !bg-accent-soft' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        aria-label="History"
+        aria-pressed={open}
+        title="History: sessions and saved versions"
+      >
         <IconClock size={15} />
       </button>
+      {!view ? (
+        <Menu
+          label="Show changes"
+          width={250}
+          align="right"
+          className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-[6px] border px-2.5 text-[12px] font-semibold hover:bg-accent-soft ${changesOn ? 'border-accent bg-accent-soft text-accent' : 'border-line bg-surface text-ink-2'}`}
+          trigger={<>Changes {changesOn ? '●' : '▾'}</>}
+        >
+          {(close) => (
+            <>
+              <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-4">Highlight on the sheet</div>
+              <button type="button" role="menuitem" className={menuItem} onClick={() => { onShowChanges(null); close(); }}>
+                {showChanges === null ? '✓ ' : ''}Off
+              </button>
+              <button type="button" role="menuitem" className={menuItem} onClick={() => { onShowChanges('last'); close(); }}>
+                {showChanges === 'last' ? '✓ ' : ''}Since my last session
+              </button>
+              <button type="button" role="menuitem" className={menuItem} onClick={() => { onShowChanges('today'); close(); }}>
+                {showChanges === 'today' ? '✓ ' : ''}Today
+              </button>
+              {(data?.versions ?? []).slice(0, 8).map((v) => (
+                <button key={v.id} type="button" role="menuitem" className={menuItem} onClick={() => { onShowChanges(v.id); close(); }}>
+                  {showChanges === v.id ? '✓ ' : ''}Since “{v.name}”
+                </button>
+              ))}
+            </>
+          )}
+        </Menu>
+      ) : null}
 
-      {open ? <HistoryPanel lotId={lotId} history={history} canEdit={canEdit} onClose={() => setOpen(false)} /> : null}
+      {open ? (
+        <HistoryPanel
+          lotId={lotId}
+          history={history}
+          canEdit={canEdit}
+          view={view}
+          onView={(v) => {
+            if (v) onShowChanges(null);
+            onView(v);
+          }}
+          onClose={() => {
+            setOpen(false);
+            onView(null);
+          }}
+        />
+      ) : null}
 
       {conflict ? (
         <Dialog

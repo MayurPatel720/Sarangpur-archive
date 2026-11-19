@@ -13,7 +13,8 @@ export const MASTER_LOT_COLUMNS: ColumnSpec[] = [
   { id: 'assignee', label: 'Assigned to', dept: 'lot', kind: 'readonly', width: 150 },
 ];
 
-const RESULT_COLUMN: ColumnSpec = { id: 'result', label: 'Result', dept: 'decision', kind: 'readonly', width: 130, notFormats: ['prasadi'] };
+// `common`: the Decision band shows with "All formats" too (Prasadi rows show a dash: they have no Decision).
+const RESULT_COLUMN: ColumnSpec = { id: 'result', label: 'Result', dept: 'decision', kind: 'readonly', width: 130, notFormats: ['prasadi'], common: true };
 
 export const MASTER_COLUMNS: ColumnSpec[] = [
   ...MASTER_LOT_COLUMNS,

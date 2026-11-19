@@ -3,7 +3,7 @@ import { HttpError } from '@/lib/api';
 import { tracked } from '@/server/lots/history-core';
 import { LotItem } from '@/models/LotItem';
 import { allocateItemCodes } from '@/server/codes';
-import { parseItemCodeParts } from '@/lib/item-code';
+import { isDiscardCode, parseItemCodeParts } from '@/lib/item-code';
 import { autoDecisionFields, bornDigitalFields } from '@/lib/item-decision';
 import { namingPrefix } from '@/server/lots/mutations';
 import { withAudit, auditActor } from '@/server/audit';
@@ -99,9 +99,9 @@ async function createItemCore(
         .select('code sortOrder')
         .session(session)
         .lean()) as { code: string; sortOrder?: number } | null;
-      // A row cleared by Discard → "Yes and clear code" is now called discard-N: continue the pair from a normal row.
+      // A row cleared by Discard → "Yes and clear code" is now called PREFIX-DISCARD_n: continue the pair from a normal row.
       const codedSibling =
-        sibling && /^discard-\d+$/.test(sibling.code)
+        sibling && isDiscardCode(sibling.code)
           ? ((await LotItem.findOne({ lot: lot._id, lineIndex, clearedCode: null })
               .sort({ sortOrder: -1 })
               .select('code')

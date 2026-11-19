@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GridApi } from 'ag-grid-community';
-import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
+import { ApiRequestError, historyApi, itemsGridApi } from '@/lib/api-client';
+import { colorOfActor, type HistView, type ShowChanges } from '@/lib/history-view';
+import { dateTime12 } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { useReferenceLists } from '@/hooks/useReferenceLists';
 import { refLabel as refLabelOf } from '@/lib/ref-lists';
@@ -28,7 +30,7 @@ import { HiddenColumnsMenu } from './HiddenColumnsMenu';
 import { ImportDialog } from './ImportDialog';
 import { SetPathDialog } from './SetPathDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
-import { ItemFamilyGrid, PHOTO_ROW_PX } from './ItemFamilyGrid';
+import { ItemFamilyGrid, PHOTO_ROW_PX, type HistoryMarks } from './ItemFamilyGrid';
 import { HistoryControls } from './HistoryControls';
 import { useLotHistory } from '@/hooks/useLotHistory';
 import { useMe } from '@/hooks/useCan';
@@ -56,7 +58,7 @@ const matchesFilter = (r: GridItem, f: Filter) =>
 
 const SELECTION_CLEAR: Record<number, string[]> = {};
 
-/** The groups of one sheet with how many items each holds (for the Add item dialog). */
+/** The groups of one sheet with how many items each holds (for the Add items dialog). */
 const groupCounts = (items: GridItem[]) => {
   const counts = new Map<number, number>();
   for (const i of items) counts.set(i.groupNo, (counts.get(i.groupNo) ?? 0) + 1);
@@ -111,6 +113,22 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     void queryClient.invalidateQueries({ queryKey: queryKeys.lots.history(lotId) });
   };
   const undoLink = { label: 'Undo', onClick: () => void history.undo() };
+  // The History view: the sheet as it was (a session / a saved version), or "Show changes" on the current sheet.
+  const [histView, setHistView] = useState<HistView | null>(null);
+  const [showChanges, setShowChanges] = useState<ShowChanges | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const viewQ = useQuery({
+    queryKey: ['lots', 'history-view', lotId, histView],
+    queryFn: () => historyApi.view(lotId, histView!.mode === 'session' ? { mode: 'session', sessionId: histView!.sessionId } : { mode: 'version', versionId: histView!.versionId }),
+    enabled: histView !== null,
+    placeholderData: (prev) => prev,
+  });
+  const sinceQ = useQuery({
+    queryKey: ['lots', 'history-since', lotId, showChanges, history.data?.headSeq ?? 0],
+    queryFn: () => historyApi.view(lotId, { mode: 'since', ref: showChanges! }),
+    enabled: showChanges !== null && histView === null,
+  });
 
   const save = useMutation({
     mutationFn: (v: { itemIds: string[]; set: ItemsBulkSet }) => itemsGridApi.update(lotId, v),
@@ -171,7 +189,26 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     },
   });
 
-  const data = grid.data;
+  // While a past state is shown, the sheet is that (read only); otherwise the current one.
+  const data = histView ? (viewQ.data?.grid ?? grid.data) : grid.data;
+  const viewLoading = histView !== null && !viewQ.data;
+  const activeView = histView ? viewQ.data : showChanges !== null ? sinceQ.data : undefined;
+  const marks = useMemo<HistoryMarks | undefined>(() => {
+    if (!activeView) return undefined;
+    const cells = new Map<string, Map<string, { from: string; to: string; by: string; at: string; color: string }>>();
+    const rows = new Map<string, 'added' | 'removed'>();
+    for (const c of activeView.changes) {
+      if (c.added) rows.set(c.itemId, 'added');
+      else if (c.removed) rows.set(c.itemId, 'removed');
+      for (const x of c.cells) {
+        if (!x.column) continue;
+        const m = cells.get(c.itemId) ?? new Map();
+        m.set(x.column, { from: x.from, to: x.to, by: x.by, at: dateTime12(x.at), color: colorOfActor(activeView.actors, x.byId) });
+        cells.set(c.itemId, m);
+      }
+    }
+    return { cells, rows };
+  }, [activeView]);
   const canDetails = data?.editable.details ?? false;
   const canDecide = data?.editable.decision ?? false;
 
@@ -365,11 +402,12 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     'inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-line bg-surface text-ink-2 cursor-pointer hover:bg-accent-soft disabled:opacity-50';
 
   return (
+    <div className="transition-[padding] duration-150" style={{ paddingRight: panelOpen && !fullscreen ? 392 : 0 }}>
     <Panel>
       <PanelHeader title={`Items (${s.total})`}>
         <span className="ml-auto flex items-center gap-2">
           {viewControls}
-          {canAdd && canDetails ? <GhostButton onClick={() => setShowAdd(true)}>Add item</GhostButton> : null}
+          {canAdd && canDetails ? <GhostButton onClick={() => setShowAdd(true)}>Add items</GhostButton> : null}
         </span>
       </PanelHeader>
       <div className="p-3 md:p-4 flex flex-col gap-3">
@@ -397,7 +435,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           )}
         </div>
 
-        {!canDetails ? (
+        {histView ? null : !canDetails ? (
           <p role="note" className="m-0 text-[12px] text-ink-3">
             Read only — only the lot&apos;s assignee and admins can fill in items.
           </p>
@@ -409,6 +447,54 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         {data.blockedBy.length ? (
           <div role="note" className="rounded-[6px] border border-line bg-surface-sunken px-3 py-2 text-[12.5px] text-ink-2">
             {data.blockedBy.join(' ')}
+          </div>
+        ) : null}
+
+        {viewLoading ? (
+          <div role="status" className="rounded-[8px] border border-accent bg-accent-soft px-3 py-2 text-[12.5px] font-semibold text-ink">
+            Loading the sheet as it was…
+          </div>
+        ) : null}
+        {activeView ? (
+          <div role="status" className={`flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[8px] border px-3 py-2 text-[12.5px] ${histView ? 'border-accent bg-accent-soft' : 'border-line bg-surface-sunken'}`}>
+            <span className="font-semibold text-ink">
+              {histView ? (histView.mode === 'session' ? 'Viewing the sheet right after this session' : 'Viewing the saved version') : 'Showing changes'}
+              {': '}
+              {activeView.title}
+              {activeView.at ? ` · ${dateTime12(activeView.at)}` : ''}
+            </span>
+            <span className="text-ink-3">
+              {activeView.rowCount} {activeView.rowCount === 1 ? 'row' : 'rows'} · {activeView.cellCount} {activeView.cellCount === 1 ? 'cell' : 'cells'} highlighted
+              {histView?.mode === 'version' ? ' (changed since this version)' : ''}
+            </span>
+            <span className="flex flex-wrap items-center gap-3">
+              {activeView.actors.map((a) => (
+                <span key={a.id} className="inline-flex items-center gap-1.5 text-ink-2">
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: colorOfActor(activeView.actors, a.id) }} />
+                  {a.name}
+                </span>
+              ))}
+              {activeView.changes.some((c) => c.added) ? (
+                <span className="inline-flex items-center gap-1.5 text-ink-2">
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-[3px] bg-good-mark" /> added row
+                </span>
+              ) : null}
+              {activeView.changes.some((c) => c.removed) ? (
+                <span className="inline-flex items-center gap-1.5 text-ink-2">
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-[3px] bg-danger-mark" /> removed row
+                </span>
+              ) : null}
+            </span>
+            <span className="ml-auto flex items-center gap-2">
+              {histView && me.data?.grants.includes('lot:edit') ? (
+                <GhostButton className="!h-8 !px-3 !text-[12px]" onClick={() => setRestoring(true)}>
+                  Restore this
+                </GhostButton>
+              ) : null}
+              <GhostButton className="!h-8 !px-3 !text-[12px]" onClick={() => (histView ? setHistView(null) : setShowChanges(null))}>
+                {histView ? 'Back to current' : 'Hide'}
+              </GhostButton>
+            </span>
           </div>
         ) : null}
 
@@ -526,7 +612,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 </button>
               ) : null}
               <HiddenColumnsMenu hidden={hiddenSpecs} onShow={showColumn} onShowAll={() => columns.mutate({ hidden: [] })} />
-              <HistoryControls history={history} canEdit={canDetails} lotId={lotId} />
+              <HistoryControls history={history} canEdit={canDetails} lotId={lotId} view={histView} onView={setHistView} showChanges={showChanges} onShowChanges={setShowChanges} onPanelChange={setPanelOpen} />
             </div>
           </div>
 
@@ -573,6 +659,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : ROW_PX)}
                   onOpenCode={onOpenCode}
                   onClearCode={setClearCodeFor}
+                  marks={marks}
                   onDuplicate={onDuplicate}
                   onHide={hideColumn}
                   onDeleteColumn={setDeleteColumn}
@@ -685,6 +772,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           sheetName={sheets.find((x) => x.lineIndex === codeFor.lineIndex)?.name ?? 'Sheet'}
           sheetItems={sheets.find((x) => x.lineIndex === codeFor.lineIndex)?.all ?? []}
           onClose={() => setCodeFor(null)}
+          onDuplicate={(item, code) => setDuplicateFor({ item, code })}
           onDone={refresh}
         />
       ) : null}
@@ -700,10 +788,25 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           }}
         />
       ) : null}
+      {restoring && histView && viewQ.data ? (
+        <ConfirmDialog
+          title="Restore the sheet to this point?"
+          body={`The sheet goes back to how it looked ${histView.mode === 'session' ? 'right after this session' : `at "${viewQ.data.title}"`}. It is saved as a new change, so you can undo it afterwards.`}
+          confirmLabel="Restore"
+          tone="default"
+          pending={history.pending}
+          onConfirm={async () => {
+            const res = await history.run(histView.mode === 'version' ? { action: 'restore', versionId: histView.versionId } : { action: 'restore', seq: viewQ.data!.seq });
+            setRestoring(false);
+            if (res) setHistView(null);
+          }}
+          onClose={() => setRestoring(false)}
+        />
+      ) : null}
       {clearCodeFor ? (
         <ConfirmDialog
           title="Discard and clear this code?"
-          body={`${clearCodeFor.code} will be cleared. The row is decided Discard, renamed discard-N (next number in the running count) and moved to the end of its sheet. The old code is retired for good and cannot be brought back.`}
+          body={`${clearCodeFor.code} will be cleared. The row is decided Discard, renamed with DISCARD_ and the next number for its code prefix (for example NEG-MUM-R-DISCARD_1) and moved to the end of its sheet. The old code is retired for good and cannot be brought back.`}
           confirmLabel="Yes and clear code"
           pending={save.isPending}
           onConfirm={() =>
@@ -732,5 +835,6 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
         />
       ) : null}
     </Panel>
+    </div>
   );
 }

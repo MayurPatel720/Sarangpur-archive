@@ -68,7 +68,7 @@ export async function generateLotReference(session?: ClientSession): Promise<str
 }
 
 /** Pure formatter: `MDV-AHM-0002-R-000`. */
-export function formatItemCode(prefix: string, origin: string, seq: number, kind: 'R' | 'D' = 'R', copy = 0): string {
+export function formatItemCode(prefix: string, origin: string, seq: number, kind: string = 'R', copy = 0): string {
   return `${prefix}-${origin}-${String(seq).padStart(4, '0')}-${kind}-${String(copy).padStart(3, '0')}`;
 }
 
@@ -89,7 +89,7 @@ export async function maxItemNumber(abbr1: string, abbr2: string, session?: Clie
   const [peak] = await LotItem.aggregate<{ max: number }>([
     // A cleared item (discard-N) keeps its old code in `clearedCode`: that number stays used, never handed out again.
     { $project: { c: { $ifNull: ['$clearedCode', '$code'] } } },
-    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
+    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[A-Z]{1,3}-\\d{3,}$` } } },
     { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$c', '-'] }, 2] } } } },
     { $group: { _id: null, max: { $max: '$n' } } },
   ]).session(session ?? null);
@@ -107,7 +107,7 @@ export async function usedItemNumbers(
   await connectToDatabase();
   const rows = await LotItem.aggregate<{ n: number }>([
     { $project: { c: { $ifNull: ['$clearedCode', '$code'] } } },
-    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[RD]-\\d{3,}$` } } },
+    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[A-Z]{1,3}-\\d{3,}$` } } },
     { $project: { _id: 0, n: { $toInt: { $arrayElemAt: [{ $split: ['$c', '-'] }, 2] } } } },
     { $match: { n: { $gte: from, $lte: to } } },
   ]).session(session ?? null);

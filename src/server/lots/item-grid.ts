@@ -18,6 +18,7 @@ import { canWorkLot } from '@/server/lots/access';
 import { can } from '@/server/permissions';
 import { finalizeItemDecisions } from '@/server/lots/mutations';
 import { nextSequence } from '@/server/codes';
+import { buildDiscardCode, discardPrefixOf, parseItemCodeParts } from '@/lib/item-code';
 import { tracked, trackedByItems } from '@/server/lots/history-core';
 import { describeEdit, type ChangeKind } from '@/lib/item-history';
 import type {
@@ -207,18 +208,26 @@ export function toGridRow(it: ItemLean, lot: RowLotInfo): GridItem {
 
 /* --------------------------------------------------------------------- read */
 
+/** The sheet as it was at another moment (History view): `transform` swaps in the old rows, `readOnly` locks editing. */
+export interface GridOptions {
+  transform?: (items: ItemLean[]) => ItemLean[];
+  readOnly?: boolean;
+}
+
 export async function getItemsGrid(
   lotId: string,
   viewer: { userId: string; grants: string[] },
+  opts: GridOptions = {},
 ): Promise<ItemsGridResponse> {
   await connectToDatabase();
   if (!Types.ObjectId.isValid(lotId)) throw new HttpError(404, 'Lot not found.');
   const lot = await ArchiveLot.findById(lotId).lean();
   if (!lot) throw new HttpError(404, 'Lot not found.');
-  const items = (await LotItem.find({ lot: lot._id })
+  let items = (await LotItem.find({ lot: lot._id })
     .sort({ sortOrder: 1, groupNo: 1, itemNo: 1 })
     .limit(20000)
     .lean()) as ItemLean[];
+  if (opts.transform) items = opts.transform(items);
 
   // Sub-type label per media line (each list read once).
   const lines = (lot.mediaLines ?? []) as { format: string; dataType: string; mediaSubtype: string }[];
@@ -253,8 +262,17 @@ export async function getItemsGrid(
     }),
   );
 
-  const summary = await summarise(lot._id);
+  const summary = opts.transform
+    ? {
+        total: rows.length,
+        decided: rows.filter((r) => r.result !== null).length,
+        archive: rows.filter((r) => r.result === 'archive').length,
+        discard: rows.filter((r) => r.result === 'discard').length,
+        physical: rows.filter((r) => r.result === 'physical').length,
+      }
+    : await summarise(lot._id);
   const works =
+    !opts.readOnly &&
     can(viewer.grants, 'lot:edit') &&
     canWorkLot(lot, { id: viewer.userId, grants: viewer.grants }) &&
     !gridLocked(lot.stage);
@@ -264,7 +282,7 @@ export async function getItemsGrid(
     version: lot.__v ?? 0,
     stage: lot.stage,
     editable: { details: works, decision: works && decisionOpen(lot) },
-    blockedBy: blockedBy(lot, summary),
+    blockedBy: opts.readOnly ? [] : blockedBy(lot, summary),
     hiddenColumns: lot.hiddenColumns ?? [],
     customColumns: (lot.customColumns ?? []).map((c) => ({ key: c.key, label: c.label, type: c.type, dept: c.dept })),
   };
@@ -570,7 +588,7 @@ async function applyItemEditsCore(
         }
 
         // Discard → "Yes and clear code": the row is decided Discard, its archive code is cleared (it becomes
-        // discard-1, discard-2 … in one running count) and it moves to the end of its sheet. The old number stays retired.
+        // NEG-MUM-R-DISCARD_1, _2 … counted per code prefix) and it moves to the end of its sheet. The old number stays retired.
         if (set.discardClearCode === true) {
           set.digital = false;
           set.redigital = false;
@@ -578,7 +596,10 @@ async function applyItemEditsCore(
           if (!it.clearedCode) {
             if (it.taggedInMls) fail('this item is already tagged in MLS, so its code can no longer be cleared.');
             if (originals.has(it.code)) fail('this item is the original of a duplicate, so its code cannot be cleared.');
-            $set.code = `discard-${await nextSequence('discardCode', session)}`;
+            const parts = parseItemCodeParts(it.code);
+            if (!parts) fail('this item has no archive code to clear.');
+            const prefix = discardPrefixOf(parts!);
+            $set.code = buildDiscardCode(parts!, await nextSequence(`discardCode:${prefix}`, session));
             $set.clearedCode = it.code;
             $set.sortOrder = await nextEnd(it.lineIndex ?? 0);
           }

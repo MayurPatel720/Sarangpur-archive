@@ -22,6 +22,7 @@ import { ITEM_STATUS_LABELS, isInactive, itemStatus, missingRequired } from '@/l
 import { Badge } from '@/components/ui/primitives';
 import { photoMediumUrl } from '@/lib/project-photos';
 import { cleanPath, loadBaseFolder, readDrop } from '@/lib/file-path';
+import { isDiscardCode } from '@/lib/item-code';
 import { LocateFolderDialog } from './LocateFolderDialog';
 import type { GridItem, ItemsBulkSet } from '@/types/items';
 import { DeptHeader, GridHeader, type DeptHeaderParams, type GridHeaderParams } from './GridHeader';
@@ -132,6 +133,79 @@ export const DISCARD_CLEAR_CODE = 'Yes and clear code';
 const triText = (v: Tri) => (v === true ? 'Yes' : v === false ? 'No' : '');
 const triParse = (s: unknown): Tri => (s === 'Yes' ? true : s === 'No' ? false : null);
 
+/** A changed cell to highlight (History): the colour belongs to the person who changed it. */
+export interface MarkCell {
+  from: string;
+  to: string;
+  by: string;
+  at: string;
+  color: string;
+}
+/** What the History view highlights in the sheet: changed cells (row id → column id → change) and added / removed rows. */
+export interface HistoryMarks {
+  cells: Map<string, Map<string, MarkCell>>;
+  rows: Map<string, 'added' | 'removed'>;
+}
+
+/**
+ * A changed cell, drawn like a code diff: the last value in red with a minus, the new value in green with a plus.
+ * (Who changed it and when is in the tooltip; a thin bar in the person's colour sits at the left edge.)
+ */
+function DiffCell(p: { mark?: MarkCell }) {
+  const m = p.mark;
+  if (!m) return null;
+  const val = (v: string) => (v === '—' || v === '' ? <i className="opacity-70">empty</i> : v);
+  return (
+    <div className="hist-diff">
+      <span className="hist-diff-old" title={m.from}>
+        <b aria-hidden>−</b>
+        {val(m.from)}
+      </span>
+      <span className="hist-diff-new" title={m.to}>
+        <b aria-hidden>+</b>
+        {val(m.to)}
+      </span>
+    </div>
+  );
+}
+
+/** Adds the History diff (last value red, new value green) to every cell that was changed. */
+function withMarks(marks: HistoryMarks | undefined) {
+  const wrap = (def: ColDef<GridItem> | ColGroupDef<GridItem>): ColDef<GridItem> | ColGroupDef<GridItem> => {
+    if ('children' in def) return { ...def, children: def.children.map(wrap) };
+    if (!marks || marks.cells.size === 0 || !def.colId) return def;
+    const id = def.colId;
+    const prevClass = def.cellClass;
+    const prevStyle = def.cellStyle;
+    const prevTip = def.tooltipValueGetter;
+    const markOf = (rowId: string | undefined) => (rowId ? marks.cells.get(rowId)?.get(id) : undefined);
+    return {
+      ...def,
+      cellClass: (p) => {
+        const base = typeof prevClass === 'function' ? prevClass(p as never) : prevClass;
+        const list = Array.isArray(base) ? base : base ? [base] : [];
+        return markOf(p.data?.id) ? [...list, 'hist-cell'] : list;
+      },
+      cellStyle: (p) => {
+        const base = typeof prevStyle === 'function' ? prevStyle(p as never) : prevStyle;
+        const m = markOf(p.data?.id);
+        return m ? { ...(base ?? {}), '--hc': m.color } : (base ?? null);
+      },
+      // The diff itself is in the cell; the tooltip says who changed it and when.
+      cellRendererSelector: (p) => {
+        const m = markOf(p.data?.id);
+        return m ? { component: DiffCell, params: { mark: m } } : undefined;
+      },
+      tooltipValueGetter: (p) => {
+        const m = markOf(p.data?.id);
+        if (m) return `${m.by} · ${m.at}`;
+        return typeof prevTip === 'function' ? (prevTip(p as never) as string | undefined) : undefined;
+      },
+    };
+  };
+  return wrap;
+}
+
 /** Makes every editable cell of a column (or column group) read-only on an Inactive item. */
 function lockInactive(def: ColDef<GridItem> | ColGroupDef<GridItem>): ColDef<GridItem> | ColGroupDef<GridItem> {
   if ('children' in def) return { ...def, children: def.children.map(lockInactive) };
@@ -168,6 +242,7 @@ export function ItemFamilyGrid({
   onReorder,
   onSelectionChange,
   onApi,
+  marks,
 }: {
   lineIndex: number;
   rows: GridItem[];
@@ -201,6 +276,8 @@ export function ItemFamilyGrid({
   onReorder: (lineIndex: number, orderedIds: string[]) => void;
   onSelectionChange: (sheet: number, ids: string[]) => void;
   onApi: (sheet: number, api: GridApi<GridItem> | null) => void;
+  /** History view: the changed cells and rows to highlight. */
+  marks?: HistoryMarks;
 }) {
   // A sheet that shows photos gets rows about four times as tall, so the picture is big enough to see.
   const hasPhotoColumn = columns.some((c) => c.kind === 'photo');
@@ -453,8 +530,8 @@ export function ItemFamilyGrid({
             pinned: 'left',
             cellClass: 'font-mono',
             tooltipValueGetter: () => 'Click to change the code',
-            // A cleared row (discard-N) has no code left to edit.
-            onCellClicked: (p) => p.data && !/^discard-\d+$/.test(p.data.code) && onOpenCode(p.data),
+            // A cleared row (NEG-MUM-R-DISCARD_1) has no code left to edit.
+            onCellClicked: (p) => p.data && !isDiscardCode(p.data.code) && onOpenCode(p.data),
             cellRenderer: (p: ICellRendererParams<GridItem>) => (
               <button type="button" className="bg-transparent border-0 p-0 text-accent cursor-pointer font-mono text-[12.5px]">
                 {p.value as string}
@@ -480,7 +557,7 @@ export function ItemFamilyGrid({
           const f = spec.field as 'digital' | 'redigital' | 'discard';
           if (f === 'discard') {
             // Discard has one more choice: "Yes and clear code" — asks first (the old code cannot come back), then the server
-            // marks the row Discard, renames it discard-N and moves it to the end of the sheet.
+            // marks the row Discard, renames it PREFIX-DISCARD_n and moves it to the end of the sheet.
             return {
               ...base,
               editable: canDecide,
@@ -593,8 +670,8 @@ export function ItemFamilyGrid({
       ...(codeCol ? [build(codeCol)] : []),
       ...groups,
     ];
-    return all.map(lockInactive);
-  }, [columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onClearCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+    return all.map(lockInactive).map(withMarks(marks));
+  }, [marks, columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onClearCode, onDuplicate, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;
@@ -636,7 +713,11 @@ export function ItemFamilyGrid({
         columnDefs={columnDefs}
         defaultColDef={{ sortable: false, suppressMovable: true, resizable: true }}
         getRowId={(p) => p.data.id}
-        getRowClass={(p) => (p.data && isInactive(p.data) ? 'opacity-60' : undefined)}
+        getRowClass={(p) => {
+          const mark = p.data ? marks?.rows.get(p.data.id) : undefined;
+          if (mark) return mark === 'added' ? 'hist-row-added' : 'hist-row-removed';
+          return p.data && isInactive(p.data) ? 'opacity-60' : undefined;
+        }}
         rowSelection={canDetails ? { mode: 'multiRow', checkboxes: true, headerCheckbox: true, enableClickSelection: false } : undefined}
         selectionColumnDef={{ pinned: 'left', width: 44 }}
         rowDragManaged={canReorder}

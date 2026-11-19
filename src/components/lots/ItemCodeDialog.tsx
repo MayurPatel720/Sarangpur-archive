@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { ApiRequestError, itemsGridApi } from '@/lib/api-client';
-import { abbrError, buildItemCode, parseItemCodeParts } from '@/lib/item-code';
+import { abbrError, buildItemCode, KIND_DUPLICATE, KIND_ORIGINAL, parseItemCodeParts } from '@/lib/item-code';
+import { useReferenceList } from '@/hooks/useReferenceList';
 import { Dialog } from '@/components/ui/Dialog';
-import { Field, FormError, GhostButton, PrimaryButton, TextInput } from '@/components/ui/Form';
+import { Field, FormError, GhostButton, PrimaryButton, Select, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
 import type { GridItem } from '@/types/items';
 
@@ -14,8 +15,9 @@ import type { GridItem } from '@/types/items';
  *  - the whole sheet's code: both abbreviations and the first number — the rest simply
  *    continue (and a start number higher than the next free one leaves the numbers in
  *    between free for later);
- *  - this one item's number and its last three digits (to free ones).
- * Duplicates (…-D-…) follow their original and are not edited here.
+ *  - this one item's number, its last three digits (to free ones) and its code letter (R, M, P … — the
+ *    admin list "Item code letters"). Choosing D marks it as a duplicate of an original instead.
+ * A duplicate (…-D-…) follows its original: it can only be given another letter, which unlinks it.
  */
 export function ItemCodeDialog({
   lotId,
@@ -24,6 +26,7 @@ export function ItemCodeDialog({
   sheetItems,
   onClose,
   onDone,
+  onDuplicate,
 }: {
   lotId: string;
   item: GridItem;
@@ -32,10 +35,16 @@ export function ItemCodeDialog({
   sheetItems: GridItem[];
   onClose: () => void;
   onDone: () => void;
+  /** The kind D was chosen with an original's code: open the duplicate flow. */
+  onDuplicate: (item: GridItem, otherCode: string) => void;
 }) {
   const toast = useToast();
+  const kindList = useReferenceList('itemCodeKind');
   const parts = parseItemCodeParts(item.code);
-  const recodable = sheetItems.filter((i) => parseItemCodeParts(i.code)?.kind === 'R');
+  const recodable = sheetItems.filter((i) => {
+    const k = parseItemCodeParts(i.code)?.kind;
+    return k !== undefined && k !== KIND_DUPLICATE;
+  });
   const firstParts = recodable[0] ? parseItemCodeParts(recodable[0].code) : null;
 
   const [abbr1, setAbbr1] = useState(parts?.abbr1 ?? '');
@@ -45,7 +54,16 @@ export function ItemCodeDialog({
   const [highest, setHighest] = useState<number | null>(null);
   const [number, setNumber] = useState(parts ? String(parts.no) : '');
   const [copy, setCopy] = useState(parts ? String(parts.copy).padStart(3, '0') : '000');
+  const [kind, setKind] = useState(parts?.kind ?? KIND_ORIGINAL);
+  const [original, setOriginal] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const isDuplicate = parts?.kind === KIND_DUPLICATE;
+  // R and D always exist; the admin list adds more (M, P …). A duplicate can only leave D, so D is not offered to it.
+  const kindOptions = (() => {
+    const base = (kindList.data?.items ?? []).map((i) => ({ value: i.value, label: i.label }));
+    for (const v of [KIND_ORIGINAL, KIND_DUPLICATE]) if (!base.some((b) => b.value === v)) base.push({ value: v, label: v });
+    return base;
+  })();
 
   const samePair = parts?.abbr1 === abbr1.trim() && parts?.abbr2 === abbr2.trim();
   const pairError = abbrError('First abbreviation', abbr1) ?? abbrError('Second abbreviation', abbr2);
@@ -82,8 +100,9 @@ export function ItemCodeDialog({
   const jump = !samePair && highest !== null && startOk && startNo > highest + 1;
   const captured = recodable.filter((i) => i.captured).length;
 
-  const itemOk = /^\d+$/.test(number) && Number(number) >= 1 && /^\d{1,3}$/.test(copy);
-  const itemChanged = Number(number) !== parts?.no || Number(copy) !== parts?.copy;
+  const makesDuplicate = kind === KIND_DUPLICATE && !isDuplicate;
+  const itemOk = /^\d+$/.test(number) && Number(number) >= 1 && /^\d{1,3}$/.test(copy) && (!makesDuplicate || original.trim() !== '');
+  const itemChanged = Number(number) !== parts?.no || Number(copy) !== parts?.copy || kind !== parts?.kind;
 
   const fail = (e: unknown) => setError(e instanceof ApiRequestError ? e.message : 'Could not change the code.');
   const done = (title: string, detail: string) => {
@@ -102,8 +121,9 @@ export function ItemCodeDialog({
     mutationFn: () =>
       itemsGridApi.setNumber(lotId, {
         itemId: item.id,
-        ...(Number(number) !== parts?.no ? { no: Number(number) } : {}),
-        ...(Number(copy) !== parts?.copy ? { copy: Number(copy) } : {}),
+        ...(!isDuplicate && Number(number) !== parts?.no ? { no: Number(number) } : {}),
+        ...(!isDuplicate && Number(copy) !== parts?.copy ? { copy: Number(copy) } : {}),
+        ...(kind !== parts?.kind ? { kind } : {}),
       }),
     onSuccess: (r) => done('Code updated', r.code),
     onError: fail,
@@ -116,23 +136,16 @@ export function ItemCodeDialog({
       </Dialog>
     );
   }
-  if (parts.kind === 'D') {
-    return (
-      <Dialog title={item.code} subtitle={sheetName} onClose={onClose}>
-        <p className="m-0 text-[13px] text-ink-2">
-          This item is a duplicate of <span className="font-mono">{item.duplicateCode}</span>. A duplicate takes its
-          original&apos;s number, so its code is changed from the original.
-        </p>
-        <div className="mt-4 flex justify-end">
-          <GhostButton onClick={onClose}>Close</GhostButton>
-        </div>
-      </Dialog>
-    );
-  }
-
   return (
     <Dialog title={item.code} subtitle={`${sheetName} · ${recodable.length} item${recodable.length === 1 ? '' : 's'}`} onClose={onClose}>
       <div className="flex flex-col gap-5">
+        {isDuplicate ? (
+          <p className="m-0 text-[13px] text-ink-2">
+            This item is a duplicate of <span className="font-mono">{item.duplicateCode}</span> and takes its original&apos;s number. Give it another letter below to make it an
+            ordinary item again (it is unlinked and gets the next free number), or change the original.
+          </p>
+        ) : null}
+        {isDuplicate ? null : (
         <section className="flex flex-col gap-3" aria-label="Code for this whole sheet">
           <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">Code for this sheet</h3>
           <div className="grid grid-cols-3 gap-3">
@@ -193,24 +206,63 @@ export function ItemCodeDialog({
             </PrimaryButton>
           </div>
         </section>
+        )}
 
-        <section className="flex flex-col gap-3 border-t border-line-soft pt-4" aria-label="Number of this item">
+        <section className={`flex flex-col gap-3 ${isDuplicate ? '' : 'border-t border-line-soft pt-4'}`} aria-label="Number of this item">
           <h3 className="m-0 text-[12px] font-semibold uppercase tracking-[0.04em] text-ink-3">Only this item</h3>
-          <div className="flex flex-wrap items-end gap-3">
-            <Field label="Number">
-              <TextInput value={number} inputMode="numeric" onChange={(e) => setNumber(e.target.value)} />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <Field label="Code letter">
+              <Select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Code letter">
+                {kindOptions
+                  .filter((o) => !(isDuplicate && o.value === KIND_DUPLICATE))
+                  .map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                {isDuplicate ? <option value={KIND_DUPLICATE}>D — duplicate (now)</option> : null}
+              </Select>
             </Field>
-            <Field label="Last 3 digits">
-              <TextInput value={copy} inputMode="numeric" maxLength={3} onChange={(e) => setCopy(e.target.value.replace(/\D/g, ''))} />
-            </Field>
-            <GhostButton disabled={!itemChanged || !itemOk || single.isPending} onClick={() => { setError(null); single.mutate(); }}>
-              {single.isPending ? 'Saving…' : 'Change code'}
+            {isDuplicate ? null : (
+              <>
+                <Field label="Number">
+                  <TextInput value={number} inputMode="numeric" onChange={(e) => setNumber(e.target.value)} />
+                </Field>
+                <Field label="Last 3 digits">
+                  <TextInput value={copy} inputMode="numeric" maxLength={3} onChange={(e) => setCopy(e.target.value.replace(/\D/g, ''))} />
+                </Field>
+              </>
+            )}
+            {makesDuplicate ? (
+              <div className="col-span-full">
+              <Field label="Original's code">
+                <TextInput value={original} onChange={(e) => setOriginal(e.target.value)} placeholder="e.g. NEG-MUM-0176-R-000" autoComplete="off" />
+              </Field>
+              </div>
+            ) : null}
+            <div className="col-span-full">
+            <GhostButton
+              disabled={!itemChanged || !itemOk || single.isPending}
+              onClick={() => {
+                setError(null);
+                if (makesDuplicate) {
+                  onDuplicate(item, original.trim());
+                  onClose();
+                } else single.mutate();
+              }}
+            >
+              {single.isPending ? 'Saving…' : makesDuplicate ? 'Mark as duplicate' : 'Change code'}
             </GhostButton>
+            </div>
           </div>
           <p className="m-0 text-[12px] text-ink-3" aria-live="polite">
-            {itemOk ? (
+            {isDuplicate && kind !== KIND_DUPLICATE ? (
+              <>The code becomes <span className="font-mono text-ink-2">{parts.abbr1}-{parts.abbr2}-…-{kind}-000</span> with the next free number.</>
+            ) : makesDuplicate ? (
+              'Type the code of the original this item duplicates; you will see the new code before anything is saved.'
+            ) : itemOk ? (
               <>
-                <span className="font-mono text-ink-2">{buildItemCode({ ...parts, no: Number(number), copy: Number(copy) })}</span> — any combination not used by another item.
+                <span className="font-mono text-ink-2">{buildItemCode({ ...parts, no: Number(number), copy: Number(copy), kind })}</span> — any combination not used by another item.
               </>
             ) : (
               'The number needs digits, and the last 3 digits can be 000 to 999.'

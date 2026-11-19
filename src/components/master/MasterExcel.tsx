@@ -23,6 +23,7 @@ import { buildItemsWorkbook } from '@/components/lots/excel-io';
 import { applyView, DEFAULT_VIEW, MAX_WIDTH, MIN_WIDTH, moveColumn, ROW_PADDING, useMasterView } from '@/components/master/master-view';
 import { MasterPathCell } from '@/components/master/MasterPathCell';
 import { MasterCustomCell } from '@/components/master/MasterCustomCell';
+import { MasterDecisionCell } from '@/components/master/MasterDecisionCell';
 import { AddMasterColumnDialog } from '@/components/master/AddMasterColumnDialog';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useMe } from '@/hooks/useCan';
@@ -30,7 +31,7 @@ import { ColumnsMenu, DisplayMenu, ExportMenu, HeaderMenu, ViewsMenu, toolbarBut
 
 /**
  * The Master Excel: every item of every lot (and its project) in one sheet. Read only, except the File
- * path cell — items are edited in their own lot's Excel (click a lot no or archive code).
+ * path cell, the Decision columns and its own custom columns — items are edited in their own lot's Excel (click a lot no or archive code).
  *
  * Spreadsheet tools: a filter row under the column names, server-side sorting and paging, a column
  * picker, per-column menus (sort, hide, pin, move, resize), row selection, copy to paste into Excel,
@@ -406,6 +407,8 @@ export function MasterExcel() {
     }
     // The one editable cell: a file path is pasted in long after intake (see MasterPathCell).
     if (c.id === 'fileName') return <MasterPathCell row={row} />;
+    // The Decision columns are edited here too; the lot's own rules apply (a decided lot is locked).
+    if (c.id === 'digital' || c.id === 'redigital' || c.id === 'discard' || c.id === 'decisionRemark') return <MasterDecisionCell row={row} field={c.id} />;
     // The Master Excel's own columns: typed text, or a lot detail fetched automatically (read-only).
     if (c.dept === 'custom' && c.kind === 'text') return <MasterCustomCell row={row} colKey={c.id} label={c.label} />;
     if (c.kind === 'photo') {

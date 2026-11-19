@@ -6,6 +6,7 @@ import {
   OBJECT_FIELDS,
   TRACKED_FIELDS,
   changedPaths,
+  columnIdOfPath,
   normalize,
   sameImage,
   valueAt,
@@ -16,7 +17,7 @@ import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotChangeRow, LotChangeSet, LotVersion } from '@/models/LotChangeSet';
 import { LotItem } from '@/models/LotItem';
 import { withAudit, auditActor } from '@/server/audit';
-import { gridLocked, syncLotStage } from '@/server/lots/item-grid';
+import { getItemsGrid, gridLocked, syncLotStage, type ItemLean } from '@/server/lots/item-grid';
 import { autoVersion, latestSeq, lotStateOf, snapshotItems, tracked } from '@/server/lots/history-core';
 import type {
   HistoryActionBody,
@@ -27,6 +28,8 @@ import type {
   HistoryItemResponse,
   HistoryListResponse,
   HistoryPreview,
+  HistoryViewQuery,
+  HistoryViewResponse,
 } from '@/types/history';
 
 /**
@@ -493,6 +496,182 @@ export async function itemHistory(lotId: string, q: { itemId?: string; code?: st
     entries.push({ seq: r.seq, at: iso(s.at)!, actorName: s.actorName, label: s.label, kind: s.kind, undone: Boolean(s.undoneAt), cells: cells.slice(0, 12) });
   }
   return { code: rows[0]?.code ?? q.code ?? null, entries };
+}
+
+/* ------------------------------------------------- the sheet itself, as it was */
+
+type ViewChange = HistoryViewResponse['changes'][number];
+
+/**
+ * What changed between two points, one entry per item and per cell: the value at the start, the value at the end,
+ * and who made the last change to that cell. `fromSeq` is exclusive; `toSeq` null = up to now.
+ * `latest`: show each cell's most recent edit (the value just before it → the value after it) instead of the net
+ * change over the whole range — what "Show changes" wants ("it was Ahmedabad, now it is bharuch").
+ */
+async function netChanges(lotId: string, fromSeq: number, toSeq: number | null, latest = false) {
+  const lot = new Types.ObjectId(lotId);
+  const rows = await LotChangeRow.find({ lot, seq: { $gt: fromSeq, ...(toSeq !== null ? { $lte: toSeq } : {}) } }).sort({ seq: 1 }).lean();
+  const sets = new Map(
+    (await LotChangeSet.find({ _id: { $in: [...new Set(rows.map((r) => String(r.changeSet)))] } }).select('actor actorName at').lean()).map((x) => [String(x._id), x]),
+  );
+  const byItem = new Map<string, typeof rows>();
+  for (const r of rows) byItem.set(String(r.item), [...(byItem.get(String(r.item)) ?? []), r]);
+
+  const actors = new Map<string, string>();
+  const changes: ViewChange[] = [];
+  /** The item as it was at the start of the range (for rows removed in it). */
+  const startImage = new Map<string, ItemImage>();
+  let cellCount = 0;
+  for (const [id, list] of byItem) {
+    const first = list[0]!;
+    const last = list[list.length - 1]!;
+    const before = (first.before as ItemImage | null) ?? null;
+    const after = (last.after as ItemImage | null) ?? null;
+    if (before === null && after === null) continue; // added and removed again inside the range
+    const added = before === null;
+    const removed = after === null;
+    if (removed && before) startImage.set(id, before);
+    const cells: ViewChange['cells'] = [];
+    if (before && after) {
+      for (const path of changedPaths(before, after)) {
+        const owner = [...list].reverse().find((r) => (r.paths ?? []).includes(path)) ?? last;
+        const set = sets.get(String(owner.changeSet));
+        if (!set) continue;
+        actors.set(String(set.actor), set.actorName);
+        cells.push({
+          path,
+          column: columnIdOfPath(path),
+          from: show(valueAt(latest ? ((owner.before as ItemImage | null) ?? before) : before, path)),
+          to: show(valueAt(latest ? ((owner.after as ItemImage | null) ?? after) : after, path)),
+          by: set.actorName,
+          byId: String(set.actor),
+          at: new Date(set.at).toISOString(),
+        });
+      }
+    } else {
+      const set = sets.get(String(last.changeSet));
+      if (set) actors.set(String(set.actor), set.actorName);
+    }
+    if (!added && !removed && cells.length === 0) continue;
+    cellCount += cells.length || 1;
+    changes.push({ itemId: id, code: ((after ?? before)?.code as string | undefined) ?? first.code ?? null, added, removed, cells });
+  }
+  return { changes, actors, startImage, cellCount };
+}
+
+/** An item document made from a stored image (what the sheet looked like), over today's document if there is one. */
+function docFromImage(base: ItemLean | null, id: Types.ObjectId, lotId: string, image: ItemImage): ItemLean {
+  const doc: Record<string, unknown> = base ? { ...base } : { _id: id, lot: new Types.ObjectId(lotId), imageCount: 0, photoUrls: [] };
+  for (const f of TRACKED_FIELDS) {
+    if (f in image) doc[f] = image[f];
+    else delete doc[f];
+  }
+  return doc as unknown as ItemLean;
+}
+
+/** The sheet's rows as they were at the point `plan` describes (plus rows that existed only before, flagged by the caller). */
+function rowsAt(lotId: string, plan: Plan, extra: Map<string, ItemImage>) {
+  return (items: ItemLean[]): ItemLean[] => {
+    const byId = new Map(items.map((i) => [String(i._id), i]));
+    for (const p of plan) {
+      const id = String(p.item);
+      if (p.target === null) byId.delete(id);
+      else byId.set(id, docFromImage(byId.get(id) ?? null, p.item, lotId, p.target));
+    }
+    for (const [id, img] of extra) if (!byId.has(id)) byId.set(id, docFromImage(null, new Types.ObjectId(id), lotId, img));
+    return [...byId.values()].sort(
+      (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || (a.groupNo ?? 0) - (b.groupNo ?? 0) || (a.itemNo ?? 0) - (b.itemNo ?? 0),
+    );
+  };
+}
+
+/**
+ * The History view of the Items tab. `session`: the sheet right after that session, with the cells it changed;
+ * `version`: the sheet at a saved version, with the cells that changed since; `since`: the current sheet's changes
+ * since a point (no grid: it is already on screen).
+ */
+export async function getHistoryView(lotId: string, ctx: MutationContext, q: HistoryViewQuery): Promise<HistoryViewResponse> {
+  await connectToDatabase();
+  const viewer = { userId: ctx.userId, grants: ctx.grants };
+  const lot = new Types.ObjectId(lotId);
+  const done = (p: Omit<HistoryViewResponse, 'rowCount' | 'cellCount' | 'actors'> & { actors: Map<string, string>; cellCount: number }): HistoryViewResponse => ({
+    ...p,
+    actors: [...p.actors.entries()].map(([id, name]) => ({ id, name })),
+    rowCount: p.changes.length,
+    cellCount: p.cellCount,
+  });
+
+  if (q.mode === 'session') {
+    if (!q.sessionId) throw new HttpError(400, 'Choose a session.');
+    const sets = await LotChangeSet.find({ lot, sessionId: q.sessionId }).sort({ seq: 1 }).lean();
+    if (sets.length === 0) throw new HttpError(404, 'That session was not found.');
+    const startSeq = sets[0]!.seq - 1;
+    const endSeq = sets[sets.length - 1]!.seq;
+    const { plan } = await planAt(lotId, endSeq);
+    const net = await netChanges(lotId, startSeq, endSeq);
+    const grid = await getItemsGrid(lotId, viewer, { readOnly: true, transform: rowsAt(lotId, plan, net.startImage) });
+    return done({
+      mode: 'session',
+      title: `${sets[0]!.actorName} · ${sets.length} ${sets.length === 1 ? 'change' : 'changes'}`,
+      at: new Date(sets[sets.length - 1]!.at).toISOString(),
+      seq: endSeq,
+      versionId: null,
+      sessionId: q.sessionId,
+      actors: net.actors,
+      grid,
+      changes: net.changes,
+      cellCount: net.cellCount,
+    });
+  }
+
+  if (q.mode === 'version') {
+    if (!q.versionId || !Types.ObjectId.isValid(q.versionId)) throw new HttpError(404, 'Version not found.');
+    const v = await LotVersion.findOne({ _id: q.versionId, lot }).lean();
+    if (!v) throw new HttpError(404, 'Version not found.');
+    const { plan } = await planAt(lotId, v.seq);
+    const net = await netChanges(lotId, v.seq, null);
+    const grid = await getItemsGrid(lotId, viewer, { readOnly: true, transform: rowsAt(lotId, plan, new Map()) });
+    return done({
+      mode: 'version',
+      title: v.name,
+      at: new Date(v.at).toISOString(),
+      seq: v.seq,
+      versionId: String(v._id),
+      sessionId: null,
+      actors: net.actors,
+      grid,
+      changes: net.changes,
+      cellCount: net.cellCount,
+    });
+  }
+
+  // since: the current sheet, with what changed since a point
+  const ref = q.ref ?? 'last';
+  let from = await latestSeq(lotId);
+  let title = 'Since your last session';
+  let at: string | null = null;
+  if (ref === 'today') {
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const first = await LotChangeSet.findOne({ lot, at: { $gte: midnight } }).sort({ seq: 1 }).select('seq').lean();
+    from = first ? first.seq - 1 : from;
+    title = 'Today';
+  } else if (Types.ObjectId.isValid(ref)) {
+    const v = await LotVersion.findOne({ _id: ref, lot }).lean();
+    if (!v) throw new HttpError(404, 'Version not found.');
+    from = v.seq;
+    title = `Since "${v.name}"`;
+    at = new Date(v.at).toISOString();
+  } else {
+    const mine = await LotChangeSet.findOne({ lot, actor: new Types.ObjectId(ctx.userId), kind: { $nin: ['undo'] } }).sort({ seq: -1 }).select('sessionId at').lean();
+    if (mine) {
+      const first = await LotChangeSet.findOne({ lot, sessionId: mine.sessionId }).sort({ seq: 1 }).select('seq at').lean();
+      from = (first?.seq ?? 1) - 1;
+      at = first ? new Date(first.at).toISOString() : null;
+    }
+  }
+  const net = await netChanges(lotId, from, null, true);
+  return done({ mode: 'since', title, at, seq: from, versionId: Types.ObjectId.isValid(ref) ? ref : null, sessionId: null, actors: net.actors, grid: null, changes: net.changes, cellCount: net.cellCount });
 }
 
 /* ---------------------------------------------------------------- dispatcher */

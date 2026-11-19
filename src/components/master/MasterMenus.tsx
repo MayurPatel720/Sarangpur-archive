@@ -142,7 +142,7 @@ export function ColumnsMenu({
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => setView({ hidden: columns.slice(1).map((c) => c.id) })}>
               Hide all
             </button>
-            <button type="button" className="ml-auto cursor-pointer border-0 bg-transparent p-0 text-ink-3 hover:text-ink" onClick={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {} })}>
+            <button type="button" className="ml-auto cursor-pointer border-0 bg-transparent p-0 text-ink-3 hover:text-ink" onClick={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {}, depts: DEFAULT_VIEW.depts })}>
               Reset
             </button>
           </div>

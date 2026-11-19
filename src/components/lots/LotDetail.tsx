@@ -51,7 +51,7 @@ import { LotPhotosCard } from './LotPhotosCard';
 type LotDetail = LotDetailResponse['lot'];
 
 /** Deep-linkable tabs; `?tab=` survives refresh. Legacy `?tab=intake` / `?tab=workflow` fall back to overview. */
-const TAB_IDS = ['overview', 'record', 'items', 'activity'] as const;
+const TAB_IDS = ['items', 'overview', 'record', 'activity'] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 const TAB_LABELS: Record<TabId, string> = {
@@ -674,7 +674,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const me = useMe();
-  const { tab, setTab } = useUrlTab(TAB_IDS, 'overview');
+  const { tab, setTab } = useUrlTab(TAB_IDS, 'items');
   const originList = useReferenceList('originSource');
   const stageList = useReferenceList('stage');
   const canEditRole = me.data ? me.data.grants.includes('lot:edit') : false;

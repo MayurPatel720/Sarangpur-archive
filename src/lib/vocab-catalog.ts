@@ -104,6 +104,20 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
     ]),
   },
   {
+    key: 'itemCodeKind',
+    label: 'Item code letters',
+    group: 'Media',
+    tier: 'open',
+    protected: true,
+    metaSchema: NO_META,
+    // The letter in the middle of an archive code (NEG-MUM-0176-R-000). R and D always exist; an admin adds more
+    // (1–3 capitals, e.g. M, P), and a person can then give an item any of them from its code dialog.
+    items: items([
+      { value: 'R', label: 'R — original' },
+      { value: 'D', label: 'D — duplicate' },
+    ]),
+  },
+  {
     key: 'notDigitizedReason',
     label: 'Not-digitized reasons',
     group: 'Intake',

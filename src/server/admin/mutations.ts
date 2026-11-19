@@ -373,6 +373,16 @@ export async function patchReferenceList(
       current.items as { value: string }[],
       body.items as { value: string }[],
     );
+    if (key === 'itemCodeKind') {
+      const items = body.items as { value: string; active: boolean }[];
+      const bad = items.filter((i) => !/^[A-Z]{1,3}$/.test(i.value));
+      if (bad.length > 0) {
+        throw new HttpError(400, `Code letters are 1–3 capital letters: ${bad.map((b) => `'${b.value}'`).join(', ')} is not.`);
+      }
+      for (const must of ['R', 'D']) {
+        if (!items.some((i) => i.value === must && i.active)) throw new HttpError(400, `'${must}' must stay in the list and active.`);
+      }
+    }
     const catalog = catalogList(key);
     const isSystem = (current.tier ?? catalog?.tier ?? 'open') === 'system';
     if (isSystem) {

@@ -212,10 +212,10 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'duplicateCode', label: 'Duplicate code', dept: 'details', kind: 'duplicate', width: 210, notFormats: PRASADI, hint: 'Type the code of the item this one duplicates (any lot).' },
   // Decision
   // (Prasadi cannot be digitized: it is kept physically, so it has no Decision columns.)
-  { id: 'digital', label: 'Digital', dept: 'decision', kind: 'yesno', field: 'digital', width: 100, notFormats: PRASADI },
-  { id: 'redigital', label: 'Redigital', dept: 'decision', kind: 'yesno', field: 'redigital', width: 110, notFormats: PRASADI },
-  { id: 'discard', label: 'Discard', dept: 'decision', kind: 'yesno', field: 'discard', width: 100, notFormats: PRASADI },
-  { id: 'decisionRemark', label: 'Decision remark', aliases: ['Remark'], dept: 'decision', kind: 'text', field: 'decisionRemark', width: 190, notFormats: PRASADI },
+  { id: 'digital', label: 'Digital', dept: 'decision', kind: 'yesno', field: 'digital', width: 100, notFormats: PRASADI, common: true },
+  { id: 'redigital', label: 'Redigital', dept: 'decision', kind: 'yesno', field: 'redigital', width: 110, notFormats: PRASADI, common: true },
+  { id: 'discard', label: 'Discard', dept: 'decision', kind: 'yesno', field: 'discard', width: 100, notFormats: PRASADI, common: true },
+  { id: 'decisionRemark', label: 'Decision remark', aliases: ['Remark'], dept: 'decision', kind: 'text', field: 'decisionRemark', width: 190, notFormats: PRASADI, common: true },
   // Digitalization & Storage
   { id: 'captured', label: 'Digitalized', aliases: ['Captured'], dept: 'storage', kind: 'flag', field: 'captured', width: 120, notFormats: PRASADI, hint: 'Yes = the digital file exists.' },
   { id: 'digitalSource', label: 'Dig source', dept: 'storage', kind: 'text', field: 'digitalSource', width: 150, notFormats: PRASADI, hint: 'Where the digital copy came from, e.g. Mumbai.' },

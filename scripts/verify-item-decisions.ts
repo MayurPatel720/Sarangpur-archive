@@ -26,6 +26,8 @@ import { listPrasadiChecks, markPrasadiChecked } from '../src/server/lots/prasad
 import { parseDateRange, formatDateRange, isoDayToDmy } from '../src/lib/date-range';
 import { autoDecisionFields, bornDigitalFields, itemResultOf } from '../src/lib/item-decision';
 import { createItem } from '../src/server/lots/items';
+import { ReferenceList } from '../src/models/ReferenceList';
+import { invalidateReferenceCache } from '../src/server/reference/runtime';
 import { addItemImage, deleteItemImage, listItemImages } from '../src/server/lots/item-images';
 import { LotImage } from '../src/models/LotImage';
 import { buildItemCode, parseItemCodeParts } from '../src/lib/item-code';
@@ -151,7 +153,7 @@ async function excelRoundTrip() {
   check('video has no prasadi columns but keeps tape / case / decision', !vid.includes('Blessed by') && !vid.includes('Sticker applied') && !vid.includes('Re-check in') && vid.includes('Name on tape') && vid.includes('Name on case') && vid.includes('Digital') && vid.includes('Digitalized'), vid);
   check('no format known = every column', allColumns([]).every((c) => appliesToFormat(c, null)));
   const common = allColumns([]).filter(isCommonColumn).map((c) => c.label);
-  check('common columns carry no format-specific column', !['Blessed by', 'Name on tape', 'Digital', 'Re-check in'].some((l) => common.includes(l)) && common.includes('Place') && common.includes('Logging date'), common);
+  check('common columns carry no format-specific column, but include the Decision columns (the Master Excel shows them for All formats)', !['Blessed by', 'Name on tape', 'Re-check in'].some((l) => common.includes(l)) && ['Place', 'Logging date', 'Digital', 'Redigital', 'Discard', 'Decision remark'].every((l) => common.includes(l)), common);
   check('every attr column is prasadi-only and has a storable kind', allColumns([]).filter((c) => c.attr).every((c) => c.formats?.includes('prasadi') && ['text', 'longtext', 'flag', 'ref', 'number', 'date', 'dateRange'].includes(c.kind)));
   check('every dropdown column names its list; a dependent one names its parent', allColumns([]).filter((c) => c.kind === 'ref').every((c) => Boolean(c.refList) && (!c.refParent || allColumns([]).some((p2) => p2.id === c.refParent!.column))));
   check('weeks → due date', nextCheckDate(new Date('2026-10-17T15:00:00Z'), 3).toISOString().slice(0, 10) === '2026-11-07');
@@ -475,13 +477,35 @@ async function main() {
     const dcAfter = (await grid(physPhoto.id)).items;
     const c1 = dcAfter.find((i) => i.id === dc1.id)!;
     const c2 = dcAfter.find((i) => i.id === dc2.id)!;
-    const n1 = Number(/^discard-(\d+)$/.exec(c1.code)?.[1] ?? NaN);
-    check('the code is cleared and the row is renamed discard-N', Number.isFinite(n1) && c1.code !== dc1.code, [dc1.code, c1.code]);
-    check('the next one continues the running count', c2.code === `discard-${n1 + 1}`, [c1.code, c2.code]);
+    const prefix1 = dc1.code.replace(/-\d{4,}-([A-Z]{1,3})-\d{3,}$/, '-$1');
+    const n1 = Number(new RegExp(`^${prefix1}-DISCARD_(\\d+)$`).exec(c1.code)?.[1] ?? NaN);
+    check('the code is cleared and the row is renamed PREFIX-DISCARD_n', Number.isFinite(n1) && c1.code !== dc1.code, [dc1.code, prefix1, c1.code]);
+    check('the next one of the same prefix continues the count', c2.code === `${prefix1}-DISCARD_${n1 + 1}`, [c1.code, c2.code]);
     check('the row is decided Discard', c1.result === 'discard' && c1.discard === true && c1.digital === false && c1.redigital === false, c1);
     check('cleared rows sit at the end of the sheet, in order', dcAfter.slice(-2).map((i) => i.id).join() === [dc1.id, dc2.id].join(), dcAfter.map((i) => i.code));
     const retiredCode = (await LotItem.findById(dc1.id).lean())?.clearedCode;
     check('the old code is kept as clearedCode (retired)', retiredCode === dc1.code, retiredCode);
+
+    console.log('item code letters');
+    await createItem(physPhoto.id, { quantity: 3 }, admin);
+    const kItems = (await grid(physPhoto.id)).items.filter((i) => !/DISCARD_/.test(i.code));
+    const [k1, k2, k3] = [kItems[0]!, kItems[1]!, kItems[2]!];
+    await rejects('a letter that is not in the admin list is refused', () => setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'M' }, admin), 400);
+    await rejects('making an item a duplicate by letter needs an original', () => setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'D' }, admin), 400);
+    await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $push: { items: { value: 'M', label: 'M — master', active: true, sortOrder: 9, usageCount: 0, meta: {} } } });
+    invalidateReferenceCache('itemCodeKind');
+    try {
+      const m = await setItemNumber(physPhoto.id, { itemId: k1.id, kind: 'M' }, admin);
+      check('an admin-added letter can be given to an item', /-M-000$/.test(m.code) && m.code.replace('-M-', '-R-') === k1.code, [k1.code, m.code]);
+      const dup = await markDuplicate(physPhoto.id, { itemId: k2.id, otherCode: k3.code, confirm: true }, admin);
+      check('marking a duplicate still works', /-D-\d{3}$/.test((await LotItem.findById(k2.id).lean())!.code), dup);
+      const back = await setItemNumber(physPhoto.id, { itemId: k2.id, kind: 'R' }, admin);
+      const backDoc = (await LotItem.findById(k2.id).lean())!;
+      check('a duplicate given another letter becomes an ordinary item again', /-R-000$/.test(back.code) && back.code !== backDoc.duplicateCode && !backDoc.duplicateCode, [back.code, backDoc.duplicateCode]);
+    } finally {
+      await ReferenceList.updateOne({ key: 'itemCodeKind' }, { $pull: { items: { value: 'M' } } });
+      invalidateReferenceCache('itemCodeKind');
+    }
 
     console.log('add items: how many, which group');
     const aiBefore = (await grid(physPhoto.id)).items;
@@ -491,7 +515,7 @@ async function main() {
     const aiNew = aiAfter.filter((i) => !aiBefore.some((b) => b.id === i.id));
     check('adds as many items as asked', bulk.created === 40 && aiNew.length === 40, [bulk.created, aiNew.length]);
     check('the chosen group takes 36, the rest roll into the next new group', aiNew.filter((i) => i.groupNo === aiTop + 1).length === 36 && aiNew.filter((i) => i.groupNo === aiTop + 2).length === 4, aiNew.map((i) => i.groupNo));
-    check('every new item has its own code', new Set(aiNew.map((i) => i.code)).size === 40 && !aiNew.some((i) => /^discard-/.test(i.code)));
+    check('every new item has its own code', new Set(aiNew.map((i) => i.code)).size === 40 && !aiNew.some((i) => /DISCARD_/.test(i.code)));
     const aiLast = await createItem(physPhoto.id, { quantity: 2 }, admin);
     check('no group chosen continues the last group', aiLast.created === 2 && aiLast.groupNo === aiTop + 2, aiLast);
     await rejects('a sheet that does not exist is refused', () => createItem(physPhoto.id, { quantity: 1, lineIndex: 9 }, admin), 400);
