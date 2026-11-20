@@ -13,7 +13,8 @@ import type {
   ValueSetterParams,
 } from 'ag-grid-community';
 import { AgGridReact, agGridTheme } from '@/components/ui/AgGridShell';
-import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
+import { DOC_STAGES, docStageOf, type DocStage } from '@/lib/domain';
+import { deptLabel, DEPARTMENTS, ALWAYS_VISIBLE, DOC_STAGE_COLUMN_PREFIX, type ColumnSpec, type CustomColumn, type DeptId } from '@/lib/item-columns';
 import { isoDayToDmy, parseDateRange } from '@/lib/date-range';
 import { mediaTypeText } from '@/lib/item-cells';
 import { MAX_RECHECK_WEEKS, weeksText } from '@/lib/recheck';
@@ -228,6 +229,7 @@ export function ItemFamilyGrid({
   onOpenPhotos,
   onViewPhotos,
   onOpenStatus,
+  onDocStage,
   height,
   onOpenCode,
   onOpenMenu,
@@ -265,6 +267,8 @@ export function ItemFamilyGrid({
   onViewPhotos: (item: GridItem) => void;
   /** Open the item's status (Prasadi): what is missing, remove from archive, make active. */
   onOpenStatus: (item: GridItem) => void;
+  /** Letters: move one letter to the stage of the clicked cell. */
+  onDocStage?: (item: GridItem, stage: DocStage) => void;
   /** CSS height of the grid box. */
   height: string;
   onOpenCode: (item: GridItem) => void;
@@ -497,6 +501,30 @@ export function ItemFamilyGrid({
       }
 
       switch (spec.kind) {
+        case 'docStage': {
+          // One column per stage: a tick once the letter is past it, a dot while it is there; click = move the letter here.
+          const mine = DOC_STAGES.find((s) => spec.id === `${DOC_STAGE_COLUMN_PREFIX}${s}`)!;
+          const pos = (d?: GridItem) => (d ? DOC_STAGES.indexOf(docStageOf(d.attrs)) : -1);
+          return {
+            ...base,
+            editable: false,
+            sortable: true,
+            cellClass: `text-center ${canDetails ? 'cursor-pointer' : ''}`,
+            headerClass: 'text-center',
+            valueGetter: (p) => (p.data ? (pos(p.data) > DOC_STAGES.indexOf(mine) ? 2 : pos(p.data) === DOC_STAGES.indexOf(mine) ? 1 : 0) : 0),
+            tooltipValueGetter: (p) => (canDetails && p.data ? `Click to move this letter to ${spec.label}` : undefined),
+            onCellClicked: (p) => {
+              if (canDetails && p.data && pos(p.data) !== DOC_STAGES.indexOf(mine)) onDocStage?.(p.data, mine);
+            },
+            cellRenderer: (p: ICellRendererParams<GridItem>) => {
+              const at = pos(p.data);
+              const me = DOC_STAGES.indexOf(mine);
+              if (at > me) return <span className="font-bold text-good" aria-label="Done">✓</span>;
+              if (at === me) return <span className="inline-flex h-5 items-center rounded-full bg-accent-soft px-2 text-[11px] font-bold text-accent" aria-label="Now">● Now</span>;
+              return <span className="text-ink-4" aria-hidden>·</span>;
+            },
+          };
+        }
         case 'status':
           return {
             ...base,
@@ -715,7 +743,7 @@ export function ItemFamilyGrid({
       ...groups,
     ];
     return all.map(lockInactive).map(withMarks(marks));
-  }, [marks, columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onOpenCode, onClearCode, onDuplicate, onOpenMenu, onOpenSectionMenu, pinnedIds, onOrder, onPin, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
+  }, [marks, columns, canDetails, canDecide, canReorder, refLists, onOpenPhotos, onViewPhotos, onOpenStatus, onDocStage, onOpenCode, onClearCode, onDuplicate, onOpenMenu, onOpenSectionMenu, pinnedIds, onOrder, onPin, onHide, onDeleteColumn, onShowOnly, onHideDept, onlyDept, onInvalid]);
 
   const onCellValueChanged = (e: CellValueChangedEvent<GridItem>) => {
     if (!e.data) return;

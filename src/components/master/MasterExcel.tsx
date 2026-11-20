@@ -30,7 +30,8 @@ import { AddMasterColumnDialog } from '@/components/master/AddMasterColumnDialog
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useMe } from '@/hooks/useCan';
 import { ExportMenu, Menu, ViewsMenu, menuItem, toolbarButton } from '@/components/master/MasterMenus';
-import { ColumnsPicker, LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, MenuSub, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
+import { MasterColumnsPanel, type PanelColumn } from './MasterColumnsPanel';
+import { LayoutSection, MenuAction, MenuCheck, MenuDivider, MenuHeading, MenuRadio, MenuSub, SheetMenu, useSheetMenu } from '@/components/ui/SheetMenu';
 
 /**
  * The Master Excel: every item of every lot (and its project) in one sheet. Read only, except the File
@@ -160,11 +161,47 @@ export function MasterExcel() {
       ...(customDefs.data?.columns ?? []).map(
         (c): ColumnSpec => ({ id: c.key, label: c.label, dept: 'custom', kind: c.kind === 'text' ? 'text' : 'readonly', width: 170 }),
       ),
-      // Columns lots added to their own Excel, picked from the "Lot columns" menu (read-only; each row shows its own lot's value).
-      ...view.lotCols.map((label): ColumnSpec => ({ id: `lc_${label.trim().toLowerCase()}`, label, dept: 'custom', kind: 'readonly', width: 170, hint: 'A column added to some lots’ own Excel.' })),
     ],
-    [customDefs.data, view.lotCols],
+    [customDefs.data],
   );
+  /** Columns lots added to their own Excel, picked from the "Lot columns" menu: each sits in the department its lots put it in, and can be filtered. */
+  const lotColumnDefs = customDefs.data?.lotColumns;
+  const withLotCols = useMemo<ColumnSpec[]>(() => {
+    const out = [...allColumns];
+    for (const label of view.lotCols) {
+      const def = lotColumnDefs?.find((d) => d.label.trim().toLowerCase() === label.trim().toLowerCase());
+      const dept = def?.dept ?? 'custom';
+      const spec: ColumnSpec = { id: `lc_${label.trim().toLowerCase()}`, label, dept, kind: 'readonly', width: 170, hint: 'A column added to some lots’ own Excel.' };
+      let at = -1;
+      out.forEach((c, i) => {
+        if (c.dept === dept) at = i;
+      });
+      if (at < 0) out.push(spec);
+      else out.splice(at + 1, 0, spec);
+    }
+    return out;
+  }, [allColumns, view.lotCols, lotColumnDefs]);
+  /** How a column is filtered: the registry's filter, or — for a lot column — a filter on its typed value. */
+  const filterOf = useCallback(
+    (c: ColumnSpec): MasterFilter | undefined => {
+      if (!c.id.startsWith('lc_')) return MASTER_FILTERS[c.id];
+      const def = lotColumnDefs?.find((d) => d.label.trim().toLowerCase() === c.label.trim().toLowerCase());
+      return { param: `lcf:${c.label}`, type: def?.type === 'yesno' ? 'yesno' : 'text' };
+    },
+    [lotColumnDefs],
+  );
+  /** The typed filters as query parameters: lot-column filters travel together as one JSON object. */
+  const toQuery = useCallback((f: Record<string, string>): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const lot: Record<string, string> = {};
+    for (const [k, v] of Object.entries(f)) {
+      if (!v) continue;
+      if (k.startsWith('lcf:')) lot[k.slice(4)] = v;
+      else out[k] = v;
+    }
+    if (Object.keys(lot).length > 0) out.lotFilters = JSON.stringify(lot);
+    return out;
+  }, []);
   const [addColumn, setAddColumn] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -255,9 +292,9 @@ export function MasterExcel() {
 
   const sort = view.sort && SORTABLE.has(view.sort) ? view.sort : '';
   const params = useMemo(() => {
-    const p: Record<string, string | number | undefined> = { ...applied, format, page, pageSize, sort: sort || undefined, dir: sort ? view.dir : undefined, lotCols: view.lotCols.length > 0 ? view.lotCols.join('|') : undefined };
+    const p: Record<string, string | number | undefined> = { ...toQuery(applied), format, page, pageSize, sort: sort || undefined, dir: sort ? view.dir : undefined, lotCols: view.lotCols.length > 0 ? view.lotCols.join('|') : undefined };
     return p;
-  }, [applied, format, page, pageSize, sort, view.dir, view.lotCols]);
+  }, [applied, toQuery, format, page, pageSize, sort, view.dir, view.lotCols]);
   const key = JSON.stringify(params);
   const list = useQuery({
     queryKey: queryKeys.master.list(key),
@@ -270,7 +307,7 @@ export function MasterExcel() {
 
   // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
   // every format has — a format's own columns need that format picked (and Export writes a sheet each).
-  const viewCols = useMemo(() => (format ? forFormat(allColumns, format) : allColumns.filter(isCommonColumn)), [format, allColumns]);
+  const viewCols = useMemo(() => (format ? forFormat(withLotCols, format) : withLotCols.filter((c) => isCommonColumn(c) || c.id.startsWith('lc_'))), [format, withLotCols]);
   const shownDepts = view.depts ?? BANDS.map((b) => b.id);
   // The custom band is always on (a column is hidden one by one from the Columns menu).
   const baseColumns = useMemo(() => viewCols.filter((c) => c.dept === 'custom' || shownDepts.includes(c.dept)), [viewCols, shownDepts]);
@@ -307,12 +344,12 @@ export function MasterExcel() {
   /* ------------------------------------------------------------------- filter chips */
   const paramInfo = useMemo(() => {
     const m = new Map<string, ColumnSpec>();
-    for (const c of allColumns) {
-      const f = MASTER_FILTERS[c.id];
+    for (const c of withLotCols) {
+      const f = filterOf(c);
       if (f) m.set(f.param, c);
     }
     return m;
-  }, [allColumns]);
+  }, [withLotCols, filterOf]);
   const chipValue = (param: string, v: string): string => {
     const c = paramInfo.get(param);
     if (c?.refList) return refLabel(c.refList, v);
@@ -350,7 +387,7 @@ export function MasterExcel() {
   const fetchAll = async (): Promise<MasterRow[]> => {
     const out: MasterRow[] = [];
     for (let p = 1; out.length < EXPORT_CAP; p += 1) {
-      const res = await masterApi.list({ ...applied, format, sort: sort || undefined, dir: sort ? view.dir : undefined, lotCols: view.lotCols.length > 0 ? view.lotCols.join('|') : undefined, page: p, pageSize: EXPORT_PAGE });
+      const res = await masterApi.list({ ...toQuery(applied), format, sort: sort || undefined, dir: sort ? view.dir : undefined, lotCols: view.lotCols.length > 0 ? view.lotCols.join('|') : undefined, page: p, pageSize: EXPORT_PAGE });
       out.push(...res.rows);
       if (out.length >= res.total || res.rows.length === 0) break;
     }
@@ -372,7 +409,7 @@ export function MasterExcel() {
         download(new Blob([`﻿${[head, ...body].join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `${stem}.csv`);
       } else {
         // One format: one sheet, the columns as shown. All formats: one sheet per format, each with that format's own columns.
-        const shownCols = allColumns.filter((c) => (c.dept === 'custom' || shownDepts.includes(c.dept)) && !view.hidden.includes(c.id));
+        const shownCols = withLotCols.filter((c) => (c.dept === 'custom' || shownDepts.includes(c.dept)) && !view.hidden.includes(c.id));
         const byFormat = new Map<string, MasterRow[]>();
         for (const r of picked) byFormat.set(r.format, [...(byFormat.get(r.format) ?? []), r]);
         const sheets = format
@@ -449,44 +486,53 @@ export function MasterExcel() {
   const headTop = filterRowOn ? ['top-0', 'top-7', 'top-16'] : ['top-0', 'top-7'];
   const first = (page - 1) * pageSize;
 
-  /** The Columns button's dropdown: whole sections, a searchable list of every column, columns lots added, reset, add. */
+  /** The Columns button's dropdown: one list grouped by department, columns lots added included (see MasterColumnsPanel). */
   const columnsPanel = (close: () => void) => {
-        const lotCols = customDefs.data?.lotColumns ?? [];
-        const pickerColumns = [
-          ...viewCols.map((c) => ({ id: c.id, label: c.label, group: deptLabel(c.dept), checked: !view.hidden.includes(c.id), locked: false })),
-        ];
-        const toggleDept = (id: string, on: boolean) => setView({ depts: on ? BANDS.map((x) => x.id).filter((x) => x === id || shownDepts.includes(x)) : shownDepts.filter((x) => x !== id) });
+    const addedLot = new Set(view.lotCols.map((l) => l.trim().toLowerCase()));
+    const panelColumns: PanelColumn[] = [
+      ...viewCols.map((c) => ({
+        id: c.id,
+        label: c.label,
+        group: c.dept,
+        checked: !view.hidden.includes(c.id) && (c.dept === 'custom' || shownDepts.includes(c.dept as never)),
+        tag: c.id.startsWith('lc_') ? 'lots' : undefined,
+      })),
+      // Columns lots added to their own Excel that are not on this sheet yet: ticking one adds it, under its department.
+      ...(customDefs.data?.lotColumns ?? [])
+        .filter((d) => !addedLot.has(d.label.trim().toLowerCase()))
+        .map((d) => ({ id: `lcol:${d.label}`, label: d.label, group: d.dept as string, checked: false, tag: `${d.lots} ${d.lots === 1 ? 'lot' : 'lots'}` })),
+    ];
+    const groups = BANDS.filter((bd) => panelColumns.some((c) => c.group === bd.id)).map((bd) => ({ id: bd.id as string, label: bd.label }));
+    const showDept = (d: string) => (shownDepts.includes(d as never) || d === 'custom' ? {} : { depts: BANDS.map((x) => x.id).filter((x) => x === d || shownDepts.includes(x)) });
     return (
-      <>
-                <div className="px-3 pb-1 text-[12px]">
-                  <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-ink-3 hover:text-ink" onClick={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {}, depts: DEFAULT_VIEW.depts, lotCols: [] })}>
-                    Reset columns
-                  </button>
-                  <span aria-hidden className="mx-2 text-ink-4">·</span>
-                  <button type="button" className="cursor-pointer border-0 bg-transparent p-0 text-accent" onClick={() => { close(); setAddColumn(true); }}>
-                    + Add a column
-                  </button>
-                </div>
-                {visibleBands.length > 1 ? (
-                  <>
-                    <div className="px-3 pt-1 text-[11px] font-semibold text-ink-3">Whole sections</div>
-                    {visibleBands.map((b) => (
-                      <MenuCheck key={b.id} checked={shownDepts.includes(b.id)} onChange={(on) => toggleDept(b.id, on)}>{b.label}</MenuCheck>
-                    ))}
-                  </>
-                ) : null}
-                <ColumnsPicker
-                  columns={pickerColumns}
-                  onToggle={(id, on) => {
-                    if (id.startsWith('lcol:')) {
-                      const label = id.slice(5);
-                      setView((v) => ({ lotCols: on ? [...v.lotCols, label] : v.lotCols.filter((x) => x.toLowerCase() !== label.toLowerCase()) }));
-                    } else setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...v.hidden, id] }));
-                  }}
-                  onShowAll={() => setView({ hidden: [] })}
-                  onHideAll={() => setView({ hidden: viewCols.slice(1).map((c) => c.id) })}
-                />
-      </>
+      <MasterColumnsPanel
+        columns={panelColumns}
+        groups={groups}
+        onToggle={(id, on) => {
+          if (id.startsWith('lcol:')) {
+            const label = id.slice(5);
+            const d = customDefs.data?.lotColumns.find((x) => x.label === label)?.dept ?? 'custom';
+            setView((v) => ({ lotCols: v.lotCols.some((x) => x.toLowerCase() === label.toLowerCase()) ? v.lotCols : [...v.lotCols, label], ...showDept(d) }));
+          } else if (id.startsWith('lc_')) {
+            // A lot column that is on the sheet: unticking takes it off again (it is listed below, ready to add back).
+            setView((v) => ({ lotCols: v.lotCols.filter((l) => `lc_${l.trim().toLowerCase()}` !== id) }));
+          } else {
+            const d = viewCols.find((c) => c.id === id)?.dept ?? 'custom';
+            setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...v.hidden, id], ...(on ? showDept(d) : {}) }));
+          }
+        }}
+        onToggleGroup={(g, on) => {
+          const ids = viewCols.filter((c) => c.dept === g && !c.id.startsWith('lc_') && c.id !== viewCols[0]?.id).map((c) => c.id);
+          setView((v) => ({ hidden: on ? v.hidden.filter((x) => !ids.includes(x)) : [...new Set([...v.hidden, ...ids])], ...(on ? showDept(g) : {}) }));
+        }}
+        onShowAll={() => setView({ hidden: [], depts: DEFAULT_VIEW.depts })}
+        onHideAll={() => setView({ hidden: viewCols.slice(1).map((c) => c.id) })}
+        onReset={() => setView({ hidden: DEFAULT_VIEW.hidden, order: [], pinned: [], widths: {}, depts: DEFAULT_VIEW.depts, lotCols: [] })}
+        onAdd={() => {
+          close();
+          setAddColumn(true);
+        }}
+      />
     );
   };
 
@@ -529,36 +575,6 @@ export function MasterExcel() {
           }
         >
           {(close) => columnsPanel(close)}
-        </Menu>
-        <Menu label="Lot columns" width={300} trigger={<>Lot columns{view.lotCols.length > 0 ? ` (${view.lotCols.length})` : ''} ▾</>}>
-          {() => {
-            const available = customDefs.data?.lotColumns ?? [];
-            return (
-              <>
-                <div className="px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-4">Columns added to lots</div>
-                {available.length === 0 ? <p className="m-0 px-3 py-2 text-[12.5px] text-ink-3">No lot has added its own column yet.</p> : null}
-                {available.map((c) => {
-                  const on = view.lotCols.some((x) => x.toLowerCase() === c.label.toLowerCase());
-                  return (
-                    <button
-                      key={c.label.toLowerCase()}
-                      type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={on}
-                      className={menuItem}
-                      onClick={() => setView((v) => ({ lotCols: on ? v.lotCols.filter((x) => x.toLowerCase() !== c.label.toLowerCase()) : [...v.lotCols, c.label] }))}
-                    >
-                      {on ? '✓ ' : ''}
-                      {c.label}
-                      <span className="ml-1 text-ink-4">
-                        · {c.lots} {c.lots === 1 ? 'lot' : 'lots'}
-                      </span>
-                    </button>
-                  );
-                })}
-              </>
-            );
-          }}
         </Menu>
         <button type="button" className={toolbarButton} onClick={() => setAddColumn(true)} title="Add a column to this sheet (for everyone)">
           + Column
@@ -749,13 +765,13 @@ export function MasterExcel() {
                     {columns.map((c) => (
                       <th key={c.id} style={pinLeft.has(c.id) ? { left: pinLeft.get(c.id) } : undefined} className={`sticky ${headTop[2]} ${pinLeft.has(c.id) ? 'z-30' : 'z-20'} border-b border-line bg-surface px-1.5 py-1 font-normal`}>
                         <FilterCell
-                          filter={MASTER_FILTERS[c.id]}
-                          value={filters[MASTER_FILTERS[c.id]?.param ?? ''] ?? ''}
+                          filter={filterOf(c)}
+                          value={filters[filterOf(c)?.param ?? ''] ?? ''}
                           onChange={(v) => {
-                            const f = MASTER_FILTERS[c.id];
+                            const f = filterOf(c);
                             if (f) setFilters((prev) => ({ ...prev, [f.param]: v }));
                           }}
-                          options={MASTER_FILTERS[c.id] ? optionsFor(MASTER_FILTERS[c.id]!) : []}
+                          options={filterOf(c) ? optionsFor(filterOf(c)!) : []}
                           label={c.label}
                         />
                       </th>

@@ -10,7 +10,7 @@ import { ActivityLog } from '@/models/ActivityLog';
 import { ArchiveLot } from '@/models/ArchiveLot';
 import { LotItem } from '@/models/LotItem';
 import { withAudit, auditActor } from '@/server/audit';
-import { maxItemNumber, usedItemNumbers } from '@/server/codes';
+import { canonicalPair, maxItemNumber, takenCodes } from '@/server/codes';
 import { canWorkLot } from '@/server/lots/access';
 import { gridLocked } from '@/server/lots/item-grid';
 import { can } from '@/server/permissions';
@@ -72,11 +72,10 @@ export async function recodeSheet(lotId: string, body: SheetCodeBody, ctx: Mutat
 }
 
 async function recodeSheetCore(lotId: string, body: SheetCodeBody, ctx: MutationContext): Promise<SheetCodeResponse> {
-  const abbr1 = body.abbr1.trim();
-  const abbr2 = body.abbr2.trim();
-  const e1 = abbrError('First abbreviation', abbr1);
-  const e2 = abbrError('Second abbreviation', abbr2);
+  const e1 = abbrError('First abbreviation', body.abbr1.trim());
+  const e2 = abbrError('Second abbreviation', body.abbr2.trim());
   if (e1 || e2) throw new HttpError(400, (e1 ?? e2)!);
+  const { abbr1, abbr2 } = await canonicalPair(body.abbr1.trim(), body.abbr2.trim());
 
   return withAudit({
     lotId,
@@ -110,14 +109,13 @@ async function recodeSheetCore(lotId: string, body: SheetCodeBody, ctx: Mutation
         { session },
       );
       const start = body.startNo ?? (await maxItemNumber(abbr1, abbr2, session)) + 1;
-      const end = start + own.length - 1;
-      const used = await usedItemNumbers(abbr1, abbr2, start, end, session);
-      if (used.size > 0) {
-        const first = [...used].sort((a, b) => a - b)[0]!;
-        throw new HttpError(409, `${abbr1}-${abbr2}-${String(first).padStart(4, '0')} is already used by another item. Pick a different start number.`);
-      }
       // Each item keeps its own last three digits (a custom copy number is not reset to 000).
       const codes = own.map((row, idx) => buildItemCode({ abbr1, abbr2, no: start + idx, kind: parseItemCodeParts(row.code)?.kind ?? KIND_ORIGINAL, copy: parseItemCodeParts(row.code)?.copy ?? 0 }));
+      // Only a clash of the whole code counts (the sheet's own items were parked under placeholders above).
+      const clash = await takenCodes(codes, session);
+      if (clash.size > 0) {
+        throw new HttpError(409, `${[...clash][0]} is already used by another item. Pick a different start number.`);
+      }
       await LotItem.bulkWrite(
         own.map((i, idx) => ({ updateOne: { filter: { _id: i._id }, update: { $set: { code: codes[idx]! } } } })),
         { session },
@@ -203,30 +201,27 @@ async function setItemNumberCore(lotId: string, body: ItemNumberBody, ctx: Mutat
       if (parts.kind === KIND_DUPLICATE && !leavesDuplicate) {
         throw new HttpError(400, 'A duplicate takes its original’s number — change the original instead, or give it another letter.');
       }
-      const abbr1 = (body.abbr1 ?? parts.abbr1).trim();
-      const abbr2 = (body.abbr2 ?? parts.abbr2).trim();
-      const pairProblem = abbrError('First abbreviation', abbr1) ?? abbrError('Second abbreviation', abbr2);
+      const typed1 = (body.abbr1 ?? parts.abbr1).trim();
+      const typed2 = (body.abbr2 ?? parts.abbr2).trim();
+      const pairProblem = abbrError('First abbreviation', typed1) ?? abbrError('Second abbreviation', typed2);
       if (pairProblem) throw new HttpError(400, pairProblem);
+      // Same pair in other capital / small letters is the same pair: use the archive's own spelling.
+      const { abbr1, abbr2 } = typed1 === parts.abbr1 && typed2 === parts.abbr2 ? { abbr1: typed1, abbr2: typed2 } : await canonicalPair(typed1, typed2, session);
       const pairChanged = abbr1 !== parts.abbr1 || abbr2 !== parts.abbr2;
       if (pairChanged && parts.kind === KIND_DUPLICATE) {
         throw new HttpError(400, 'A duplicate follows its original’s abbreviations — change the original instead.');
       }
       // A new abbreviation pair keeps the number when it is free there, else takes the pair's next free number.
       let no = leavesDuplicate ? (await maxItemNumber(abbr1, abbr2, session)) + 1 : (body.no ?? parts.no);
-      if (pairChanged && !leavesDuplicate && body.no === undefined) {
-        const used = await usedItemNumbers(abbr1, abbr2, no, no, session);
-        if (used.has(no)) no = (await maxItemNumber(abbr1, abbr2, session)) + 1;
-      }
       const copy = leavesDuplicate ? 0 : (body.copy ?? parts.copy);
-      if (!leavesDuplicate && !pairChanged && no === parts.no && copy === parts.copy && kind === parts.kind) return { code: it.code };
-      if (!leavesDuplicate && (parts.no !== no || pairChanged)) {
-        const used = await usedItemNumbers(abbr1, abbr2, no, no, session);
-        if (used.has(no)) {
-          throw new HttpError(409, `${abbr1}-${abbr2}-${String(no).padStart(4, '0')} is already used.`);
-        }
+      // A new abbreviation pair keeps the number when the finished code is free there, else takes the pair's next free number.
+      if (pairChanged && !leavesDuplicate && body.no === undefined) {
+        if ((await takenCodes([buildItemCode({ abbr1, abbr2, no, copy, kind })], session, [it._id])).size > 0) no = (await maxItemNumber(abbr1, abbr2, session)) + 1;
       }
+      if (!leavesDuplicate && !pairChanged && no === parts.no && copy === parts.copy && kind === parts.kind) return { code: it.code };
       const code = buildItemCode({ abbr1, abbr2, no, copy, kind });
-      if (await LotItem.exists({ code, _id: { $ne: it._id } }).session(session)) {
+      // Only the WHOLE code must be free: the same number with another letter or last three digits is a different code.
+      if ((await takenCodes([code], session, [it._id])).size > 0) {
         throw new HttpError(409, `${code} is already used by another item.`);
       }
       await LotItem.updateOne(

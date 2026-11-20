@@ -22,6 +22,8 @@
  * (`ItemsBulkSet`); a column without `field` is read-only (or has its own flow).
  */
 
+import { DOC_STAGES, DOC_STAGE_LABELS } from '@/lib/domain';
+
 export const DEPARTMENTS = [
   { id: 'details', label: 'Details' },
   { id: 'decision', label: 'Decision' },
@@ -53,7 +55,8 @@ export type ColumnKind =
   | 'info' //      computed text, shown but never edited here
   | 'number' //    whole number
   | 'photo' //     the item's photos: a thumbnail, click to open them (see item images)
-  | 'status'; //   Prasadi: Active / Inactive / Details Missing (worked out; click to change)
+  | 'status' //    Prasadi: Active / Inactive / Details Missing (worked out; click to change)
+  | 'docStage'; // Letters: one column per stage — a tick when the letter is past it, a dot while it is there (click = move it here)
 
 export interface ColumnSpec {
   id: string;
@@ -120,11 +123,11 @@ export const SHEET_HIDDEN: Record<string, readonly string[]> = {
  * A letters (Documents) sheet is small: the code (the scanned file's name), what it is, a remark, and the lot columns of the
  * Master Excel. Nothing about decisions, digitalization, storage or logging applies to letters.
  */
-const DOCUMENT_COLUMNS = new Set(['mediaType', 'code', 'remarks', 'lotNo', 'projectNo', 'projectName', 'lotStage', 'assignee']);
+const DOCUMENT_COLUMNS = new Set(['mediaType', 'code', 'letterGuru', 'remarks', 'lotNo', 'projectNo', 'projectName', 'lotStage', 'assignee']);
 
 /** Is this column shown on a sheet of the given format? (`appliesToFormat`, minus the columns the format hides.) */
 export const shownOnSheet = (c: Pick<ColumnSpec, 'id' | 'formats' | 'notFormats'>, format: string | null): boolean => {
-  if (format === 'documents') return DOCUMENT_COLUMNS.has(c.id) || c.id.startsWith('mc_') || c.id.startsWith('lc_');
+  if (format === 'documents') return DOCUMENT_COLUMNS.has(c.id) || c.id.startsWith(DOC_STAGE_COLUMN_PREFIX) || c.id.startsWith('mc_') || c.id.startsWith('lc_');
   return appliesToFormat(c, format) && !(format !== null && (SHEET_HIDDEN[format]?.includes(c.id) ?? false));
 };
 
@@ -188,6 +191,18 @@ export const allLabels = (c: Pick<ColumnSpec, 'label' | 'labels' | 'aliases'>): 
 export const PRASADI_FORMAT = 'prasadi';
 const PRASADI = [PRASADI_FORMAT];
 
+/** Letters: one column per stage of the cycle. The id is `ds_<stage>`; the letter's own stage is `attrs.docStage`. */
+export const DOC_STAGE_COLUMN_PREFIX = 'ds_';
+const DOC_STAGE_COLUMNS: ColumnSpec[] = DOC_STAGES.map((s) => ({
+  id: `${DOC_STAGE_COLUMN_PREFIX}${s}`,
+  label: DOC_STAGE_LABELS[s],
+  dept: 'details' as const,
+  kind: 'docStage' as const,
+  width: 112,
+  formats: ['documents'],
+  hint: 'A tick = the letter has finished this stage, a dot = it is here now. Click a cell to move the letter to this stage.',
+}));
+
 export const BUILTIN_COLUMNS: ColumnSpec[] = [
   // Details
   { id: 'mediaType', label: 'Media type', dept: 'details', kind: 'readonly', width: 190 },
@@ -199,6 +214,8 @@ export const BUILTIN_COLUMNS: ColumnSpec[] = [
   { id: 'status', label: 'Status', dept: 'details', kind: 'status', width: 150, formats: PRASADI, hint: 'Active, Inactive (removed from the archive) or Details Missing (a starred field is still empty). Click to see what is missing or to remove the item.' },
   { id: 'itemName', required: true, label: 'Title', dept: 'details', kind: 'text', field: 'itemName', width: 200, formats: PRASADI, hint: 'What it is, e.g. Mala, Vastra, Charnarvind, Walking stick.' },
   { id: 'photo', required: true, label: 'Photo', dept: 'details', kind: 'photo', width: 180, formats: PRASADI, hint: 'Click to see, take or add photos of this item (up to 5; the first is the cover).' },
+  { id: 'letterGuru', label: 'Guru', dept: 'details', kind: 'ref', field: 'letterGuru', attr: true, refList: 'letterGuru', width: 120, formats: ['documents'], hint: 'Whose letter this is (YGJ, PSM, MSM …).' },
+  ...DOC_STAGE_COLUMNS,
   { id: 'photoArchive', label: 'Photo Archive', dept: 'details', kind: 'text', field: 'photoArchive', attr: true, width: 190, formats: PRASADI, hint: 'The photo-archive reference of a photo of this item, e.g. PSM.SPUR.1116874.' },
   { id: 'category', required: true, label: 'Category', dept: 'details', kind: 'ref', field: 'category', attr: true, refList: 'prasadiCategory', resets: ['subcategory'], width: 170, formats: PRASADI },
   { id: 'subcategory', label: 'Subcategory', dept: 'details', kind: 'ref', field: 'subcategory', attr: true, refList: 'prasadiSubcategory', refParent: { column: 'category', metaKey: 'category' }, width: 190, formats: PRASADI, hint: 'Pick the Category first — only its subcategories are offered.' },

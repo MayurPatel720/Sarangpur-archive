@@ -154,7 +154,7 @@ async function excelRoundTrip() {
   check('no format known = every column', allColumns([]).every((c) => appliesToFormat(c, null)));
   const common = allColumns([]).filter(isCommonColumn).map((c) => c.label);
   check('common columns carry no format-specific column, but include the Decision columns (the Master Excel shows them for All formats)', !['Blessed by', 'Name on tape', 'Re-check in'].some((l) => common.includes(l)) && ['Place', 'Logging date', 'Digital', 'Redigital', 'Discard', 'Decision remark'].every((l) => common.includes(l)), common);
-  check('every attr column is prasadi-only and has a storable kind', allColumns([]).filter((c) => c.attr).every((c) => c.formats?.includes('prasadi') && ['text', 'longtext', 'flag', 'ref', 'number', 'date', 'dateRange'].includes(c.kind)));
+  check('every attr column is prasadi-only and has a storable kind', allColumns([]).filter((c) => c.attr).every((c) => (c.formats?.includes('prasadi') || c.id === 'letterGuru') && ['text', 'longtext', 'flag', 'ref', 'number', 'date', 'dateRange'].includes(c.kind)));
   check('every dropdown column names its list; a dependent one names its parent', allColumns([]).filter((c) => c.kind === 'ref').every((c) => Boolean(c.refList) && (!c.refParent || allColumns([]).some((p2) => p2.id === c.refParent!.column))));
   check('weeks → due date', nextCheckDate(new Date('2026-10-17T15:00:00Z'), 3).toISOString().slice(0, 10) === '2026-11-07');
   check('overdue days', daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-10T08:00:00Z')) === 3 && daysOverdue(new Date('2026-11-07T00:00:00Z'), new Date('2026-11-07T23:00:00Z')) === 0);
@@ -708,7 +708,11 @@ async function main() {
     const both = await setItemNumber(digitalPhoto.id, { itemId: cd[0]!.id, no: c0.no + 500, copy: 12 }, admin);
     check('number and last digits change together', both.code === buildItemCode({ ...c0, no: c0.no + 500, copy: 12 }), both.code);
     await setItemNumber(digitalPhoto.id, { itemId: cd[0]!.id, no: c0.no, copy: 7 }, admin);
-    await rejects('a number already used by another item is refused', () => setItemNumber(digitalPhoto.id, { itemId: cd[1]!.id, no: c0.no }, admin), 409);
+    await rejects('a code that is the same all the way through is refused', () => setItemNumber(digitalPhoto.id, { itemId: cd[1]!.id, no: c0.no, copy: 7 }, admin), 409);
+    const it1Parts = parseItemCodeParts(cd[1]!.code)!;
+    const sameNo = await setItemNumber(digitalPhoto.id, { itemId: cd[1]!.id, no: c0.no }, admin);
+    check('the same number with other last digits is a different code, so it is allowed', sameNo.code === buildItemCode({ ...it1Parts, no: c0.no }), sameNo.code);
+    await setItemNumber(digitalPhoto.id, { itemId: cd[1]!.id, no: it1Parts.no }, admin);
     await rejects('nothing to change is refused at the schema', async () => { const r = itemNumberBodySchema.safeParse({ itemId: cd[0]!.id }); if (!r.success) throw Object.assign(new Error('bad'), { status: 400 }); }, 400);
     check('the last digits are limited to 0-999', !itemNumberBodySchema.safeParse({ itemId: cd[0]!.id, copy: 1000 }).success && !itemNumberBodySchema.safeParse({ itemId: cd[0]!.id, copy: -1 }).success && itemNumberBodySchema.safeParse({ itemId: cd[0]!.id, copy: 999 }).success);
     const recoded = await recodeSheet(digitalPhoto.id, { lineIndex: 0, abbr1: 'ZZ', abbr2: 'cpytst', startNo: 9100 }, admin);

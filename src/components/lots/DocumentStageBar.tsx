@@ -1,36 +1,25 @@
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ApiRequestError, lotsApi } from '@/lib/api-client';
-import { DOC_STAGES, DOC_STAGE_LABELS, stepDocStage, type DocStage } from '@/lib/domain';
+import { useQuery } from '@tanstack/react-query';
+import { itemsGridApi } from '@/lib/api-client';
+import { DOC_STAGES, DOC_STAGE_LABELS, docStageOf, type DocStage } from '@/lib/domain';
 import { queryKeys } from '@/lib/query-keys';
 import { useReferenceList } from '@/hooks/useReferenceList';
-import { GhostButton, PrimaryButton } from '@/components/ui/Form';
 import { Panel } from '@/components/ui/primitives';
-import { useToast } from '@/components/ui/Toast';
 
 /**
- * The cycle of a letters lot: Scan & storage, Rewrite, Type, Recheck, Topics, Final edit. Shows where the lot is and moves it
- * one step forward or back. Leaving "Scan & storage" needs every letter to have its code (the server says how many are missing).
+ * The cycle of a letters lot: Scan & storage, Rewrite, Type, Recheck, Topics, Final edit. Every LETTER has its own stage, so this
+ * bar only counts them — how many letters are at each stage. The lot sits at its least advanced letter. Letters are moved from the
+ * sheet below: click a stage cell, or tick rows and use "Next stage". Leaving "Scan & storage" needs the letter's code.
  */
-export function DocumentStageBar({ lotId, stage, canEdit }: { lotId: string; stage: string; canEdit: boolean }) {
-  const toast = useToast();
-  const queryClient = useQueryClient();
+export function DocumentStageBar({ lotId, stage }: { lotId: string; stage: string; canEdit?: boolean }) {
   const stages = useReferenceList('stage');
+  const grid = useQuery({ queryKey: queryKeys.lots.itemsGrid(lotId), queryFn: () => itemsGridApi.get(lotId) });
   const label = (s: DocStage) => stages.data?.items.find((i) => i.value === s)?.label ?? DOC_STAGE_LABELS[s];
   const at = (DOC_STAGES as readonly string[]).indexOf(stage);
-  const next = stepDocStage(stage, 'next');
-  const back = stepDocStage(stage, 'back');
-
-  const move = useMutation({
-    mutationFn: (direction: 'next' | 'back') => lotsApi.moveDocStage(lotId, { direction }),
-    onSuccess: (r) => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
-      toast.success(`Now at ${r.label}`);
-    },
-    onError: (e) => toast.error('Could not move the lot', e instanceof ApiRequestError ? e.message : undefined),
-  });
+  const letters = (grid.data?.items ?? []).filter((i) => i.format === 'documents');
+  const count = new Map<DocStage, number>();
+  for (const l of letters) count.set(docStageOf(l.attrs), (count.get(docStageOf(l.attrs)) ?? 0) + 1);
 
   if (at < 0) return null;
   return (
@@ -39,6 +28,7 @@ export function DocumentStageBar({ lotId, stage, canEdit }: { lotId: string; sta
         <ol aria-label="Letter stages" className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-1 gap-y-2 p-0">
           {DOC_STAGES.map((s, i) => {
             const state = i < at ? 'done' : i === at ? 'now' : 'todo';
+            const n = count.get(s) ?? 0;
             return (
               <li key={s} className="flex items-center gap-1">
                 <span
@@ -53,6 +43,9 @@ export function DocumentStageBar({ lotId, stage, canEdit }: { lotId: string; sta
                 >
                   <span aria-hidden>{state === 'done' ? '✓' : i + 1}</span>
                   {label(s)}
+                  <span className="rounded-full bg-surface px-1.5 text-[11px] font-bold tabular-nums text-ink-2" title={`${n} ${n === 1 ? 'letter is' : 'letters are'} here`}>
+                    {n}
+                  </span>
                 </span>
                 {i < DOC_STAGES.length - 1 ? (
                   <span aria-hidden className="text-ink-4">
@@ -63,22 +56,9 @@ export function DocumentStageBar({ lotId, stage, canEdit }: { lotId: string; sta
             );
           })}
         </ol>
-        {canEdit ? (
-          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
-            {back ? (
-              <GhostButton onClick={() => move.mutate('back')} disabled={move.isPending}>
-                ← Back to {label(back)}
-              </GhostButton>
-            ) : null}
-            {next ? (
-              <PrimaryButton onClick={() => move.mutate('next')} disabled={move.isPending}>
-                {move.isPending ? 'Moving…' : `Move to ${label(next)} →`}
-              </PrimaryButton>
-            ) : (
-              <span className="text-[12.5px] text-ink-3">This is the last stage.</span>
-            )}
-          </div>
-        ) : null}
+        <p className="m-0 ml-auto max-w-[320px] text-[12px] leading-snug text-ink-3">
+          Each letter has its own stage. Click a stage cell in the sheet, or tick letters and use “Next stage”.
+        </p>
       </div>
     </Panel>
   );

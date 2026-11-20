@@ -1123,7 +1123,7 @@ function LotDetailInner({ lotId }: { lotId: string }) {
           <div className="sm:ml-auto flex items-center gap-2 flex-shrink-0">
             <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>{stageLabel}</Badge>
             {lot.format === 'documents' ? (
-              lot.guru ? <Badge severity="info">{lot.guru}</Badge> : null
+              <Badge severity="info">{lot.guru ?? 'Mixed Gurus'}</Badge>
             ) : (
               <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
                 <span className="capitalize">{lot.decision}</span>

@@ -87,6 +87,8 @@ const mediaLineSchema = z.object({
   quantityAlreadyDigitized: z.number(),
   notDigitizedReason: z.string().nullable(),
   quantityRemarks: z.string().nullable(),
+  /** Letters: whose letters this row holds. */
+  guru: z.string().nullable().optional(),
 });
 export type MediaLine = z.output<typeof mediaLineSchema>;
 
@@ -176,9 +178,19 @@ export const lotCreateBodySchema = z
 export type LotCreateBody = z.input<typeof lotCreateBodySchema>;
 
 /** POST /api/lots/[lotId]/stage — a letters lot moves one step along its own cycle. */
-export const docStageBodySchema = z.object({ direction: z.enum(['next', 'back']) });
+/**
+ * Moves letters along their cycle: one step (`direction`) or straight to a stage (`stage`). `itemIds` = which letters
+ * (omitted = every letter of the lot).
+ */
+export const docStageBodySchema = z
+  .object({
+    direction: z.enum(['next', 'back']).optional(),
+    stage: z.enum(['doc_scan', 'doc_rewrite', 'doc_type', 'doc_recheck', 'doc_topics', 'doc_final']).optional(),
+    itemIds: z.array(z.string().min(1)).max(5000).optional(),
+  })
+  .refine((b) => (b.direction ? 1 : 0) + (b.stage ? 1 : 0) === 1, { message: 'Say a direction or a stage.' });
 export type DocStageBody = z.input<typeof docStageBodySchema>;
-export const docStageResponseSchema = z.object({ stage: z.string(), label: z.string() });
+export const docStageResponseSchema = z.object({ stage: z.string(), label: z.string(), moved: z.number().int() });
 export type DocStageResponse = z.output<typeof docStageResponseSchema>;
 
 export const lotCreateResponseSchema = z.object({

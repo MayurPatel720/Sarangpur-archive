@@ -1,4 +1,4 @@
-import { STAGE_LABELS, type Stage } from '@/lib/domain';
+import { DOC_STAGES, STAGE_LABELS, docStageOf, type Stage } from '@/lib/domain';
 import { isoDayToDmy } from '@/lib/date-range';
 import { weeksText } from '@/lib/recheck';
 import { ITEM_STATUS_LABELS, itemStatus } from '@/lib/item-status';
@@ -31,6 +31,11 @@ export function cellText(
     if (spec.custom.type === 'yesno') return typeof v === 'boolean' ? yn(v) : '';
     if (spec.custom.type === 'date') return isoDayToDmy(String(v));
     return String(v);
+  }
+  if (spec.kind === 'docStage') {
+    const at = DOC_STAGES.indexOf(docStageOf(row.attrs));
+    const mine = DOC_STAGES.findIndex((s) => spec.id === `ds_${s}`);
+    return mine < 0 ? '' : mine < at ? 'Done' : mine === at ? 'Now' : '';
   }
   if (spec.kind === 'status') {
     const st = itemStatus(row);

@@ -39,7 +39,7 @@ export const CLEAR = '__clear';
 /** The Discard field's extra choice "Yes and clear code" (sent as `discardClearCode`, not as a Yes/No). */
 export const DISCARD_CLEAR_CODE = '__clearcode';
 
-const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info', 'photo', 'status']);
+const SKIPPED_KINDS = new Set<ColumnSpec['kind']>(['readonly', 'code', 'duplicate', 'info', 'photo', 'status', 'docStage']);
 
 const inputOf = (c: ColumnSpec & { custom?: CustomColumn }): BulkInput | null => {
   if (c.custom) return c.custom.type; // text | number | yesno | date

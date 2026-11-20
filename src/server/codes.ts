@@ -83,13 +83,29 @@ export function formatItemCode(prefix: string, origin: string, seq: number, kind
  */
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/**
+ * The abbreviation pair written the way the archive already writes it: "ALB-Surat" typed after "ALB-surat" exists gives "ALB-surat",
+ * so capital / small letters never start a second counter for the same pair.
+ */
+export async function canonicalPair(abbr1: string, abbr2: string, session?: ClientSession): Promise<{ abbr1: string; abbr2: string }> {
+  await connectToDatabase();
+  const hit = await LotItem.findOne({ code: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[A-Z]{1,3}-\\d{3,}$`, $options: 'i' } })
+    .select('code')
+    .session(session ?? null)
+    .lean();
+  const m = hit ? /^(.*)-(\d{4,})-[A-Z]{1,3}-\d{3,}$/i.exec(hit.code) : null;
+  if (!m) return { abbr1, abbr2 };
+  const [a1, a2] = [m[1]!.slice(0, abbr1.length), m[1]!.slice(abbr1.length + 1)];
+  return a1.toLowerCase() === abbr1.toLowerCase() && a2.toLowerCase() === abbr2.toLowerCase() ? { abbr1: a1, abbr2: a2 } : { abbr1, abbr2 };
+}
+
 /** Highest number used by any code (R or D) of the pair, 0 when the pair is unused. */
 export async function maxItemNumber(abbr1: string, abbr2: string, session?: ClientSession): Promise<number> {
   await connectToDatabase();
   const [peak] = await LotItem.aggregate<{ max: number }>([
     // A cleared item (discard-N) keeps its old code in `clearedCode`: that number stays used, never handed out again.
     { $project: { c: { $ifNull: ['$clearedCode', '$code'] } } },
-    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[A-Z]{1,3}-\\d{3,}$` } } },
+    { $match: { c: { $regex: `^${escapeRe(abbr1)}-${escapeRe(abbr2)}-\\d{4,}-[A-Z]{1,3}-\\d{3,}$`, $options: 'i' } } },
     { $project: { n: { $toInt: { $arrayElemAt: [{ $split: ['$c', '-'] }, 2] } } } },
     { $group: { _id: null, max: { $max: '$n' } } },
   ]).session(session ?? null);
@@ -115,6 +131,27 @@ export async function usedItemNumbers(
 }
 
 /**
+ * Which of these FULL codes (letter and last three digits included) already belong to an item — as its code, or as the code a
+ * cleared item gave up. Only an exact match counts: `…-0005-R-000` and `…-0005-M-000` are different codes.
+ */
+export async function takenCodes(codes: string[], session?: ClientSession, exceptIds: unknown[] = []): Promise<Set<string>> {
+  if (codes.length === 0) return new Set();
+  await connectToDatabase();
+  const rows = await LotItem.find({ $or: [{ code: { $in: codes } }, { clearedCode: { $in: codes } }], ...(exceptIds.length ? { _id: { $nin: exceptIds } } : {}) })
+    .select('code clearedCode')
+    .session(session ?? null)
+    .lean();
+  const wanted = new Set(codes);
+  const out = new Set<string>();
+  for (const r of rows) {
+    if (wanted.has(r.code)) out.add(r.code);
+    const c = (r as { clearedCode?: string | null }).clearedCode;
+    if (c && wanted.has(c)) out.add(c);
+  }
+  return out;
+}
+
+/**
  * Hands out `count` consecutive numbers for the pair, starting at `startAt` when given
  * (caller has checked they are free) or after the highest number in use. `pending`
  * carries numbers already handed out earlier in the same unsaved batch (several media
@@ -129,6 +166,7 @@ export async function allocateItemCodes(
   startAt?: number,
 ): Promise<string[]> {
   if (count <= 0) return [];
+  ({ abbr1, abbr2 } = await canonicalPair(abbr1, abbr2, session));
   const key = `${abbr1}-${abbr2}`;
   const base = Math.max(await maxItemNumber(abbr1, abbr2, session), pending?.get(key) ?? 0);
   const first = startAt ?? base + 1;

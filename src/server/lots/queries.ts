@@ -447,6 +447,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
     quantityAlreadyDigitized: number;
     notDigitizedReason?: string | null;
     quantityRemarks?: string | null;
+    guru?: string | null;
   }[];
   const keyByIndex = rawLines.map((l) => mediaSubtypeListKey(l.format));
   const distinctKeys = [...new Set(keyByIndex.filter((k): k is string => k != null))];
@@ -470,6 +471,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       quantityAlreadyDigitized: l.quantityAlreadyDigitized,
       notDigitizedReason: l.notDigitizedReason ?? null,
       quantityRemarks: l.quantityRemarks ?? null,
+      guru: l.guru ?? null,
     };
   });
   let syncProject: { id: string; code: string; name: string; siblingCount: number } | null = null;

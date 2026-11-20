@@ -56,6 +56,18 @@ export function stepDocStage(stage: string, direction: 'next' | 'back'): DocStag
   return DOC_STAGES[direction === 'next' ? i + 1 : i - 1] ?? null;
 }
 
+/** The stage one letter is at (kept in the item's `attrs.docStage`; a letter without one is at "Scan & storage"). */
+export function docStageOf(attrs: Record<string, unknown> | null | undefined): DocStage {
+  const s = attrs?.docStage;
+  return typeof s === 'string' && isDocStage(s) ? s : 'doc_scan';
+}
+
+/** A lot's stage = its least advanced letter (an empty lot sits at "Scan & storage"). */
+export function lotDocStage(stages: readonly DocStage[]): DocStage {
+  if (stages.length === 0) return 'doc_scan';
+  return DOC_STAGES[Math.min(...stages.map((s) => DOC_STAGES.indexOf(s)))]!;
+}
+
 /** A letter that has no code yet is stored under a placeholder; the real code is the scanned file's name. */
 export const PENDING_CODE_PREFIX = 'PENDING-';
 export const isPendingCode = (code: string): boolean => code.startsWith(PENDING_CODE_PREFIX);

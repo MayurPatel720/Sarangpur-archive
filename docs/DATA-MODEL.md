@@ -161,7 +161,7 @@ Custom columns of the Master Excel only, shared by everyone: `key` (`mc_…`, un
 
 ## `archivelots` — letters (Documents format)
 
-New `guru` (a value of the admin list `letterGuru`, null for other formats). `stage` also accepts the six letter stages `doc_scan`, `doc_rewrite`, `doc_type`, `doc_recheck`, `doc_topics`, `doc_final` (in the `stage` list with `board: false`, `inFlight: true`). A letter (`lotitems`) with no code yet has the placeholder code `PENDING-<lotReference>-<nnn>`; setting its code from a file name replaces it. `npm run db:migrate-letters` adds the stages and the guru list and moves existing Documents lots to `doc_scan`.
+New `guru` (a value of the admin list `letterGuru`; null for other formats and for a letters lot whose letters have different Gurus). Each `mediaLines[]` entry also carries `guru`. A letter (`lotitems`) keeps its own Guru in `attrs.letterGuru` and its own stage in `attrs.docStage` (a `doc_*` value; missing = `doc_scan`); the lot `stage` is its least advanced letter. `stage` also accepts the six letter stages `doc_scan`, `doc_rewrite`, `doc_type`, `doc_recheck`, `doc_topics`, `doc_final` (in the `stage` list with `board: false`, `inFlight: true`). A letter (`lotitems`) with no code yet has the placeholder code `PENDING-<lotReference>-<nnn>`; setting its code from a file name replaces it. `npm run db:migrate-letters` adds the stages and the guru list and moves existing Documents lots to `doc_scan`.
 
 ## `machines` — changes (`src/models/Machine.ts`)
 

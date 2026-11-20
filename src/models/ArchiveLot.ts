@@ -91,6 +91,8 @@ const archiveLotSchema = new Schema(
             quantityAlreadyDigitized: { type: Number, required: true, min: 0, default: 0 },
             notDigitizedReason: { type: String, trim: true, default: null },
             quantityRemarks: { type: String, trim: true, default: null },
+            /** Letters only: whose letters this row holds (a value of the admin list `letterGuru`). */
+            guru: { type: String, trim: true, default: null },
           },
           { _id: false },
         ),

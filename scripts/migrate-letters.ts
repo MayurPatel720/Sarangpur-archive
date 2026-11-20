@@ -4,6 +4,7 @@
  *  1. Adds the six letter stages (Scan & storage, Rewrite, Type, Recheck, Topics, Final edit) to the Stages list.
  *  2. Creates the admin list "Letter gurus" (YGJ, PSM, MSM) if it is not in the database yet.
  *  3. Moves every existing Documents lot that is still on the usual pipeline to the first letter stage.
+ *  4. Gives every letter its own stage (the lot's stage, as it was) and its own Guru (the lot's) — letters now carry both.
  *
  *   npm run db:migrate-letters
  */
@@ -12,6 +13,7 @@ import './load-env';
 import { connectToDatabase } from '../src/lib/mongo';
 import { catalogList, catalogToSeedDoc } from '../src/lib/vocab-catalog';
 import { ArchiveLot } from '../src/models/ArchiveLot';
+import { LotItem } from '../src/models/LotItem';
 import { ReferenceList } from '../src/models/ReferenceList';
 import { DOC_STAGES } from '../src/lib/domain';
 
@@ -44,6 +46,14 @@ async function main() {
     { $set: { stage: 'doc_scan', stageEnteredAt: new Date() } },
   );
   console.log(`documents lots moved to Scan & storage: ${moved.modifiedCount}.`);
+  let stamped = 0;
+  for (const lot of await ArchiveLot.find({ format: 'documents' }).select('stage guru').lean()) {
+    const stage = (DOC_STAGES as readonly string[]).includes(lot.stage) ? lot.stage : 'doc_scan';
+    const a = await LotItem.updateMany({ lot: lot._id, 'attrs.docStage': { $exists: false } }, { $set: { 'attrs.docStage': stage } });
+    const b = lot.guru ? await LotItem.updateMany({ lot: lot._id, 'attrs.letterGuru': { $exists: false } }, { $set: { 'attrs.letterGuru': lot.guru } }) : null;
+    stamped += a.modifiedCount + (b?.modifiedCount ?? 0);
+  }
+  console.log(`letters given their own stage / Guru: ${stamped}.`);
   process.exit(0);
 }
 

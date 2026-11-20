@@ -141,6 +141,8 @@ async function createItemCore(
           format,
           // The chosen sheet (media line): its own breakdown stays intake-defined, totals stay truthful.
           lineIndex,
+          // A letter added later takes its sheet's Guru (the lot's, when it has just one).
+          ...(format === 'documents' && ((line as { guru?: string | null } | undefined)?.guru ?? lot.guru) ? { attrs: { letterGuru: (line as { guru?: string | null } | undefined)?.guru ?? lot.guru } } : {}),
           selectedForDigitization: selected,
           notDigitizedReason: selected ? null : (body.notDigitizedReason ?? null),
           fileName: body.fileName?.trim() || null,

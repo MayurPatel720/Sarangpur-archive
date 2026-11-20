@@ -253,6 +253,14 @@ function validateListItems(
     if (seen.has(folded)) throw new HttpError(400, `Duplicate item value '${item.value}'.`);
     seen.add(folded);
   }
+  // The same name in other capital / small letters ("mumbai" next to "Mumbai") is the same value.
+  const labels = new Set<string>();
+  for (const item of items) {
+    // A dependent list (Subcategory) may repeat a name under another parent, so the parent is part of the name.
+    const f = `${item.label.trim().replace(/\s+/g, ' ').toLowerCase()}|${String(item.meta?.category ?? '')}`;
+    if (item.label.trim() && labels.has(f)) throw new HttpError(400, `'${item.label}' already exists in this list (capital or small letters do not make a new value).`);
+    labels.add(f);
+  }
 
   for (const item of items) {
     for (const field of metaSchema) {

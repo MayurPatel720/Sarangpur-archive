@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GridApi } from 'ag-grid-community';
-import { ApiRequestError, historyApi, itemsGridApi } from '@/lib/api-client';
+import { ApiRequestError, historyApi, itemsGridApi, lotsApi } from '@/lib/api-client';
 import { colorOfActor, type HistView, type ShowChanges } from '@/lib/history-view';
 import { dateTime12 } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
@@ -32,7 +32,7 @@ import { ImportDialog } from './ImportDialog';
 import { SetPathDialog } from './SetPathDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
 import { LetterCodesDialog } from './LetterCodesDialog';
-import { isPendingCode } from '@/lib/domain';
+import { isPendingCode, type DocStage } from '@/lib/domain';
 import { useSearchParams } from 'next/navigation';
 import { ItemFamilyGrid, PHOTO_ROW_PX, type HistoryMarks } from './ItemFamilyGrid';
 import { HistoryControls } from './HistoryControls';
@@ -145,6 +145,19 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
     queryKey: ['lots', 'history-since', lotId, showChanges, history.data?.headSeq ?? 0],
     queryFn: () => historyApi.view(lotId, { mode: 'since', ref: showChanges! }),
     enabled: showChanges !== null && histView === null,
+  });
+
+  // Letters: every letter has its own stage — move some (the ticked ones, or one clicked) one step or straight to a stage.
+  const moveLetters = useMutation({
+    mutationFn: (v: { itemIds: string[]; direction?: 'next' | 'back'; stage?: DocStage }) => lotsApi.moveDocStage(lotId, v),
+    onSuccess: (r) => {
+      refresh();
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.detail(lotId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.lots.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.queues.all });
+      toast.success(`${r.moved} ${r.moved === 1 ? 'letter' : 'letters'} moved`, undefined, undoLink);
+    },
+    onError: (e) => toast.error('Could not move the letters', e instanceof ApiRequestError ? e.message : undefined),
   });
 
   const save = useMutation({
@@ -743,6 +756,16 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   <span className="ml-1.5 rounded-full bg-accent px-1.5 text-[11px] font-bold leading-[18px] text-white tabular-nums">{selected.length}</span>
                 </button>
               ) : null}
+              {canDetails && lettersOnly && selected.length > 0 ? (
+                <>
+                  <button type="button" className={toolBtn} disabled={moveLetters.isPending} onClick={() => moveLetters.mutate({ itemIds: selected, direction: 'back' })} title="Move the ticked letters one stage back">
+                    ← Back ({selected.length})
+                  </button>
+                  <button type="button" className={toolBtn} disabled={moveLetters.isPending} onClick={() => moveLetters.mutate({ itemIds: selected, direction: 'next' })} title="Move the ticked letters to the next stage">
+                    Next stage → ({selected.length})
+                  </button>
+                </>
+              ) : null}
               {canDetails && lotFormats.includes('documents') ? (
                 <button type="button" className={toolBtn} onClick={() => setShowLetterCodes(true)} title="Choose the scanned files; each file name becomes a letter's code">
                   Set codes from files{lettersWithoutCode > 0 ? ` (${lettersWithoutCode})` : ''}
@@ -879,6 +902,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                   onPin={onPin}
                   rowPx={rowPx}
                   onOpenStatus={setStatusFor}
+                  onDocStage={(item, stage) => moveLetters.mutate({ itemIds: [item.id], stage })}
                   height={gridHeight(sh.rows.length, (columnsByFormat.get(sh.format) ?? visibleSpecs).some((c) => c.kind === 'photo') ? PHOTO_ROW_PX : rowPx)}
                   onOpenCode={onOpenCode}
                   onClearCode={setClearCodeFor}

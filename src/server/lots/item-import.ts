@@ -25,17 +25,19 @@ const MAX_SHOWN = 200;
 
 type Spec = ColumnSpec & { custom?: CustomColumn };
 
-function resolveColumn(header: string, specs: Spec[]): Spec | null {
+function resolveColumn(header: string, specs: Spec[], formats: string[] = []): Spec | null {
   const [d, ...rest] = header.split('|');
   const label = norm(rest.join('|'));
   const dept = norm(d ?? '');
   const named = (s: Spec) => allLabels(s).some((l) => norm(l) === label);
   const inDept = specs.filter((s) => named(s) && (dept === '' || norm(deptLabel(s.dept)) === dept));
-  if (inDept.length === 1) return inDept[0]!;
+  // Two columns of different formats may share a name (Prasadi's Guru, the letters' Guru): take the one this sheet shows.
+  const fits = (list: Spec[]) => (list.length > 1 && formats.length > 0 ? list.filter((s) => formats.some((f) => shownOnSheet(s, f))) : list);
+  if (fits(inDept).length === 1) return fits(inDept)[0]!;
   if (inDept.length === 0 && dept !== '') {
     // The department cell may be missing / reworded — fall back to the label alone when it is unique.
     const byLabel = specs.filter(named);
-    return byLabel.length === 1 ? byLabel[0]! : null;
+    return fits(byLabel).length === 1 ? fits(byLabel)[0]! : null;
   }
   return null;
 }
@@ -81,12 +83,12 @@ export async function importItems(
     for (const [header, raw] of Object.entries(row.cells)) {
       const text = raw.trim();
       if (!text) continue;
-      const spec = resolveColumn(header, specs);
+      const spec = resolveColumn(header, specs, [...new Set(grid.items.map((r) => r.format))]);
       if (!spec) {
         ignored.add(header.split('|').pop() ?? header);
         continue;
       }
-      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info' || spec.kind === 'photo' || spec.kind === 'status' || spec.viaDialog) {
+      if (spec.kind === 'readonly' || spec.kind === 'code' || spec.kind === 'duplicate' || spec.kind === 'info' || spec.kind === 'photo' || spec.kind === 'status' || spec.kind === 'docStage' || spec.viaDialog) {
         ignored.add(spec.label);
         continue;
       }

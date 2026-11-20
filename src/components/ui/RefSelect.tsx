@@ -167,8 +167,11 @@ function CreateValueDialog({
       const trimmed = label.trim();
       const value = slugify(trimmed);
       if (!value) throw new Error('Enter a label with at least one letter or number.');
-      if (target.items.some((i) => i.value === value)) {
-        throw new Error(`"${value}" already exists in ${target.label}.`);
+      const fold = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+      const parentOf = (m: Record<string, unknown> | undefined) => String(m?.category ?? '');
+      const same = target.items.find((i) => i.value === value || (fold(i.label) === fold(trimmed) && parentOf(i.meta as Record<string, unknown> | undefined) === String(meta.category ?? '')));
+      if (same) {
+        throw new Error(`"${same.label}" already exists in ${target.label} (capital or small letters do not make a new value).`);
       }
       const itemMeta: Record<string, unknown> = {};
       for (const f of target.metaSchema) {

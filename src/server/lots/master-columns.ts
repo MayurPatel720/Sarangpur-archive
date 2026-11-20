@@ -24,14 +24,14 @@ export async function listMasterColumns(): Promise<MasterColumnsResponse> {
 }
 
 /** The custom columns lots added to their own Excel, merged by name (case-insensitive) across all lots. */
-export async function listLotColumns(): Promise<{ label: string; type: 'text' | 'number' | 'yesno' | 'date'; lots: number }[]> {
-  const rows = await ArchiveLot.aggregate<{ _id: string; label: string; type: 'text' | 'number' | 'yesno' | 'date'; lots: number }>([
+export async function listLotColumns(): Promise<{ label: string; type: 'text' | 'number' | 'yesno' | 'date'; dept: 'details' | 'decision' | 'storage' | 'logging'; lots: number }[]> {
+  const rows = await ArchiveLot.aggregate<{ _id: string; label: string; type: 'text' | 'number' | 'yesno' | 'date'; dept?: string; lots: number }>([
     { $match: { 'customColumns.0': { $exists: true } } },
     { $unwind: '$customColumns' },
-    { $group: { _id: { $toLower: '$customColumns.label' }, label: { $first: '$customColumns.label' }, type: { $first: '$customColumns.type' }, lots: { $sum: 1 } } },
+    { $group: { _id: { $toLower: '$customColumns.label' }, label: { $first: '$customColumns.label' }, type: { $first: '$customColumns.type' }, dept: { $first: '$customColumns.dept' }, lots: { $sum: 1 } } },
     { $sort: { _id: 1 } },
   ]);
-  return rows.map((r) => ({ label: r.label, type: r.type, lots: r.lots }));
+  return rows.map((r) => ({ label: r.label, type: r.type, dept: (['details', 'decision', 'storage', 'logging'] as const).find((d) => d === r.dept) ?? 'details', lots: r.lots }));
 }
 
 /** Column id of a lot column in the Master Excel. */

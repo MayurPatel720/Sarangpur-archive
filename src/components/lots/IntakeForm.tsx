@@ -145,10 +145,6 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
           res.lots.map((l) => l.lotReference).join(', '),
         );
         router.push(`/projects/${projectId}`);
-      } else if (res.lots.length > 1 && res.lots.every((l) => l.format === 'documents')) {
-        // Letters of different Gurus are separate lots: open the first one, with the window that sets the codes.
-        toast.success(`${res.lots.length} letter lots registered (one per Guru, linked)`, res.lots.map((l) => l.lotReference).join(', '));
-        router.push(scopedHref(`/register/${res.id}?tab=items&codes=1`, initialFormat));
       } else if (res.lots.length > 1) {
         toast.success(`${res.lots.length} lots registered (one per format, linked)`, res.lots.map((l) => l.lotReference).join(', '));
         router.push(scopedHref('/register', initialFormat));

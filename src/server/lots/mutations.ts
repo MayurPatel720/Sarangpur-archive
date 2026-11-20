@@ -133,6 +133,8 @@ async function buildItemDocs(
         ...itemSlot(n),
         sortOrder: n,
         lineIndex,
+        // Letters: each one carries its own Guru (the Guru column of the sheet).
+        ...(line.format === 'documents' && line.guru ? { attrs: { letterGuru: line.guru } } : {}),
         selectedForDigitization: selected,
         notDigitizedReason: selected ? null : line.notDigitizedReason,
         // Prasadi is never digitized: it starts already decided as "keep physical".
@@ -224,7 +226,8 @@ export async function insertLotInSession(
         assignee: extras.assignee ? new Types.ObjectId(extras.assignee.id) : null,
         assigneeName: extras.assignee?.name ?? null,
         // Letters skip the usual pipeline and start their own cycle.
-        guru: primary.format === 'documents' ? (primary.guru ?? null) : null,
+        // One Guru for the whole lot, or none (shown as "Mixed Gurus") when the letters belong to different ones.
+        guru: primary.format === 'documents' ? (new Set(lines.map((l) => l.guru ?? '')).size === 1 ? (primary.guru ?? null) : null) : null,
         stage: primary.format === 'documents' ? 'doc_scan' : 'intake',
         stageEnteredAt: new Date(),
       },
@@ -364,8 +367,8 @@ export async function createIntake(
   ctx: MutationContext,
 ): Promise<{ id: string; lotReference: string; itemsCreated: number; lots: { id: string; lotReference: string; format: string }[] }> {
   const owners = await resolveIntakeAssignments(body, ctx);
-  // One lot per media format, always (letters: one per Guru). Lots saved together share a link id so each shows its siblings.
-  const keyOf = (l: LotCreateBody['mediaLines'][number]) => (l.format === 'documents' ? `documents:${l.guru ?? ''}` : l.format);
+  // One lot per media format, always (letters too: one lot whatever the Gurus — each letter keeps its own). Lots saved together share a link id so each shows its siblings.
+  const keyOf = (l: LotCreateBody['mediaLines'][number]) => l.format;
   const keys = [...new Set(body.mediaLines.map(keyOf))];
   const groups = keys.map((k) => {
     const lines = body.mediaLines.filter((l) => keyOf(l) === k);
@@ -507,6 +510,7 @@ async function replaceMediaLinesCore(
       lot.quantityAlreadyDigitized = lines.reduce((sum, l) => sum + l.quantityAlreadyDigitized, 0);
       lot.quantityRemarks = primary.quantityRemarks ?? undefined;
       lot.set('mediaLines', lines);
+      if (primary.format === 'documents') lot.guru = new Set(lines.map((l) => l.guru ?? '')).size === 1 ? (primary.guru ?? null) : null;
       lot.set('digitization.expectedFileCount', toDigitize);
 
       await LotItem.deleteMany({ lot: lot._id }, { session });

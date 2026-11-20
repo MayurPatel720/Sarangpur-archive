@@ -16,6 +16,10 @@ A plain-English guide to the latest changes. No technical knowledge needed.
 | **Master Excel: every column is editable**, and **columns that lots added** can be shown | Click a cell; right-click → Columns → Added to lots (section 6c) |
 | **Export a session (or version) to Excel**, with that session's changes marked | History panel → pick a session → **Export to Excel** (section 7) |
 | **Tidier Items toolbar**, plus a **Returned** filter | Top of the Items tab (section 4) |
+| **"Code already used" fixed:** only a code that is the same all the way through is refused | Changing a code number, abbreviation or letter (section 5c) |
+| **Capital / small letters never make a new value** in dropdown lists, abbreviations and letter codes | Anywhere you add a value (section 5c) |
+| **Letters: Guru per letter, one lot, and a stage for each letter** with ticks in the sheet | Items tab of a letters lot (section 9) |
+| **Master Excel: filters on lot columns**, and a redesigned **Columns** panel | Master Excel → Columns (section 6d) |
 | **Letters:** intake with Guru, codes from scanned file names, and their own six stages | Register → New intake → Format **Documents** (section 9) |
 | **Machines:** company name, repair comment, bill file path, Usage tab and usage types | **Machines** page (section 8) |
 
@@ -130,6 +134,18 @@ You can undo it (see History below). It cannot be used on an item that is alread
 
 ---
 
+## 5c. "Code already used" and capital letters
+
+**The code check is now exact.** Before, changing an item's number said "already used" when any other code of the pair had that number, even with another letter or other last three digits (for example `NGE-MUM-0005-D-000` blocked `NGE-MUM-0005-R-000`). Now only a code that is **the same all the way through** is refused. The same number with another letter (R, D, M …) or other last three digits is a different code and is allowed. A duplicate (D) still takes its original's number. A cleared item's old code (before it became DISCARD_n) stays reserved.
+
+**Capital and small letters never make a new value.** "mumbai" and "Mumbai" are the same thing:
+- Dropdown lists (Admin → Lists, or "+ Add new" in a dropdown): a name that exists in other capital or small letters is refused.
+- Abbreviations in an item code: typing `ALB-Surat` when `ALB-surat` is in use continues the same numbers, in the archive's own spelling.
+- Letter codes from file names: `Letter 1` and `letter 1` are the same code.
+- Column names on a lot (already the case) are checked the same way.
+
+---
+
 ## 6. Master Excel: your own columns
 
 **Where:** Master Excel toolbar, the **+ Column** button.
@@ -162,7 +178,7 @@ Right-click anywhere on the sheet, or right-click / click a column heading (or i
 - **This column** (when you click a heading): sort (Master Excel), Pin, Hide, Reset width, Show only this column, Delete or Remove for custom columns.
 - **Columns** button: + Add a column, tick **whole sections** (departments), search and tick any column to show or hide it. On the Master Excel the same list includes the columns lots added to their own Excel (File Size and so on); tick one and every row shows the value from its own lot.
 - **Layout:** **Save layout**, **Undo layout changes** (and, on the lot sheet, Reset column order and pins).
-Toolbar buttons: **Columns** (sections and every column), **Lot columns** (Master Excel: columns lots added) and **+ Column**. The right-click menu has the column's own actions, **Display** (row height; on the Master Excel also wrap and the filter row) and Save / Undo layout.
+Toolbar buttons: **Columns** (one list grouped by department, including the columns lots added) and **+ Column**. The right-click menu has the column's own actions, **Display** (row height; on the Master Excel also wrap and the filter row) and Save / Undo layout.
 
 **Master Excel**
 - **Everything is editable:** text, dates, numbers, dropdowns and Yes/No cells. The lot's own rules and History apply, so a change can be undone from the lot.
@@ -171,6 +187,14 @@ Toolbar buttons: **Columns** (sections and every column), **Lot columns** (Maste
 - **Import / Export** menu: **Copy all rows** (or **Copy N selected**) to paste into Excel.
 - **Drag to move:** every column heading has a grab handle (⠿). Drag a column left or right and drop it (moving a column is by drag only, it is not in the right-click menu). On the lot's sheet a column moves inside its own department.
 - **Save layout** (both sheets): right-click and choose **Save layout**. Your changes (order, pins, widths, hidden columns, row height) are a draft until you save. The saved layout is kept on your account, so it follows you to any computer. **Undo layout changes** goes back to the saved one. If you reload without saving, the saved layout comes back.
+
+---
+
+## 6d. Master Excel: filters and a new Columns panel
+
+- **Filter the lot columns.** A column that lots added (File Size and so on) now has a filter box in the filter row, like any other column. A Yes/No column has a Yes/No filter. Typing "10 gb" in File Size finds the rows whose lot has that value, whatever the case.
+- **They sit in the right department.** A lot column appears inside the department it was added to (Details, Decision, Digitalization & Storage, Logging) instead of a separate band at the end.
+- **A new Columns panel.** One list grouped by department. Each department has a tick box that shows or hides all its columns, a count (shown / total) and folds away. Search narrows the list. Columns that lots added are in the same list, tagged with how many lots have them. Tick one to add it. The separate **Lot columns** button is gone. **+ Add a column** and **Reset columns** are at the bottom.
 
 ---
 
@@ -239,7 +263,7 @@ Next to the clock there is a **Changes** button. It highlights what changed on t
 A new way to register letters, with their own stages.
 
 **Intake**
-- Choose the **Documents** format. The sub-type is fixed as **Letter**. Each row has its own **Guru** (YGJ, PSM or MSM), **Data type** (Physical, Digital or Physical + Digital) and **Quantity**. Rows with different Gurus are saved as **separate lots** (linked to each other), one per Guru.
+- Choose the **Documents** format. The sub-type is fixed as **Letter**. Each row has its own **Guru** (YGJ, PSM or MSM), **Data type** (Physical, Digital or Physical + Digital) and **Quantity**. Rows with different Gurus stay in **one standalone lot**. Each letter keeps its own Guru, shown in the **Guru** column of the sheet (the lot shows "Mixed Gurus" when they differ).
 - The Guru list is under **Admin → Lists → Letter gurus**, so more can be added later.
 
 **No automatic codes**
@@ -250,14 +274,15 @@ A new way to register letters, with their own stages.
 - Letters added later with **Add items** also wait for a file. Setting codes is saved in the lot's History, so it can be undone.
 
 **Stages**
-- A letters lot has its own cycle: **Scan & storage → Rewrite → Type → Recheck → Topics → Final edit**. The usual Data entry, Decision, Digitalization and MLS stages do not apply to it.
-- The bar at the top of the lot shows where it is. **Move to …** and **Back to …** change the stage, and each move is in the lot's Activity.
-- A lot cannot leave **Scan & storage** until every letter has a code.
+- Letters have their own cycle: **Scan & storage → Rewrite → Type → Recheck → Topics → Final edit**. The usual Data entry, Decision, Digitalization and MLS stages do not apply to them.
+- **Every letter has its own stage.** The sheet has one column per stage. A **✓** means the letter is past that stage, **● Now** means it is there now. **Click a stage cell** to move that letter there. Or tick several letters and press **Next stage →** or **← Back**. Each move is saved in History, so Undo works.
+- The bar at the top of the lot shows how many letters are at each stage. The lot itself sits at its least advanced letter.
+- A letter cannot leave **Scan & storage** until it has a code.
 - Stage names can be renamed in **Admin → Lists → Stages**. The letters stages are not columns of the main pipeline board.
 
-**The letters sheet** shows only the letter's **code**, what it is, a **remark** and the lot columns in the Master Excel. Nothing about decisions, digitalization or storage.
+**The letters sheet** shows the letter's **code**, its **Guru**, the six stage columns, a **remark** and the lot columns in the Master Excel. Nothing about decisions, digitalization or storage.
 
-**One thing to know:** after **Final edit** the lot stays at Final edit. There is no "finished" stage yet.
+**One thing to know:** after **Final edit** a letter stays at Final edit. There is no "finished" stage yet.
 
 ---
 

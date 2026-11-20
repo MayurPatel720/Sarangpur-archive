@@ -211,6 +211,34 @@ export async function listMasterItems(query: MasterQuery, ctx: MutationContext):
     ];
   }
 
+  // Filters on columns lots added to their own Excel (merged by name): each lot keeps the value under its own key.
+  const lotFilterEntries = (() => {
+    try {
+      const o = JSON.parse(query.lotFilters ?? '{}') as Record<string, unknown>;
+      return Object.entries(o).filter(([, v]) => typeof v === 'string' && v !== '').slice(0, 10) as [string, string][];
+    } catch {
+      return [];
+    }
+  })();
+  for (const [label, value] of lotFilterEntries) {
+    const lots = await ArchiveLot.find({ 'customColumns.label': new RegExp(`^${escapeRe(label.trim())}$`, 'i') }).select('customColumns').limit(MAX_LOT_IDS).lean();
+    const ors: Filter[] = [];
+    for (const l of lots) {
+      const def = (l.customColumns ?? []).find((c) => c.label.trim().toLowerCase() === label.trim().toLowerCase());
+      if (!def) continue;
+      const path = `custom.${def.key}`;
+      let cond: unknown;
+      if (def.type === 'yesno') cond = value === 'yes' ? true : value === 'no' ? false : null;
+      else if (def.type === 'number') cond = Number.isFinite(Number(value)) ? Number(value) : Number.NaN;
+      else if (def.type === 'date') {
+        const r = parseDateRange(value);
+        cond = r.ok ? r.from : contains(value);
+      } else cond = contains(value);
+      ors.push({ lot: l._id, [path]: cond });
+    }
+    f.$and = [...((f.$and as Filter[] | undefined) ?? []), { $or: ors.length > 0 ? ors : [{ lot: { $in: [] } }] }];
+  }
+
   const skip = (query.page - 1) * query.pageSize;
   const sortPath = query.sort ? SORT_PATHS[query.sort] : undefined;
   const lotOrder = { lot: 1, lineIndex: 1, sortOrder: 1, groupNo: 1, itemNo: 1 } as const;

@@ -8,7 +8,9 @@ import './load-env';
 
 import type { MutationContext } from '../src/lib/api';
 import { connectToDatabase } from '../src/lib/mongo';
-import { DOC_STAGES, isPendingCode, stepDocStage } from '../src/lib/domain';
+import { DOC_STAGES, docStageOf, isPendingCode, stepDocStage } from '../src/lib/domain';
+import { cellText } from '../src/lib/item-cells';
+import { takenCodes } from '../src/server/codes';
 import { letterCodeError, letterCodeOfFile } from '../src/lib/letter-code';
 import { shownOnSheet } from '../src/lib/item-columns';
 import { ActivityLog } from '../src/models/ActivityLog';
@@ -98,8 +100,12 @@ async function main() {
       admin,
     );
     created.push(...split.lots.map((l) => l.id));
-    const splitLots = await ArchiveLot.find({ _id: { $in: split.lots.map((l) => l.id) } }).select('guru quantity').lean();
-    check('rows with different Gurus become separate lots, same Guru stays together', splitLots.length === 2 && splitLots.map((l) => l.guru).sort().join() === 'MSM,PSM' && splitLots.find((l) => l.guru === 'PSM')!.quantity === 3, splitLots);
+    const splitLots = await ArchiveLot.find({ _id: { $in: split.lots.map((l) => l.id) } }).select('guru quantity linkGroupId').lean();
+    check('rows with different Gurus stay ONE standalone lot (no linked lots)', split.lots.length === 1 && splitLots.length === 1 && splitLots[0]!.quantity === 4 && splitLots[0]!.guru === null, splitLots);
+    const splitItems = await LotItem.find({ lot: split.id }).sort({ sortOrder: 1 }).select('attrs').lean();
+    check('each letter keeps its own Guru', splitItems.map((i) => (i.attrs as Record<string, unknown> | undefined)?.letterGuru).join() === 'PSM,PSM,MSM,PSM', splitItems.map((i) => i.attrs));
+    check('a lot with one Guru keeps it on the lot too', (await ArchiveLot.findById(r.id).lean())?.guru === 'YGJ');
+    check('the Guru is a column of the letters sheet', shownOnSheet({ id: 'letterGuru' }, 'documents') && cellText({ attrs: { letterGuru: 'PSM' } } as never, { id: 'letterGuru', kind: 'ref', attr: true, refList: 'letterGuru' } as never) === 'PSM');
 
     console.log('the letters sheet');
     const g = await getItemsGrid(r.id, viewer);
@@ -132,6 +138,18 @@ async function main() {
     const extra = added.map((a) => String(a._id));
     await setLetterCodes(r.id, { assignments: [{ itemId: extra[0]!, code: `${TAG} Letter 4.pdf` }, { itemId: extra[1]!, code: `${TAG} Letter 5.pdf` }] }, admin);
 
+    console.log('stages per letter');
+    await moveDocumentStage(r.id, { stage: 'doc_type', itemIds: [ids[0]!] }, admin);
+    const one = await LotItem.find({ lot: lot._id }).select('attrs').lean();
+    check('one letter moves on its own', one.filter((i) => docStageOf(i.attrs as Record<string, unknown>) === 'doc_type').length === 1);
+    check('the lot stays at its least advanced letter', (await ArchiveLot.findById(r.id).select('stage').lean())?.stage === 'doc_scan');
+    check('the sheet shows done / now per stage column', cellText({ attrs: { docStage: 'doc_type' } } as never, { id: 'ds_doc_scan', kind: 'docStage' } as never) === 'Done' && cellText({ attrs: { docStage: 'doc_type' } } as never, { id: 'ds_doc_type', kind: 'docStage' } as never) === 'Now' && cellText({ attrs: { docStage: 'doc_type' } } as never, { id: 'ds_doc_final', kind: 'docStage' } as never) === '');
+    await moveDocumentStage(r.id, { stage: 'doc_scan' }, admin);
+    check('every letter can be put back at once', (await ArchiveLot.findById(r.id).select('stage').lean())?.stage === 'doc_scan');
+    const taken = await takenCodes([`${TAG} Letter 1`, `${TAG} LETTER 1`]);
+    check('only the whole code counts as used', taken.has(`${TAG} Letter 1`) && !taken.has(`${TAG} LETTER 1`));
+    await rejects('a code that differs only in capital letters is still refused for letters', () => setLetterCodes(other.id, { assignments: [{ itemId: String(otherItem._id), code: `${TAG} LETTER 1.pdf` }] }, admin), 409);
+
     console.log('the cycle');
     const labels: string[] = [];
     for (const want of ['doc_rewrite', 'doc_type', 'doc_recheck', 'doc_topics', 'doc_final']) {
@@ -143,7 +161,7 @@ async function main() {
     await rejects('the last stage cannot go further', () => moveDocumentStage(r.id, { direction: 'next' }, admin), 400);
     const back = await moveDocumentStage(r.id, { direction: 'back' }, admin);
     check('it can go back one stage', back.stage === 'doc_topics');
-    check('each move is in the activity log', (await ActivityLog.countDocuments({ lot: lot._id, kind: 'document_stage_changed' })) === 6);
+    check('each move is in the activity log', (await ActivityLog.countDocuments({ lot: lot._id, kind: 'document_stage_changed' })) === 8);
     check('the stage time is stamped', Boolean((await ArchiveLot.findById(r.id).select('stageEnteredAt').lean())?.stageEnteredAt));
 
     console.log('only letters use this');
