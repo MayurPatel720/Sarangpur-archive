@@ -5,6 +5,7 @@ import { LotItem } from '@/models/LotItem';
 import { allocateItemCodes } from '@/server/codes';
 import { isDiscardCode, parseItemCodeParts } from '@/lib/item-code';
 import { autoDecisionFields, bornDigitalFields } from '@/lib/item-decision';
+import { PENDING_CODE_PREFIX } from '@/lib/domain';
 import { namingPrefix } from '@/server/lots/mutations';
 import { withAudit, auditActor } from '@/server/audit';
 import { assertActiveReferenceValue } from '@/server/reference';
@@ -109,16 +110,20 @@ async function createItemCore(
               .lean()) as { code: string } | null)
           : sibling;
       const parts = codedSibling ? parseItemCodeParts(codedSibling.code) : null;
-      const codes = await allocateItemCodes(
-        parts?.abbr1 ?? (await namingPrefix(line?.format ?? lot.format, line?.mediaSubtype ?? lot.mediaSubtype)),
-        parts?.abbr2 ?? lot.originSource ?? 'OTH',
-        quantity,
-        session,
-      );
-      if (codes.length !== quantity) throw new HttpError(500, 'Could not allocate the item codes.');
       const firstSort = (sibling?.sortOrder ?? -1) + 1;
       const format = line?.format ?? lot.mediaLines?.[0]?.format ?? lot.format;
       const dataType = line?.dataType ?? lot.mediaLines?.[0]?.dataType ?? lot.dataType;
+      // Letters get no automatic code: each waits under a placeholder until its scanned file is chosen.
+      const codes =
+        format === 'documents'
+          ? Array.from({ length: quantity }, (_, i) => `${PENDING_CODE_PREFIX}${lot.lotReference}-${String(firstSort + i + 1).padStart(3, '0')}`)
+          : await allocateItemCodes(
+              parts?.abbr1 ?? (await namingPrefix(line?.format ?? lot.format, line?.mediaSubtype ?? lot.mediaSubtype)),
+              parts?.abbr2 ?? lot.originSource ?? 'OTH',
+              quantity,
+              session,
+            );
+      if (codes.length !== quantity) throw new HttpError(500, 'Could not allocate the item codes.');
 
       // Number the items one after another; a full group rolls the rest into the next new group.
       const docs = codes.map((code, i) => {

@@ -16,6 +16,7 @@ A plain-English guide to the latest changes. No technical knowledge needed.
 | **Master Excel: every column is editable**, and **columns that lots added** can be shown | Click a cell; right-click → Columns → Added to lots (section 6c) |
 | **Export a session (or version) to Excel**, with that session's changes marked | History panel → pick a session → **Export to Excel** (section 7) |
 | **Tidier Items toolbar**, plus a **Returned** filter | Top of the Items tab (section 4) |
+| **Letters:** intake with Guru, codes from scanned file names, and their own six stages | Register → New intake → Format **Documents** (section 9) |
 | **Machines:** company name, repair comment, bill file path, Usage tab and usage types | **Machines** page (section 8) |
 
 ### Good to know
@@ -230,6 +231,33 @@ Next to the clock there is a **Changes** button. It highlights what changed on t
 - **Usage** (new tab on every machine): press **Add usage** and give the **date**, **what it captured** and **how many**. The tab shows every entry, the **total per type** and the **grand total**. The Machines list shows the total next to each machine.
 - **What it captured** comes from a list you manage under **Admin → Lists → Machine usage types**: Video (VHS, UMT, MDV and DVC, DVD players, VCD, Hi8, BetaCam, Misc), Audio (Tape Recorder, MDC, Misc), Photo (Scanner, Misc) and Misc (Mix machine). Add more there any time.
 - **Mark returned** has an optional **Captured while it was out** block. Each row you add becomes a usage entry dated the return day.
+
+---
+
+## 9. Letters (the Documents format)
+
+A new way to register letters, with their own stages.
+
+**Intake**
+- Choose the **Documents** format. The sub-type is fixed as **Letter**. Each row has its own **Guru** (YGJ, PSM or MSM), **Data type** (Physical, Digital or Physical + Digital) and **Quantity**. Rows with different Gurus are saved as **separate lots** (linked to each other), one per Guru.
+- The Guru list is under **Admin → Lists → Letter gurus**, so more can be added later.
+
+**No automatic codes**
+- After you save, a window lists every letter (one row for each in the Quantity) with **no code**.
+- Press **Choose scanned files…** and pick the scanned letters from your computer. The **file name, without .pdf or .jpg, becomes the letter's code**. Many files at once fill the empty rows in name order. **Choose / Change** on a row sets one letter.
+- A code that already exists anywhere in the archive, or is picked twice, is refused. Only the file name is used. The browser does not tell the app which folder the file is in.
+- The same window opens later from **Items → Set codes from files**, or by clicking a letter's code.
+- Letters added later with **Add items** also wait for a file. Setting codes is saved in the lot's History, so it can be undone.
+
+**Stages**
+- A letters lot has its own cycle: **Scan & storage → Rewrite → Type → Recheck → Topics → Final edit**. The usual Data entry, Decision, Digitalization and MLS stages do not apply to it.
+- The bar at the top of the lot shows where it is. **Move to …** and **Back to …** change the stage, and each move is in the lot's Activity.
+- A lot cannot leave **Scan & storage** until every letter has a code.
+- Stage names can be renamed in **Admin → Lists → Stages**. The letters stages are not columns of the main pipeline board.
+
+**The letters sheet** shows only the letter's **code**, what it is, a **remark** and the lot columns in the Master Excel. Nothing about decisions, digitalization or storage.
+
+**One thing to know:** after **Final edit** the lot stays at Final edit. There is no "finished" stage yet.
 
 ---
 

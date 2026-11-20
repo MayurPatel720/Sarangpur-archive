@@ -145,9 +145,16 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
           res.lots.map((l) => l.lotReference).join(', '),
         );
         router.push(`/projects/${projectId}`);
+      } else if (res.lots.length > 1 && res.lots.every((l) => l.format === 'documents')) {
+        // Letters of different Gurus are separate lots: open the first one, with the window that sets the codes.
+        toast.success(`${res.lots.length} letter lots registered (one per Guru, linked)`, res.lots.map((l) => l.lotReference).join(', '));
+        router.push(scopedHref(`/register/${res.id}?tab=items&codes=1`, initialFormat));
       } else if (res.lots.length > 1) {
         toast.success(`${res.lots.length} lots registered (one per format, linked)`, res.lots.map((l) => l.lotReference).join(', '));
         router.push(scopedHref('/register', initialFormat));
+      } else if (res.lots[0]?.format === 'documents') {
+        // Letters have no automatic codes: open the lot with the window that sets them from the scanned files.
+        router.push(scopedHref(`/register/${res.id}?tab=items&codes=1`, initialFormat));
       } else {
         router.push(scopedHref(`/register/${res.id}`, initialFormat));
       }
@@ -218,7 +225,7 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
   const validateStep = (index: number): boolean => {
     // Condition & notes / Rights are optional — nothing to gate on.
     if (index === STEP_ORIGIN) return applyErrors(validateOrigin(draft, 'lot'));
-    if (index === STEP_MEDIA) return applyErrors(validateMedia(draft));
+    if (index === STEP_MEDIA) return applyErrors(validateMedia(draft, { guru: true }));
     return applyErrors({});
   };
 
@@ -258,7 +265,7 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
   const submit = () => {
     // Full pre-check mirrors the per-step gates, so a jump-to-review path can
     // never skip them. Every failure is collected first and shown at once.
-    const errs: FieldErrors = { ...validateOrigin(draft, 'lot'), ...validateMedia(draft) };
+    const errs: FieldErrors = { ...validateOrigin(draft, 'lot'), ...validateMedia(draft, { guru: true }) };
     const keys = Object.keys(errs);
     if (keys.length > 0) {
       if (keys.some(isLineErrorKey)) markDone(STEP_MEDIA, false);

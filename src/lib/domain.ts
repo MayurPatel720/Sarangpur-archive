@@ -32,6 +32,35 @@ export const STAGE_LABELS: Record<Stage, string> = {
 };
 
 /**
+ * The stages of a Documents (letters) lot. They replace the usual pipeline for that format: a letters lot starts at
+ * "Scan & storage" and moves one step at a time to "Final edit". Their labels come from the Stages list like the others.
+ */
+export const DOC_STAGES = ['doc_scan', 'doc_rewrite', 'doc_type', 'doc_recheck', 'doc_topics', 'doc_final'] as const;
+export type DocStage = (typeof DOC_STAGES)[number];
+
+export const DOC_STAGE_LABELS: Record<DocStage, string> = {
+  doc_scan: 'Scan & storage',
+  doc_rewrite: 'Rewrite',
+  doc_type: 'Type',
+  doc_recheck: 'Recheck',
+  doc_topics: 'Topics',
+  doc_final: 'Final edit',
+};
+
+export const isDocStage = (s: string): s is DocStage => (DOC_STAGES as readonly string[]).includes(s);
+
+/** The stage after / before this one in the letters cycle (null at either end). */
+export function stepDocStage(stage: string, direction: 'next' | 'back'): DocStage | null {
+  const i = (DOC_STAGES as readonly string[]).indexOf(stage);
+  if (i < 0) return null;
+  return DOC_STAGES[direction === 'next' ? i + 1 : i - 1] ?? null;
+}
+
+/** A letter that has no code yet is stored under a placeholder; the real code is the scanned file's name. */
+export const PENDING_CODE_PREFIX = 'PENDING-';
+export const isPendingCode = (code: string): boolean => code.startsWith(PENDING_CODE_PREFIX);
+
+/**
  * Stages where the lot is still being worked on. A lot sitting in one of these is
  * occupying somebody's queue right now, so the board counts current occupancy.
  */
@@ -189,6 +218,7 @@ export const ACTIVITY_KINDS = [
   'lot_image_added',
   'lot_image_deleted',
   'item_status_changed',
+  'document_stage_changed',
 ] as const;
 export type ActivityKind = (typeof ACTIVITY_KINDS)[number];
 
@@ -240,6 +270,7 @@ export const ACTIVITY_SEVERITY: Record<ActivityKind, Severity> = {
   lot_image_added: 'info',
   lot_image_deleted: 'warning',
   item_status_changed: 'warning',
+  document_stage_changed: 'info',
 };
 
 /**

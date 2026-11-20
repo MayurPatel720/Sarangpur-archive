@@ -46,6 +46,7 @@ import { ActivityPanel } from './ActivityPanel';
 import { LotProjectsSection } from './LotProjectsSection';
 import { LinkedLotsSection } from './LinkedLotsSection';
 import { LotAssigneeSelect, LotProjectBar } from './LotProjectBar';
+import { DocumentStageBar } from './DocumentStageBar';
 import { LotPhotosCard } from './LotPhotosCard';
 
 type LotDetail = LotDetailResponse['lot'];
@@ -1121,9 +1122,13 @@ function LotDetailInner({ lotId }: { lotId: string }) {
           </div>
           <div className="sm:ml-auto flex items-center gap-2 flex-shrink-0">
             <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>{stageLabel}</Badge>
-            <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
-              <span className="capitalize">{lot.decision}</span>
-            </Badge>
+            {lot.format === 'documents' ? (
+              lot.guru ? <Badge severity="info">{lot.guru}</Badge> : null
+            ) : (
+              <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
+                <span className="capitalize">{lot.decision}</span>
+              </Badge>
+            )}
             <LotAssigneeSelect lot={lot} />
             {canEdit ? <GhostButton onClick={startEdit}>Edit</GhostButton> : null}
           </div>
@@ -1131,6 +1136,8 @@ function LotDetailInner({ lotId }: { lotId: string }) {
       </header>
 
       <LotProjectBar lot={lot} />
+
+      {lot.format === 'documents' ? <DocumentStageBar lotId={lot.id} stage={lot.stage} canEdit={canEdit} /> : null}
 
       <FormError message={formError} />
 

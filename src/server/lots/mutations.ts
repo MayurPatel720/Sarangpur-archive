@@ -16,7 +16,7 @@ import { assertActive } from '@/server/reference/runtime';
 import { computeVerdict, unionSignificanceFlags, type SignificanceFlags, type Verdict } from '@/server/lots/decision-rule';
 import { allocateItemCodes, generateLotReference, generateNamingCode, itemSlot, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
 import { isTerminalStage } from '@/server/lots/queries';
-import { FORMATS, FORMAT_LABELS, type Format, type Stage } from '@/lib/domain';
+import { FORMATS, FORMAT_LABELS, PENDING_CODE_PREFIX, type Format, type Stage } from '@/lib/domain';
 import { User } from '@/models/User';
 import { assertNotPast, assertRealDay, createTaskInSession } from '@/server/tasks/mutations';
 import { recordNewLotsInProject, requireProject } from '@/server/projects/membership';
@@ -60,6 +60,7 @@ interface NormalisedLine {
   quantityAlreadyDigitized: number;
   notDigitizedReason: string | null;
   quantityRemarks: string | null;
+  guru: string | null;
 }
 
 /** Normalises media lines and rejects retired/unknown vocabulary — runs BEFORE the transaction. */
@@ -76,12 +77,14 @@ export async function validateLotVocab(
     quantityAlreadyDigitized: l.quantityAlreadyDigitized ?? 0,
     notDigitizedReason: l.notDigitizedReason ?? null,
     quantityRemarks: l.quantityRemarks ?? null,
+    guru: l.format === 'documents' ? (l.guru ?? null) : null,
   }));
   await Promise.all([
     body.originSource ? assertActiveReferenceValue('originSource', body.originSource) : Promise.resolve(),
     body.returnFormat ? assertActiveReferenceValue('returnFormat', body.returnFormat) : Promise.resolve(),
     body.rights?.type ? assertActiveReferenceValue('rightsType', body.rights.type) : Promise.resolve(),
     ...lines.flatMap((l) => [
+      ...(l.guru ? [assertActiveReferenceValue('letterGuru', l.guru)] : []),
       assertActiveReferenceValue('format', l.format),
       assertActiveReferenceValue('dataType', l.dataType),
       ...(l.notDigitizedReason
@@ -109,14 +112,18 @@ async function buildItemDocs(
   lines: NormalisedLine[],
   origin: string,
   session: ClientSession,
+  lotReference: string,
 ): Promise<Record<string, unknown>[]> {
   const docs: Record<string, unknown>[] = [];
   const pending = new Map<string, number>();
   let n = 0;
   for (const [lineIndex, line] of lines.entries()) {
     // Default pair (sub-type prefix + origin); the user can change both from the Excel.
-    const prefix = await namingPrefix(line.format, line.mediaSubtype);
-    const codes = await allocateItemCodes(prefix, origin, line.quantity, session, pending);
+    // Letters get no automatic code: each waits under a placeholder until its scanned file is chosen (its file name becomes the code).
+    const codes =
+      line.format === 'documents'
+        ? Array.from({ length: line.quantity }, (_, k) => `${PENDING_CODE_PREFIX}${lotReference}-${String(n + k + 1).padStart(3, '0')}`)
+        : await allocateItemCodes(await namingPrefix(line.format, line.mediaSubtype), origin, line.quantity, session, pending);
     codes.forEach((code, idx) => {
       const selected = idx < line.quantityToDigitize;
       docs.push({
@@ -216,7 +223,9 @@ export async function insertLotInSession(
         linkGroupId: extras.linkGroupId ?? null,
         assignee: extras.assignee ? new Types.ObjectId(extras.assignee.id) : null,
         assigneeName: extras.assignee?.name ?? null,
-        stage: 'intake',
+        // Letters skip the usual pipeline and start their own cycle.
+        guru: primary.format === 'documents' ? (primary.guru ?? null) : null,
+        stage: primary.format === 'documents' ? 'doc_scan' : 'intake',
         stageEnteredAt: new Date(),
       },
     ],
@@ -225,7 +234,7 @@ export async function insertLotInSession(
   lot!.set('digitization.expectedFileCount', totalToDigitize);
   await lot!.save({ session });
 
-  const docs = await buildItemDocs(lot!._id, lines, body.originSource ?? 'OTH', session);
+  const docs = await buildItemDocs(lot!._id, lines, body.originSource ?? 'OTH', session, lotReference);
   for (let i = 0; i < docs.length; i += 2000) {
     await LotItem.insertMany(docs.slice(i, i + 2000), { session });
   }
@@ -355,9 +364,13 @@ export async function createIntake(
   ctx: MutationContext,
 ): Promise<{ id: string; lotReference: string; itemsCreated: number; lots: { id: string; lotReference: string; format: string }[] }> {
   const owners = await resolveIntakeAssignments(body, ctx);
-  const formats = [...new Set(body.mediaLines.map((l) => l.format))];
-  // One lot per media format, always. Lots saved together share a link id so each shows its siblings.
-  const groups = formats.map((f) => ({ formats: [f], lines: body.mediaLines.filter((l) => l.format === f) }));
+  // One lot per media format, always (letters: one per Guru). Lots saved together share a link id so each shows its siblings.
+  const keyOf = (l: LotCreateBody['mediaLines'][number]) => (l.format === 'documents' ? `documents:${l.guru ?? ''}` : l.format);
+  const keys = [...new Set(body.mediaLines.map(keyOf))];
+  const groups = keys.map((k) => {
+    const lines = body.mediaLines.filter((l) => keyOf(l) === k);
+    return { formats: [lines[0]!.format], lines };
+  });
   const linkGroupId = groups.length > 1 ? new Types.ObjectId() : null;
   if (body.projectId && !can(ctx.grants, 'project:assign')) {
     throw new HttpError(403, 'Your role cannot add lots to a project.');
@@ -453,8 +466,11 @@ async function replaceMediaLinesCore(
       if ((lot.__v ?? 0) !== body.version) {
         throw new HttpError(409, 'This record changed since you opened it. Reload and try again.');
       }
-      if (lot.stage !== 'intake') {
+      if (lot.stage !== 'intake' && lot.stage !== 'doc_scan') {
         throw new HttpError(400, 'Quantities can only be changed while the lot is still in Intake.');
+      }
+      if (lot.format === 'documents' && (await LotItem.exists({ lot: lot._id, code: { $not: new RegExp('^' + PENDING_CODE_PREFIX) } }).session(session))) {
+        throw new HttpError(400, 'Some letters already have a code (a scanned file was chosen), so the quantity can no longer change.');
       }
       if (lot.syncProjectId && lines.some((l) => l.format !== lot.format)) {
         throw new HttpError(400, `This lot is the ${lot.format} lot of its project — every line must be ${lot.format}.`);
@@ -494,7 +510,7 @@ async function replaceMediaLinesCore(
       lot.set('digitization.expectedFileCount', toDigitize);
 
       await LotItem.deleteMany({ lot: lot._id }, { session });
-      const docs = await buildItemDocs(lot._id, lines, lot.originSource ?? 'OTH', session);
+      const docs = await buildItemDocs(lot._id, lines, lot.originSource ?? 'OTH', session, lot.lotReference);
       for (let i = 0; i < docs.length; i += 2000) {
         await LotItem.insertMany(docs.slice(i, i + 2000), { session });
       }

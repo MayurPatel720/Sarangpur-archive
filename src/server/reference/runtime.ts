@@ -11,6 +11,7 @@ import { ReferenceList } from '@/models/ReferenceList';
 import { connectToDatabase } from '@/lib/mongo';
 import { HttpError } from '@/lib/api';
 import {
+  DOC_STAGES,
   IN_FLIGHT_STAGES,
   STAGES,
   STAGE_LABELS,
@@ -37,8 +38,8 @@ export interface StageGraph {
 
 export function defaultStageGraph(): StageGraph {
   return {
-    all: [...STAGES],
-    inFlight: [...IN_FLIGHT_STAGES],
+    all: [...STAGES, ...DOC_STAGES],
+    inFlight: [...IN_FLIGHT_STAGES, ...DOC_STAGES],
     terminal: [...TERMINAL_STAGES],
     board: [...STAGES],
     discardable: ['scanning', 'mls_tag', 'storage'],

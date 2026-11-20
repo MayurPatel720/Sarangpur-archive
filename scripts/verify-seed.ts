@@ -41,6 +41,7 @@ import {
   RETURN_STATUSES,
   SCAN_STATUSES,
   STAGES,
+  DOC_STAGES,
 } from '../src/lib/domain';
 import { buildGlobalSettings, buildRoles, SEED_REFERENCE_LISTS } from './seed-data';
 import {
@@ -337,7 +338,7 @@ function assertSameSet(label: string, domain: readonly string[], key: string): v
   }
 }
 
-assertSameSet('STAGES', STAGES, 'stage');
+assertSameSet('STAGES + DOC_STAGES', [...STAGES, ...DOC_STAGES], 'stage');
 assertSameSet('DECISIONS', DECISIONS, 'decision');
 assertSameSet('FORMATS', FORMATS, 'format');
 assertSameSet('DATA_TYPES', DATA_TYPES, 'dataType');

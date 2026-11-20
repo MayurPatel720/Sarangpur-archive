@@ -1,5 +1,5 @@
 import { Schema, model, models, type InferSchemaType, type Model } from 'mongoose';
-import { OVERRIDE_STATUSES, STAGES } from '@/lib/domain';
+import { DOC_STAGES, OVERRIDE_STATUSES, STAGES } from '@/lib/domain';
 
 /**
  * A lot: one delivery of material from one owner.
@@ -146,7 +146,9 @@ const archiveLotSchema = new Schema(
       notes: { type: String, trim: true, default: null },
     },
 
-    stage: { type: String, required: true, enum: STAGES, index: true },
+    stage: { type: String, required: true, enum: [...STAGES, ...DOC_STAGES], index: true },
+    /** Letters (Documents) only: whose letters these are, a value of the admin list `letterGuru` (YGJ, PSM, MSM). */
+    guru: { type: String, trim: true, default: null },
     /** When the lot entered its current stage. Drives every "stuck for N days" alert. */
     stageEnteredAt: { type: Date, required: true, index: true },
 

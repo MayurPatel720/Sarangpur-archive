@@ -246,6 +246,23 @@ export const itemLetterBulkResponseSchema = z.object({
 export type ItemLetterBulkResponse = z.output<typeof itemLetterBulkResponseSchema>;
 export const itemNumberResponseSchema = z.object({ code: z.string() });
 
+/**
+ * PATCH …/items/letter-codes — give letters their code: the name of the scanned file (the extension is dropped).
+ * Only on a Documents (letters) lot.
+ */
+export const letterCodesBodySchema = z.object({
+  assignments: z
+    .array(z.object({ itemId: objectIdSchema, code: z.string().trim().min(1).max(260) }))
+    .min(1, 'Choose at least one file.')
+    .max(2000),
+});
+export type LetterCodesBody = z.input<typeof letterCodesBodySchema>;
+export const letterCodesResponseSchema = z.object({
+  updated: z.number().int(),
+  codes: z.array(z.object({ itemId: z.string(), code: z.string() })),
+});
+export type LetterCodesResponse = z.output<typeof letterCodesResponseSchema>;
+
 /* --------------------------------------------------------------- duplicates */
 
 /**

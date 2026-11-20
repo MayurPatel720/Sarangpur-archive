@@ -159,6 +159,10 @@ that lot) and `customColumns[]` (`{ key, label, type: text|number|yesno|date, de
 
 Custom columns of the Master Excel only, shared by everyone: `key` (`mc_…`, unique), `label`, `kind` (`text` = typed per row, stored on the item; `lot` = fetched live from a lot detail such as owner name / phone, see `src/lib/master-custom.ts`), `source`, `createdBy`. Never shown on a lot's own Items sheet.
 
+## `archivelots` — letters (Documents format)
+
+New `guru` (a value of the admin list `letterGuru`, null for other formats). `stage` also accepts the six letter stages `doc_scan`, `doc_rewrite`, `doc_type`, `doc_recheck`, `doc_topics`, `doc_final` (in the `stage` list with `board: false`, `inFlight: true`). A letter (`lotitems`) with no code yet has the placeholder code `PENDING-<lotReference>-<nnn>`; setting its code from a file name replaces it. `npm run db:migrate-letters` adds the stages and the guru list and moves existing Documents lots to `doc_scan`.
+
 ## `machines` — changes (`src/models/Machine.ts`)
 
 `make` and `version` were removed; `company` was added. Repairs: `billRef` became `billPath` (a file path) and a closing `comment` was added. New embedded `usage[]`: `{ on (YYYY-MM-DD), type (a value of the admin list machineUsageType), qty, note, by, loanId? }`, plus the denormalised `capturedTotal` (sum of `qty`). `npm run db:migrate-machines` creates the list and drops the removed fields.

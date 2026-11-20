@@ -99,6 +99,7 @@ async function main() {
       'server/lots/item-grid.ts': 'applyItemEdits + the disposition queue are wrapped',
       'server/lots/items.ts': 'createItem is wrapped',
       'server/lots/item-codes.ts': 'recode / number / letter / duplicate / reorder / columns are wrapped',
+      'server/lots/documents.ts': 'setLetterCodes is wrapped',
       'server/lots/item-status.ts': 'changeItemStatus is wrapped',
       'server/lots/prasadi-checks.ts': 'markPrasadiChecked is wrapped',
       'server/returns/record.ts': 'recordReturn is wrapped',

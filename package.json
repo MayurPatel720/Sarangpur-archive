@@ -25,6 +25,7 @@
     "db:sync-stage-flow": "tsx scripts/sync-stage-flow.ts",
     "db:migrate-item-codes": "tsx scripts/migrate-item-codes.ts",
     "db:migrate-machines": "tsx scripts/migrate-machines.ts",
+    "db:migrate-letters": "tsx scripts/migrate-letters.ts",
     "db:backfill-digital-yes": "tsx scripts/backfill-digital-yes.ts",
     "db:backfill-format-grants": "tsx scripts/backfill-format-grants.ts",
     "db:backfill-system-grants": "tsx scripts/backfill-system-grants.ts",
@@ -40,6 +41,7 @@
     "verify:item-decisions": "tsx scripts/verify-item-decisions.ts",
     "verify:todos": "tsx scripts/verify-todos.ts",
     "verify:machines": "tsx scripts/verify-machines.ts",
+    "verify:documents": "tsx scripts/verify-documents.ts",
     "verify:filters": "tsx scripts/verify-filters.ts",
     "verify": "npm run typecheck && npm run verify:pipelines && npm run verify:seed && npm run verify:decision-rule && npm run verify:reconcile && npm run verify:search",
     "db:check": "tsx scripts/check-db.ts"

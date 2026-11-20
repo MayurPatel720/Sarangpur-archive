@@ -31,6 +31,9 @@ import { ItemPhotoViewer } from './ItemPhotoViewer';
 import { ImportDialog } from './ImportDialog';
 import { SetPathDialog } from './SetPathDialog';
 import { ItemCodeDialog } from './ItemCodeDialog';
+import { LetterCodesDialog } from './LetterCodesDialog';
+import { isPendingCode } from '@/lib/domain';
+import { useSearchParams } from 'next/navigation';
 import { ItemFamilyGrid, PHOTO_ROW_PX, type HistoryMarks } from './ItemFamilyGrid';
 import { HistoryControls } from './HistoryControls';
 import { useLotHistory } from '@/hooks/useLotHistory';
@@ -242,6 +245,9 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   const lotFormats = useMemo(() => [...new Set((data?.items ?? []).map((i) => i.format))], [data?.items]);
   /** Prasadi is kept physically and never digitized: a lot of only Prasadi has nothing to decide. */
   const prasadiOnly = lotFormats.length > 0 && lotFormats.every((f) => f === PRASADI_FORMAT);
+  /** A lot of only letters: nothing to decide, no Digitize / Discard counts; each letter just needs its code. */
+  const lettersOnly = lotFormats.length > 0 && lotFormats.every((f) => f === 'documents');
+  const lettersWithoutCode = data ? data.items.filter((i) => i.format === 'documents' && isPendingCode(i.code)).length : 0;
   /** Departments that have a column on at least one of this lot's sheets (Removal exists only for Prasadi). */
   const lotDepts = useMemo(
     () => DEPARTMENTS.filter((d) => specs.some((s) => s.dept === d.id && (lotFormats.length === 0 || lotFormats.some((f) => shownOnSheet(s, f))))),
@@ -376,7 +382,17 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   };
 
   const onInvalid = useCallback((message: string) => toast.error('Not saved', message), [toast]);
-  const onOpenCode = useCallback((item: GridItem) => setCodeFor(item), []);
+  // Letters take their code from a scanned file: their code cell opens that window instead of the code dialog.
+  const [showLetterCodes, setShowLetterCodes] = useState(false);
+  const onOpenCode = useCallback((item: GridItem) => (item.format === 'documents' ? setShowLetterCodes(true) : setCodeFor(item)), []);
+  // Right after an intake of letters the lot opens with ?codes=1: show the window once.
+  const askedCodes = useSearchParams().get('codes') === '1';
+  const openedCodes = useRef(false);
+  useEffect(() => {
+    if (!askedCodes || openedCodes.current || !data) return;
+    openedCodes.current = true;
+    if (data.items.some((i) => i.format === 'documents' && isPendingCode(i.code))) setShowLetterCodes(true);
+  }, [askedCodes, data]);
   const onDuplicate = useCallback((item: GridItem, code: string) => setDuplicateFor({ item, code }), []);
 
   /** Copies the rows (the ticked ones, else every row on the sheets) as tab-separated text, ready to paste into Excel. */
@@ -440,7 +456,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   useEffect(() => {
     if (selected.length === 0) setShowBulk(false);
   }, [selected.length]);
-  const dialogOpen = showAdd || showImport || showBulk || Boolean(clearCodeFor) || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
+  const dialogOpen = showLetterCodes || showAdd || showImport || showBulk || Boolean(clearCodeFor) || showAddColumn || Boolean(codeFor) || Boolean(duplicateFor) || Boolean(deleteColumn);
   useEffect(() => {
     if (!fullscreen) return;
     const prev = document.body.style.overflow;
@@ -548,6 +564,15 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 <Badge severity="info">Check planned {data.items.filter((i) => i.recheckWeeks).length}</Badge>
               </span>
             </>
+          ) : lettersOnly ? (
+            <>
+              <span>
+                <span className="font-semibold text-ink tabular-nums">{s.total}</span> {s.total === 1 ? 'letter' : 'letters'}
+              </span>
+              <span className="flex flex-wrap gap-1.5">
+                <Badge severity={lettersWithoutCode > 0 ? 'warning' : 'good'}>{lettersWithoutCode > 0 ? `${lettersWithoutCode} without a code` : 'All have a code'}</Badge>
+              </span>
+            </>
           ) : (
             <>
               <span>
@@ -653,7 +678,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           {/* Sticky toolbar: stays at the top of the page while the sheets scroll (-top cancels the page's top padding). */}
           <div className={`flex flex-wrap items-center gap-x-3 gap-y-2 ${fullscreen ? '' : 'sticky -top-4 md:-top-[22px] z-30 -mx-3 border-b border-line-soft bg-surface px-3 py-2 md:-mx-4 md:px-4'}`}>
             <div className="contents">
-            <div role="group" aria-label="Show items" className={prasadiOnly ? 'hidden' : 'flex flex-wrap gap-1.5'}>
+            <div role="group" aria-label="Show items" className={prasadiOnly || lettersOnly ? 'hidden' : 'flex flex-wrap gap-1.5'}>
               {FILTERS.map((f) => (
                 <button
                   key={f.id}
@@ -716,6 +741,11 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
                 >
                   Bulk edit
                   <span className="ml-1.5 rounded-full bg-accent px-1.5 text-[11px] font-bold leading-[18px] text-white tabular-nums">{selected.length}</span>
+                </button>
+              ) : null}
+              {canDetails && lotFormats.includes('documents') ? (
+                <button type="button" className={toolBtn} onClick={() => setShowLetterCodes(true)} title="Choose the scanned files; each file name becomes a letter's code">
+                  Set codes from files{lettersWithoutCode > 0 ? ` (${lettersWithoutCode})` : ''}
                 </button>
               ) : null}
               {canDetails && pathItems.length > 0 ? (
@@ -948,6 +978,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           }}
         />
       ) : null}
+      {showLetterCodes && data ? <LetterCodesDialog lotId={lotId} lotReference={lotReference} items={data.items.filter((i) => i.format === 'documents')} onClose={() => setShowLetterCodes(false)} /> : null}
       {showImport ? <ImportDialog lotId={lotId} onClose={() => setShowImport(false)} onDone={refresh} /> : null}
       {showPath ? <SetPathDialog lotId={lotId} items={pathItems} selectedIds={selected} onClose={() => setShowPath(false)} onDone={refresh} /> : null}
       {showAddColumn ? (

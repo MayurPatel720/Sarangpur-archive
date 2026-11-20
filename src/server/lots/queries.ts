@@ -510,6 +510,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       lotReference: doc.lotReference,
       namingCode: doc.namingCode ?? null,
       originSource: doc.originSource ?? null,
+      guru: doc.guru ?? null,
       dateReceived: doc.dateReceived ? doc.dateReceived.toISOString() : null,
       receiver: { id: String(doc.receiver), name: userName(doc.receiver) ?? 'Unknown' },
       owner: contact(doc.owner) ?? { name: '', phone: null, email: null, address: null },

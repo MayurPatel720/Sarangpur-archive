@@ -498,6 +498,27 @@ export const SEED_SYSTEM_LISTS: CatalogList[] = [
       { value: 'storage', label: 'Storage', meta: { terminal: true, board: true, inFlight: false, alertRole: '', discardable: true } },
       { value: 'returned', label: 'Returned', meta: { terminal: true, board: true, inFlight: false, alertRole: '', discardable: false } },
       { value: 'discarded', label: 'Discarded', meta: { terminal: true, board: true, inFlight: false, alertRole: '', discardable: false } },
+      // Letters (Documents format) have their own cycle; they count as active lots but are not columns of the main board.
+      { value: 'doc_scan', label: 'Scan & storage', meta: { terminal: false, board: false, inFlight: true, alertRole: '', discardable: false } },
+      { value: 'doc_rewrite', label: 'Rewrite', meta: { terminal: false, board: false, inFlight: true, alertRole: '', discardable: false } },
+      { value: 'doc_type', label: 'Type', meta: { terminal: false, board: false, inFlight: true, alertRole: '', discardable: false } },
+      { value: 'doc_recheck', label: 'Recheck', meta: { terminal: false, board: false, inFlight: true, alertRole: '', discardable: false } },
+      { value: 'doc_topics', label: 'Topics', meta: { terminal: false, board: false, inFlight: true, alertRole: '', discardable: false } },
+      { value: 'doc_final', label: 'Final edit', meta: { terminal: false, board: false, inFlight: true, alertRole: '', discardable: false } },
+    ]),
+  },
+  {
+    key: 'letterGuru',
+    label: 'Letter gurus',
+    group: 'Media',
+    tier: 'open',
+    protected: true,
+    metaSchema: NO_META,
+    // Whose letters an intake holds (Documents format). An admin adds more under Admin → Lists.
+    items: items([
+      { value: 'YGJ', label: 'YGJ' },
+      { value: 'PSM', label: 'PSM' },
+      { value: 'MSM', label: 'MSM' },
     ]),
   },
   {

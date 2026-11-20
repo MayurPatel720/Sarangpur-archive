@@ -37,6 +37,7 @@ export function EditMediaLinesDialog({ lot, onClose }: { lot: DetailLot; onClose
       mediaSubtype: l.mediaSubtype,
       quantity: String(l.quantity),
       quantityRemarks: l.quantityRemarks ?? '',
+      guru: lot.guru ?? '',
     })),
   }));
   const [error, setError] = useState<string | null>(null);

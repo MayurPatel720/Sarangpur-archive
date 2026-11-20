@@ -116,9 +116,17 @@ export const SHEET_HIDDEN: Record<string, readonly string[]> = {
   ],
 };
 
+/**
+ * A letters (Documents) sheet is small: the code (the scanned file's name), what it is, a remark, and the lot columns of the
+ * Master Excel. Nothing about decisions, digitalization, storage or logging applies to letters.
+ */
+const DOCUMENT_COLUMNS = new Set(['mediaType', 'code', 'remarks', 'lotNo', 'projectNo', 'projectName', 'lotStage', 'assignee']);
+
 /** Is this column shown on a sheet of the given format? (`appliesToFormat`, minus the columns the format hides.) */
-export const shownOnSheet = (c: Pick<ColumnSpec, 'id' | 'formats' | 'notFormats'>, format: string | null): boolean =>
-  appliesToFormat(c, format) && !(format !== null && (SHEET_HIDDEN[format]?.includes(c.id) ?? false));
+export const shownOnSheet = (c: Pick<ColumnSpec, 'id' | 'formats' | 'notFormats'>, format: string | null): boolean => {
+  if (format === 'documents') return DOCUMENT_COLUMNS.has(c.id) || c.id.startsWith('mc_') || c.id.startsWith('lc_');
+  return appliesToFormat(c, format) && !(format !== null && (SHEET_HIDDEN[format]?.includes(c.id) ?? false));
+};
 
 /** A column every media format has — what the Master Excel shows when no single format is chosen. */
 export const isCommonColumn = (c: FormatRule & { common?: boolean }): boolean => c.common === true || (!c.formats && !c.notFormats);

@@ -59,6 +59,8 @@ export const mediaLineInputSchema = z
     quantityAlreadyDigitized: z.number().int().min(0).default(0),
     notDigitizedReason: z.string().trim().min(1).max(80).nullable().optional(),
     quantityRemarks: z.string().trim().max(1000).optional(),
+    /** Letters (Documents format): whose letters these are (a value of the admin list `letterGuru`). Rows with different Gurus become separate lots. */
+    guru: z.string().trim().min(1).max(40).optional(),
   })
   .refine((l) => l.quantityToDigitize <= l.quantity, {
     message: 'Quantity to digitize cannot exceed quantity.',
@@ -173,6 +175,12 @@ export const lotCreateBodySchema = z
   );
 export type LotCreateBody = z.input<typeof lotCreateBodySchema>;
 
+/** POST /api/lots/[lotId]/stage — a letters lot moves one step along its own cycle. */
+export const docStageBodySchema = z.object({ direction: z.enum(['next', 'back']) });
+export type DocStageBody = z.input<typeof docStageBodySchema>;
+export const docStageResponseSchema = z.object({ stage: z.string(), label: z.string() });
+export type DocStageResponse = z.output<typeof docStageResponseSchema>;
+
 export const lotCreateResponseSchema = z.object({
   /** The (first) lot created. */
   id: z.string(),
@@ -262,6 +270,7 @@ const lotDetailSchema = z.object({
   lotReference: z.string(),
   namingCode: z.string().nullable(),
   originSource: z.string().nullable(),
+  guru: z.string().nullable(),
   dateReceived: z.string().nullable(),
   receiver: z.object({ id: z.string(), name: z.string() }),
   owner: z.object({

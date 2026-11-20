@@ -105,6 +105,7 @@ import {
   importResponseSchema,
   itemNumberResponseSchema,
   itemLetterBulkResponseSchema,
+  letterCodesResponseSchema,
   itemOrderResponseSchema,
   sheetCodeResponseSchema,
   itemsGridResponseSchema,
@@ -123,6 +124,8 @@ import {
   type ImportResponse,
   type ItemNumberBody,
   type ItemLetterBulkBody,
+  type LetterCodesBody,
+  type LetterCodesResponse,
   type ItemLetterBulkResponse,
   type ItemOrderBody,
   type SheetCodeBody,
@@ -398,6 +401,8 @@ export const usersApi = {
 };
 
 export const lotsApi = {
+  moveDocStage: (id: string, body: DocStageBody) =>
+    sendJson<DocStageResponse>(`/api/lots/${encodeURIComponent(id)}/stage`, 'POST', body, docStageResponseSchema),
   list: (params: Record<string, string>) => {
     const qs = new URLSearchParams(params).toString();
     return getJson<LotListResponse>(`/api/lots${qs ? `?${qs}` : ''}`, lotListResponseSchema);
@@ -610,6 +615,8 @@ export const itemsGridApi = {
     sendJson<ItemStatusResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/status`, 'POST', body, itemStatusResponseSchema),
   setNumber: (lotId: string, body: ItemNumberBody) =>
     sendJson<{ code: string }>(`/api/lots/${encodeURIComponent(lotId)}/items/code`, 'PATCH', body, itemNumberResponseSchema),
+  setLetterCodes: (lotId: string, body: LetterCodesBody) =>
+    sendJson<LetterCodesResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/letter-codes`, 'PATCH', body, letterCodesResponseSchema),
   setLetters: (lotId: string, body: ItemLetterBulkBody) =>
     sendJson<ItemLetterBulkResponse>(`/api/lots/${encodeURIComponent(lotId)}/items/code/letter`, 'PATCH', body, itemLetterBulkResponseSchema),
   markDuplicate: (lotId: string, body: ItemDuplicateBody) =>
@@ -639,6 +646,7 @@ export const prasadiChecksApi = {
     sendJson<{ updated: number }>('/api/items/prasadi-checks', 'POST', body, prasadiCheckDoneResponseSchema),
 };
 
+import { docStageResponseSchema, type DocStageBody, type DocStageResponse } from '@/types/lot';
 import { layoutResponseSchema, type LayoutResponse, type LayoutSaveBody } from '@/types/layout';
 
 /** The caller's own saved sheet layouts (column order, pins, widths …), kept on their account. */

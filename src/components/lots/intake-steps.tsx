@@ -38,6 +38,8 @@ export interface MediaLineForm {
   mediaSubtype: string;
   quantity: string;
   quantityRemarks: string;
+  /** Letters only: whose letters this row holds (admin list `letterGuru`). */
+  guru: string;
 }
 
 export const EMPTY_LINE: Omit<MediaLineForm, 'id'> = {
@@ -46,6 +48,7 @@ export const EMPTY_LINE: Omit<MediaLineForm, 'id'> = {
   mediaSubtype: '',
   quantity: '',
   quantityRemarks: '',
+  guru: '',
 };
 
 export interface IntakeDraft {
@@ -170,7 +173,8 @@ export function validateLine(l: MediaLineForm, i: number): { key: string; messag
   // row above can never re-point a message at the wrong line.
   const tag = (f: string) => `${l.id}.${f}`;
   const lineNo = `Line ${i + 1}: `;
-  if (!l.mediaSubtype.trim()) {
+  // Letters are always "Letter": the sub-type is fixed, never asked.
+  if (l.format !== 'documents' && !l.mediaSubtype.trim()) {
     return { key: tag('mediaSubtype'), message: `${lineNo}media sub-type is required.` };
   }
   const q = Number(l.quantity);
@@ -181,7 +185,7 @@ export function validateLine(l: MediaLineForm, i: number): { key: string; messag
 }
 
 export const isLineErrorKey = (k: string) =>
-  k === 'lines.total' || /\.(format|dataType|mediaSubtype|quantity|quantityRemarks)$/.test(k);
+  k === 'lines.total' || /\.(format|dataType|mediaSubtype|quantity|quantityRemarks|guru)$/.test(k);
 
 export function totalQuantity(lines: MediaLineForm[]): number {
   return lines.reduce((sum, l) => {
@@ -222,8 +226,13 @@ export function validateOrigin(d: IntakeDraft, mode: IntakeMode): FieldErrors {
   return errs;
 }
 
-export function validateMedia(d: IntakeDraft): FieldErrors {
+export function validateMedia(d: IntakeDraft, opts: { guru?: boolean } = {}): FieldErrors {
   const errs: FieldErrors = {};
+  if (opts.guru) {
+    for (const [i, l] of d.lines.entries()) {
+      if (l.format === 'documents' && !(l.guru ?? '').trim()) errs[`${l.id}.guru`] = `Line ${i + 1}: choose whose letters these are.`;
+    }
+  }
   for (const [i, l] of d.lines.entries()) {
     const failure = validateLine(l, i);
     if (failure && !errs[failure.key]) errs[failure.key] = failure.message;
@@ -297,12 +306,13 @@ export function buildMediaLines(d: IntakeDraft) {
   return d.lines.map((l) => ({
     format: l.format,
     dataType: l.format === 'prasadi' ? 'physical' : l.dataType,
-    mediaSubtype: l.mediaSubtype.trim(),
+    mediaSubtype: l.format === 'documents' ? 'Letter' : l.mediaSubtype.trim(),
     quantity: Number(l.quantity),
     // Selection for digitization is decided at a later stage.
     quantityToDigitize: 0,
     quantityAlreadyDigitized: 0,
     ...(l.quantityRemarks.trim() ? { quantityRemarks: l.quantityRemarks.trim() } : {}),
+    ...(l.format === 'documents' && (l.guru ?? '').trim() ? { guru: (l.guru ?? '').trim() } : {}),
   }));
 }
 
@@ -606,7 +616,7 @@ export function MediaStep({
   const formats = useReferenceList('format');
   const dataTypes = useReferenceList('dataType');
   const seedLine: Omit<MediaLineForm, 'id'> = initialFormat
-    ? { ...EMPTY_LINE, format: initialFormat }
+    ? { ...EMPTY_LINE, format: initialFormat, ...(initialFormat === 'documents' ? { mediaSubtype: 'Letter' } : {}) }
     : EMPTY_LINE;
   const total = totalQuantity(draft.lines);
 
@@ -626,7 +636,7 @@ export function MediaStep({
           autoFocus={autoFocus}
           value={row.format}
           disabled={Boolean(initialFormat)}
-          onChange={(e) => setLine(rowId, { format: e.target.value, mediaSubtype: '', ...(e.target.value === 'prasadi' ? { dataType: 'physical' } : {}) })}
+          onChange={(e) => setLine(rowId, { format: e.target.value, mediaSubtype: e.target.value === 'documents' ? 'Letter' : '', ...(e.target.value === 'prasadi' ? { dataType: 'physical' } : {}) })}
         >
           {(formats.data?.items ?? [])
             .filter((f) => !initialFormat || f.value === initialFormat)
@@ -644,7 +654,7 @@ export function MediaStep({
       className: 'min-w-[128px]',
       // Prasadi is always physical: no choice to make, just the quantity.
       render: ({ row, rowId, index, autoFocus }) => row.format === 'prasadi' ? (
-        <span className="text-ink-4" aria-label={`Line ${index + 1}, physical only`}>—</span>
+        <span className="flex h-10 items-center text-ink-4" aria-label={`Line ${index + 1}, physical only`}>—</span>
       ) : (
         <Select
           aria-label={`Line ${index + 1}, data type`}
@@ -665,7 +675,10 @@ export function MediaStep({
       header: 'Media sub-type',
       className: 'min-w-[180px]',
       required: true,
-      render: ({ row, rowId, index, autoFocus }) => (
+      // Documents are letters: the sub-type is fixed.
+      render: ({ row, rowId, index, autoFocus }) => row.format === 'documents' ? (
+        <span className="flex h-10 items-center text-ink-2" aria-label={`Line ${index + 1}, letters`}>Letter</span>
+      ) : (
         <SubtypeCell
           format={row.format}
           value={row.mediaSubtype}
@@ -709,6 +722,46 @@ export function MediaStep({
     },
   ];
 
+  // Letters: Guru sits right of the sub-type, one dropdown per row (rows with different Gurus become separate lots). Opened from
+  // the Documents block, the Format column is not shown and "Letter" comes first.
+  const firstDocIndex = draft.lines.findIndex((l) => l.format === 'documents');
+  let columns = lineColumns;
+  if (ctx.mode === 'lot' && firstDocIndex >= 0) {
+    const guruColumn: EditableColumn<MediaLineForm> = {
+      key: 'guru',
+      header: 'Guru',
+      className: 'min-w-[170px]',
+      required: true,
+      render: ({ row, rowId, index, error, autoFocus }) =>
+        row.format !== 'documents' ? (
+          <span className="flex h-10 items-center text-ink-4">—</span>
+        ) : (
+          <div className="flex flex-col gap-1">
+            <RefSelect
+              listKey="letterGuru"
+              value={row.guru ?? ''}
+              onChange={(v) => setLine(rowId, { guru: v })}
+              ariaLabel={`Line ${index + 1}, Guru`}
+              autoFocus={autoFocus}
+              placeholder="Select Guru…"
+              createLabel="Guru"
+            />
+            {error ? (
+              <span role="alert" className="text-[11.5px] font-medium text-danger">
+                {error}
+              </span>
+            ) : null}
+          </div>
+        ),
+    };
+    const at = columns.findIndex((c) => c.key === 'mediaSubtype');
+    columns = [...columns.slice(0, at + 1), guruColumn, ...columns.slice(at + 1)];
+    if (initialFormat === 'documents') {
+      const by = (k: string) => columns.find((c) => c.key === k)!;
+      columns = ['mediaSubtype', 'guru', 'dataType', 'quantity', 'quantityRemarks'].map(by);
+    }
+  }
+
   const cap = (s: string) => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
   return (
     <StepBlocks>
@@ -721,7 +774,7 @@ export function MediaStep({
         }
       >
         <EditableTable
-          columns={lineColumns}
+          columns={columns}
           rows={draft.lines}
           getRowId={(l) => l.id}
           onChange={(next) => patch({ lines: next })}
@@ -756,6 +809,11 @@ export function MediaStep({
         />
         {footerNote}
       </FormSection>
+      {ctx.mode === 'lot' && firstDocIndex >= 0 ? (
+        <p className="m-0 text-[12px] text-ink-3">
+          Letters get no automatic code. After you save, choose the scanned files from your computer: each file&apos;s name becomes that letter&apos;s code.
+        </p>
+      ) : null}
     </StepBlocks>
   );
 }
