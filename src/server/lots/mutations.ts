@@ -16,7 +16,7 @@ import { assertActive } from '@/server/reference/runtime';
 import { computeVerdict, unionSignificanceFlags, type SignificanceFlags, type Verdict } from '@/server/lots/decision-rule';
 import { allocateItemCodes, generateLotReference, generateNamingCode, itemSlot, FORMAT_DEFAULT_PREFIX } from '@/server/codes';
 import { isTerminalStage } from '@/server/lots/queries';
-import { FORMATS, FORMAT_LABELS, PENDING_CODE_PREFIX, type Format, type Stage } from '@/lib/domain';
+import { FORMATS, FORMAT_LABELS, PENDING_CODE_PREFIX, docStageOf, isPendingCode, lotDocStage, type Format, type Stage } from '@/lib/domain';
 import { User } from '@/models/User';
 import { assertNotPast, assertRealDay, createTaskInSession } from '@/server/tasks/mutations';
 import { recordNewLotsInProject, requireProject } from '@/server/projects/membership';
@@ -435,6 +435,124 @@ export async function createIntake(
 }
 
 /**
+ * Letters lot with some coded letters: apply the new media lines WITHOUT rebuilding the sheet. Lines are matched by position.
+ *  - quantity up: new letters (placeholder codes) are added to the line;
+ *  - quantity down: only letters without a code are removed, last first (never below the number already coded);
+ *  - Guru changed: updated on every letter of the line;
+ *  - format / data type of a line with coded letters: not changeable; a line with coded letters cannot be removed.
+ * Items keep their row order (sortOrder / group / item numbers are renumbered per sheet after the change).
+ */
+async function adjustLetterLines(
+  lot: HydratedDocument<ArchiveLotDoc>,
+  lines: NormalisedLine[],
+  session: ClientSession,
+): Promise<void> {
+  if (lines.some((l) => l.format !== 'documents')) {
+    throw new HttpError(400, 'Some letters already have a code, so every line here must stay Documents.');
+  }
+  const items = await LotItem.find({ lot: lot._id }).sort({ lineIndex: 1, sortOrder: 1 }).session(session).lean();
+  const byLine = new Map<number, typeof items>();
+  for (const it of items) byLine.set(it.lineIndex, [...(byLine.get(it.lineIndex) ?? []), it]);
+  const oldLines = (lot.mediaLines ?? []) as unknown as { format: string; dataType: string }[];
+
+  // Lines taken off the end: only fine when none of their letters has a code.
+  const removeIds: Types.ObjectId[] = [];
+  for (const [idx, list] of byLine) {
+    if (idx < lines.length) continue;
+    if (list.some((it) => !isPendingCode(it.code))) {
+      throw new HttpError(400, `Line ${idx + 1} has letters with codes, so it cannot be removed.`);
+    }
+    removeIds.push(...list.map((it) => it._id as Types.ObjectId));
+  }
+
+  // Next free placeholder number for this lot.
+  const prefix = `${PENDING_CODE_PREFIX}${lot.lotReference}-`;
+  let nextPending =
+    items.reduce((max, it) => (it.code.startsWith(prefix) ? Math.max(max, Number(it.code.slice(prefix.length)) || 0) : max), 0) + 1;
+
+  const newDocs: Record<string, unknown>[] = [];
+  const ops: Parameters<typeof LotItem.bulkWrite>[0] = [];
+  for (const [i, line] of lines.entries()) {
+    const list = byLine.get(i) ?? [];
+    const coded = list.filter((it) => !isPendingCode(it.code));
+    const old = oldLines[i];
+    if (coded.length > 0 && old && (old.format !== line.format || old.dataType !== line.dataType)) {
+      throw new HttpError(400, `Line ${i + 1}: ${coded.length} ${coded.length === 1 ? 'letter has' : 'letters have'} a code, so its format and data type cannot change.`);
+    }
+    if (line.quantity < coded.length) {
+      throw new HttpError(400, `Line ${i + 1}: ${coded.length} ${coded.length === 1 ? 'letter already has' : 'letters already have'} a code, so the quantity cannot go below ${coded.length}.`);
+    }
+    // Take away the surplus, uncoded letters from the end.
+    const surplus = list.length - line.quantity;
+    let kept = list;
+    if (surplus > 0) {
+      const drop = [...list].reverse().filter((it) => isPendingCode(it.code)).slice(0, surplus);
+      const dropIds = new Set(drop.map((it) => String(it._id)));
+      removeIds.push(...drop.map((it) => it._id as Types.ObjectId));
+      kept = list.filter((it) => !dropIds.has(String(it._id)));
+    }
+    // Guru of the letters that stay.
+    for (const it of kept) {
+      const current = (it.attrs as Record<string, unknown> | undefined)?.letterGuru ?? null;
+      const wanted = line.guru ?? null;
+      if (current === wanted) continue;
+      ops.push({
+        updateOne: {
+          filter: { _id: it._id },
+          update: wanted ? { $set: { 'attrs.letterGuru': wanted } } : { $unset: { 'attrs.letterGuru': '' } },
+        },
+      });
+    }
+    // New letters.
+    for (let k = kept.length; k < line.quantity; k += 1) {
+      newDocs.push({
+        lot: lot._id,
+        code: `${prefix}${String(nextPending).padStart(3, '0')}`,
+        format: line.format,
+        lineIndex: i,
+        ...itemSlot(0), // group / item numbers are required; the real ones are set when the rows are renumbered below
+        sortOrder: 1_000_000 + newDocs.length, // placed below, then renumbered
+        ...(line.guru ? { attrs: { letterGuru: line.guru } } : {}),
+        selectedForDigitization: k < line.quantityToDigitize,
+        notDigitizedReason: k < line.quantityToDigitize ? null : line.notDigitizedReason,
+        ...autoDecisionFields(line.format),
+        ...bornDigitalFields(line.format, line.dataType),
+      });
+      nextPending += 1;
+    }
+  }
+
+  if (removeIds.length > 0) await LotItem.deleteMany({ _id: { $in: removeIds } }, { session });
+  if (ops.length > 0) await LotItem.bulkWrite(ops, { session });
+  if (newDocs.length > 0) await LotItem.insertMany(newDocs, { session });
+
+  // Renumber the rows (per sheet, in order) so sortOrder / group / item numbers stay gap-free.
+  const all = await LotItem.find({ lot: lot._id }).sort({ lineIndex: 1, sortOrder: 1 }).select('sortOrder groupNo itemNo attrs').session(session).lean();
+  const renumber: Parameters<typeof LotItem.bulkWrite>[0] = [];
+  all.forEach((it, n) => {
+    const slot = itemSlot(n);
+    if (it.sortOrder !== n || it.groupNo !== slot.groupNo || it.itemNo !== slot.itemNo) {
+      renumber.push({ updateOne: { filter: { _id: it._id }, update: { $set: { sortOrder: n, ...slot } } } });
+    }
+  });
+  if (renumber.length > 0) await LotItem.bulkWrite(renumber, { session });
+
+  const primary = lines[0]!;
+  lot.format = primary.format;
+  lot.dataType = primary.dataType;
+  lot.mediaSubtype = primary.mediaSubtype;
+  lot.quantity = lines.reduce((sum, l) => sum + l.quantity, 0);
+  lot.quantityToDigitize = lines.reduce((sum, l) => sum + l.quantityToDigitize, 0);
+  lot.quantityAlreadyDigitized = lines.reduce((sum, l) => sum + l.quantityAlreadyDigitized, 0);
+  lot.quantityRemarks = primary.quantityRemarks ?? undefined;
+  lot.set('mediaLines', lines);
+  lot.guru = new Set(lines.map((l) => l.guru ?? '')).size === 1 ? (primary.guru ?? null) : null;
+  lot.set('digitization.expectedFileCount', lot.quantityToDigitize);
+  // A lot is at its least advanced letter; new letters start at "Scan & storage".
+  lot.stage = lotDocStage(all.map((it) => docStageOf(it.attrs as Record<string, unknown> | undefined)));
+}
+
+/**
  * Replace a lot's media lines (add / edit / remove rows, change quantities) while it
  * is still in Intake. Intake lots have no scan or MLS data yet, so the items are
  * simply regenerated from the new lines — refused if any item already carries a
@@ -469,11 +587,17 @@ async function replaceMediaLinesCore(
       if ((lot.__v ?? 0) !== body.version) {
         throw new HttpError(409, 'This record changed since you opened it. Reload and try again.');
       }
-      if (lot.stage !== 'intake' && lot.stage !== 'doc_scan') {
+      if (lot.format !== 'documents' && lot.stage !== 'intake') {
         throw new HttpError(400, 'Quantities can only be changed while the lot is still in Intake.');
       }
+      // Letters: once some have a code (a scanned file was chosen) the sheet is NOT rebuilt. Only what differs is changed:
+      // letters are added or removed (uncoded ones only) and a Guru is updated, so coded letters keep their codes and stages.
       if (lot.format === 'documents' && (await LotItem.exists({ lot: lot._id, code: { $not: new RegExp('^' + PENDING_CODE_PREFIX) } }).session(session))) {
-        throw new HttpError(400, 'Some letters already have a code (a scanned file was chosen), so the quantity can no longer change.');
+        await adjustLetterLines(lot, lines, session);
+        return { id: String(lot._id), lotReference: lot.lotReference };
+      }
+      if (lot.stage !== 'intake' && lot.stage !== 'doc_scan') {
+        throw new HttpError(400, 'Quantities can only be changed while the lot is still in Intake.');
       }
       if (lot.syncProjectId && lines.some((l) => l.format !== lot.format)) {
         throw new HttpError(400, `This lot is the ${lot.format} lot of its project — every line must be ${lot.format}.`);

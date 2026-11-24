@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { TERMINAL_STAGES, dataTypesMatching } from '@/lib/domain';
+import { PENDING_CODE_PREFIX, TERMINAL_STAGES, dataTypesMatching } from '@/lib/domain';
 import { connectToDatabase } from '@/lib/mongo';
 import { parseAdvanced } from '@/lib/advanced-filters';
 import { buildLotAdvanced } from '@/server/filters/advanced';
@@ -403,7 +403,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
         },
       ]),
       // Per-media-type progress (F2): same counters as above, grouped by line.
-      LotItem.aggregate<{ _id: number | null; total: number; selected: number; digitized: number; tagged: number }>([
+      LotItem.aggregate<{ _id: number | null; total: number; selected: number; digitized: number; tagged: number; coded: number }>([
         { $match: { lot: doc._id } },
         {
           $group: {
@@ -412,6 +412,8 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
             selected: { $sum: { $cond: ['$selectedForDigitization', 1, 0] } },
             digitized: { $sum: { $cond: ['$digitized', 1, 0] } },
             tagged: { $sum: { $cond: ['$taggedInMls', 1, 0] } },
+            // Letters that have a real code (a scanned file was chosen) rather than the PENDING- placeholder.
+            coded: { $sum: { $cond: [{ $regexMatch: { input: '$code', regex: `^${PENDING_CODE_PREFIX}` } }, 0, 1] } },
           },
         },
       ]),
@@ -432,6 +434,7 @@ export async function getLotDetail(lotId: string): Promise<LotDetailResponse> {
       selected: s.selected,
       digitized: s.digitized,
       tagged: s.tagged,
+      coded: s.coded,
     }))
     .sort((a, b) => a.lineIndex - b.lineIndex);
   /**

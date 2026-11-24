@@ -398,14 +398,6 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
   // Letters take their code from a scanned file: their code cell opens that window instead of the code dialog.
   const [showLetterCodes, setShowLetterCodes] = useState(false);
   const onOpenCode = useCallback((item: GridItem) => (item.format === 'documents' ? setShowLetterCodes(true) : setCodeFor(item)), []);
-  // Right after an intake of letters the lot opens with ?codes=1: show the window once.
-  const askedCodes = useSearchParams().get('codes') === '1';
-  const openedCodes = useRef(false);
-  useEffect(() => {
-    if (!askedCodes || openedCodes.current || !data) return;
-    openedCodes.current = true;
-    if (data.items.some((i) => i.format === 'documents' && isPendingCode(i.code))) setShowLetterCodes(true);
-  }, [askedCodes, data]);
   const onDuplicate = useCallback((item: GridItem, code: string) => setDuplicateFor({ item, code }), []);
 
   /** Copies the rows (the ticked ones, else every row on the sheets) as tab-separated text, ready to paste into Excel. */
@@ -1019,6 +1011,7 @@ export function ItemsGrid({ lotId, lotReference }: { lotId: string; lotReference
           item={codeFor}
           sheetName={sheets.find((x) => x.lineIndex === codeFor.lineIndex)?.name ?? 'Sheet'}
           sheetItems={sheets.find((x) => x.lineIndex === codeFor.lineIndex)?.all ?? []}
+          selectedIds={selectedBy[codeFor.lineIndex] ?? []}
           onClose={() => setCodeFor(null)}
           onDuplicate={(item, code) => setDuplicateFor({ item, code })}
           onDone={refresh}

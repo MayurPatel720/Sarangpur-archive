@@ -28,6 +28,7 @@ export function ItemCodeDialog({
   onDone,
   onDuplicate,
   itemOnly = false,
+  selectedIds = [],
 }: {
   lotId: string;
   item: GridItem;
@@ -40,6 +41,8 @@ export function ItemCodeDialog({
   onDuplicate: (item: GridItem, otherCode: string) => void;
   /** Only this item's five parts (the Master Excel has no whole-sheet view). */
   itemOnly?: boolean;
+  /** Rows ticked on this sheet: the "Code letter" in the sheet section changes these (and only these). */
+  selectedIds?: string[];
 }) {
   const toast = useToast();
   const kindList = useReferenceList('itemCodeKind');
@@ -62,6 +65,7 @@ export function ItemCodeDialog({
   const [kind, setKind] = useState(parts?.kind ?? KIND_ORIGINAL);
   const [original, setOriginal] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [sheetLetter, setSheetLetter] = useState('');
   const isDuplicate = parts?.kind === KIND_DUPLICATE;
   // R and D always exist; the admin list adds more (M, P …). A duplicate can only leave D, so D is not offered to it.
   const kindOptions = (() => {
@@ -69,6 +73,8 @@ export function ItemCodeDialog({
     for (const v of [KIND_ORIGINAL, KIND_DUPLICATE]) if (!base.some((b) => b.value === v)) base.push({ value: v, label: v });
     return base;
   })();
+  // Same letters as Bulk edit: D is left out because it needs an original's code.
+  const sheetLetterOptions = kindOptions.filter((o) => o.value !== KIND_DUPLICATE);
 
   const samePair = parts?.abbr1 === abbr1.trim() && parts?.abbr2 === abbr2.trim();
   const pairError = abbrError('First abbreviation', abbr1) ?? abbrError('Second abbreviation', abbr2);
@@ -122,6 +128,14 @@ export function ItemCodeDialog({
     mutationFn: () =>
       itemsGridApi.recodeSheet(lotId, { lineIndex: item.lineIndex, abbr1: abbr1.trim(), abbr2: abbr2.trim(), startNo }),
     onSuccess: (r) => done('Codes updated', `${r.firstCode} … ${r.lastCode}`),
+    onError: fail,
+  });
+  const letterMut = useMutation({
+    mutationFn: () => itemsGridApi.setLetters(lotId, { itemIds: selectedIds, kind: sheetLetter }),
+    onSuccess: (r) => {
+      if (r.skipped.length > 0) toast.error(`${r.skipped.length} not changed`, `${r.skipped[0]!.code}: ${r.skipped[0]!.reason}`);
+      if (r.changed > 0) done('Code letter changed', `${sheetLetter} on ${r.changed} ${r.changed === 1 ? 'item' : 'items'}`);
+    },
     onError: fail,
   });
   const single = useMutation({
@@ -213,6 +227,41 @@ export function ItemCodeDialog({
             >
               {sheet.isPending ? 'Saving…' : `Apply to ${recodable.length} item${recodable.length === 1 ? '' : 's'}`}
             </PrimaryButton>
+          </div>
+          <div className="flex flex-col gap-2 border-t border-line-soft pt-3">
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Code letter" hint={selectedIds.length === 0 ? 'Tick rows in the Items tab first.' : undefined}>
+                <Select
+                  value={sheetLetter}
+                  onChange={(e) => setSheetLetter(e.target.value)}
+                  disabled={selectedIds.length === 0}
+                  aria-label="Code letter for the ticked rows"
+                >
+                  <option value="">Keep as is</option>
+                  {sheetLetterOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            </div>
+            <p className="m-0 text-[12px] text-ink-3">
+              {selectedIds.length > 0
+                ? `Changes the letter of the ${selectedIds.length} ticked row${selectedIds.length === 1 ? '' : 's'} only. Rows that cannot change are skipped.`
+                : 'The letter is applied only to the rows you tick.'}
+            </p>
+            <div>
+              <PrimaryButton
+                disabled={!sheetLetter || selectedIds.length === 0 || letterMut.isPending}
+                onClick={() => {
+                  setError(null);
+                  letterMut.mutate();
+                }}
+              >
+                {letterMut.isPending ? 'Saving…' : `Apply letter to ${selectedIds.length} item${selectedIds.length === 1 ? '' : 's'}`}
+              </PrimaryButton>
+            </div>
           </div>
         </section>
         )}

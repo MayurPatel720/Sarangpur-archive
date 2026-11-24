@@ -148,9 +148,6 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
       } else if (res.lots.length > 1) {
         toast.success(`${res.lots.length} lots registered (one per format, linked)`, res.lots.map((l) => l.lotReference).join(', '));
         router.push(scopedHref('/register', initialFormat));
-      } else if (res.lots[0]?.format === 'documents') {
-        // Letters have no automatic codes: open the lot with the window that sets them from the scanned files.
-        router.push(scopedHref(`/register/${res.id}?tab=items&codes=1`, initialFormat));
       } else {
         router.push(scopedHref(`/register/${res.id}`, initialFormat));
       }

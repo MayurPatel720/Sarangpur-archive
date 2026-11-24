@@ -22,6 +22,7 @@ interface LineRow {
   quantityToDigitize: number;
   quantityAlreadyDigitized: number;
   notDigitizedReason: string | null;
+  guru: string | null;
   digitized: number | null;
   tagged: number | null;
 }
@@ -46,6 +47,7 @@ const COLUMNS: Column<LineRow>[] = [
       </span>
     ),
   },
+  { key: 'guru', header: 'Guru', render: (r) => <span className="whitespace-nowrap">{r.guru || '—'}</span> },
   { key: 'qty', header: 'Qty', render: (r) => <span className="tnum">{num(r.quantity)}</span> },
   {
     key: 'qtd',
@@ -81,7 +83,8 @@ export function MediaLinesPanel({ lot }: { lot: DetailLot }) {
   const access = useLotAccess(lot);
   const [editing, setEditing] = useState(false);
   const canEditQty =
-    lot.stage === 'intake' && access.canWork && Boolean(me.data?.grants.includes('lot:edit'));
+    // Letters (Documents) can be adjusted at any stage (the server only changes what differs); other formats only in Intake.
+    (lot.format === 'documents' || lot.stage === 'intake') && access.canWork && Boolean(me.data?.grants.includes('lot:edit'));
   const rows: LineRow[] = lot.mediaLines.map((l, i) => {
     const stats = lot.lineStats.find((s) => s.lineIndex === i) ?? null;
     return {
@@ -93,6 +96,7 @@ export function MediaLinesPanel({ lot }: { lot: DetailLot }) {
       quantityToDigitize: l.quantityToDigitize,
       quantityAlreadyDigitized: l.quantityAlreadyDigitized,
       notDigitizedReason: l.notDigitizedReason,
+      guru: l.guru ?? null,
       digitized: stats?.digitized ?? null,
       tagged: stats?.tagged ?? null,
     };
@@ -108,7 +112,7 @@ export function MediaLinesPanel({ lot }: { lot: DetailLot }) {
         ) : null}
       </PanelHeader>
       <DataTable
-        columns={COLUMNS}
+        columns={rows.some((r) => r.format === 'documents') ? COLUMNS : COLUMNS.filter((c) => c.key !== 'guru')}
         rows={rows}
         loading={false}
         emptyMessage="No media lines recorded for this lot yet."

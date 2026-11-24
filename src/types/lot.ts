@@ -99,6 +99,8 @@ const lineStatSchema = z.object({
   selected: z.number(),
   digitized: z.number(),
   tagged: z.number(),
+  /** Letters of this line that have a real code (a scanned file was chosen). */
+  coded: z.number(),
 });
 export type LineStat = z.output<typeof lineStatSchema>;
 

@@ -41,14 +41,25 @@ export function EditMediaLinesDialog({ lot, onClose }: { lot: DetailLot; onClose
     })),
   }));
   const [error, setError] = useState<string | null>(null);
+  // Letters that already have a code (a scanned file was chosen), per line: those lines keep their format / data type and cannot
+  // drop below that many letters. Everything else about the lot can still be edited.
+  const lineLocks: Record<string, number> = {};
+  if (lot.format === 'documents') {
+    lot.mediaLines.forEach((_, i) => {
+      const coded = lot.lineStats.find((s) => s.lineIndex === i)?.coded ?? 0;
+      if (coded > 0) lineLocks[`m${i}`] = coded;
+    });
+  }
   const ctx: StepCtx = {
+    lineLocks,
     mode: 'lot',
     draft,
     patch,
     errors: fieldErrors,
     clearPrefix,
     newRowId: () => `n${newRowId()}`,
-    initialFormat: lot.syncProject ? lot.format : undefined,
+    // Letters lots are always Documents: the Format column is hidden (and the rest reordered), so the table fits without scrolling.
+    initialFormat: lot.syncProject || lot.format === 'documents' ? lot.format : undefined,
   };
 
   const save = useMutation({
@@ -63,7 +74,16 @@ export function EditMediaLinesDialog({ lot, onClose }: { lot: DetailLot; onClose
   });
 
   const submit = () => {
-    const errs = validateMedia(draft);
+    const errs = validateMedia(draft, { guru: lot.format === 'documents' });
+    for (const [id, coded] of Object.entries(lineLocks)) {
+      const line = draft.lines.find((l) => l.id === id);
+      const at = draft.lines.findIndex((l) => l.id === id);
+      if (!line) {
+        errs['lines.total'] = `Line ${Number(id.slice(1)) + 1} has letters with codes, so it cannot be removed.`;
+      } else if (Number(line.quantity) < coded) {
+        errs[`${id}.quantity`] = `Line ${at + 1}: ${coded} ${coded === 1 ? 'letter already has' : 'letters already have'} a code, so the quantity cannot go below ${coded}.`;
+      }
+    }
     setFieldErrors(errs);
     if (Object.keys(errs).length > 0) {
       setError('Fix the highlighted rows first.');
@@ -76,7 +96,11 @@ export function EditMediaLinesDialog({ lot, onClose }: { lot: DetailLot; onClose
   return (
     <Dialog
       title={`Edit quantities · ${lot.lotReference}`}
-      subtitle="Only while the lot is in Intake. Item codes are regenerated from the new totals."
+      subtitle={
+        lot.format === 'documents'
+          ? 'Add or remove letters and change the Guru. Letters that already have a code keep it, and only letters without a code can be removed.'
+          : 'Only while the lot is in Intake. Item codes are regenerated from the new totals.'
+      }
       onClose={onClose}
       wide
     >

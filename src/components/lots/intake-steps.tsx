@@ -163,6 +163,9 @@ export interface StepCtx {
   newRowId: () => string;
   /** Locks the format dropdown to one block's format (standalone intake only). */
   initialFormat?: string;
+  /** Edit-quantities dialog of a letters lot: line id -> how many of its letters already have a code. Such a line keeps its format
+   *  and data type and its quantity cannot go below that number. */
+  lineLocks?: Record<string, number>;
 }
 
 /* --------------------------------------------------------------- validation */
@@ -636,7 +639,7 @@ export function MediaStep({
           aria-label={`Line ${index + 1}, format`}
           autoFocus={autoFocus}
           value={row.format}
-          disabled={Boolean(initialFormat)}
+          disabled={Boolean(initialFormat) || Boolean(ctx.lineLocks?.[row.id])}
           onChange={(e) => setLine(rowId, { format: e.target.value, mediaSubtype: e.target.value === 'documents' ? 'Letter' : '', ...(e.target.value === 'prasadi' ? { dataType: 'physical' } : {}) })}
         >
           {(formats.data?.items ?? [])
@@ -661,6 +664,8 @@ export function MediaStep({
           aria-label={`Line ${index + 1}, data type`}
           autoFocus={autoFocus}
           value={row.dataType}
+          disabled={Boolean(ctx.lineLocks?.[row.id])}
+          title={ctx.lineLocks?.[row.id] ? 'Some letters of this line already have a code, so the data type is fixed.' : undefined}
           onChange={(e) => setLine(rowId, { dataType: e.target.value })}
         >
           {(dataTypes.data?.items ?? []).map((d) => (
@@ -695,16 +700,21 @@ export function MediaStep({
       className: 'w-[112px]',
       required: true,
       render: ({ row, rowId, index, error, autoFocus }) => (
-        <TextInput
-          aria-label={`Line ${index + 1}, quantity`}
-          aria-invalid={Boolean(error)}
-          autoFocus={autoFocus}
-          inputMode="numeric"
-          value={row.quantity}
-          onChange={(e) => setLine(rowId, { quantity: e.target.value })}
-          placeholder="e.g. 40"
-          className="text-right tabular-nums"
-        />
+        <div className="flex flex-col gap-1">
+          <TextInput
+            aria-label={`Line ${index + 1}, quantity`}
+            aria-invalid={Boolean(error)}
+            autoFocus={autoFocus}
+            inputMode="numeric"
+            value={row.quantity}
+            onChange={(e) => setLine(rowId, { quantity: e.target.value })}
+            placeholder="e.g. 40"
+            className="text-right tabular-nums"
+          />
+          {ctx.lineLocks?.[row.id] ? (
+            <span className="text-right text-[11px] text-ink-3">min {ctx.lineLocks[row.id]} (have codes)</span>
+          ) : null}
+        </div>
       ),
     },
     {

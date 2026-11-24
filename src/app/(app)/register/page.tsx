@@ -18,7 +18,10 @@ export default async function RegisterPage({
     format && (FORMATS as readonly string[]).includes(format) ? format : undefined;
   return (
     <Suspense fallback={null}>
+      {/* The manager copies these into its own filter state once; a new key remounts it so a changed format (or stage, data type,
+          assignee) in the URL loads that scope's lots instead of keeping the previous one's. */}
       <RegisterTabs
+        key={`${initialFormat ?? ''}|${stage ?? ''}|${dataType ?? ''}|${assignee ?? ''}`}
         initialStage={stage}
         initialFormat={initialFormat}
         initialDataType={dataType}

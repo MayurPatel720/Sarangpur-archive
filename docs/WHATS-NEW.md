@@ -4,6 +4,26 @@ A plain-English guide to the latest changes. No technical knowledge needed.
 
 ---
 
+## New today: 24 November 2026
+
+| What | Where to find it |
+|---|---|
+| **Stage and Decision are no longer shown for a lot.** A lot holds many items and each item has its own status, so one lot-wide status was misleading | Lot page header, Register, queue pages, project lots table, Linked lots, project progress |
+| **"People" is now "People involved in this lot"**, with a hint that says who to add | Intake form, the lot page and the intake review |
+| **Projects have a People list too:** name and phone for each person, up to 5 | **Projects → New project**, the project's **Edit** dialog, and a **People involved** box on the project page |
+| **New project form redesigned:** details on the left, people on the right, buttons at the bottom | **Projects → New project** |
+| **Photos of the physical items moved into Condition & notes** | Intake form (Condition & notes step) and the lot page (Condition & notes box) |
+| **Master Excel Columns panel fixed:** the department box now hides or shows the whole department, and ticking one column changes only that column | Master Excel → **Columns** |
+
+### Good to know
+
+- The Decision and Discards queue pages still work. Only the Stage and Decision labels on lots were removed.
+- The Register still has its Stage and Decision filters.
+- A project's people list is its own. It is not copied into the lots, and the lots' people are not copied into the project.
+- Ticking a department box when some of its columns are on hides all of them. Tick it again to show them all.
+
+---
+
 ## Today at a glance
 
 | What | Where to find it |
