@@ -51,7 +51,6 @@ export function ProjectLotsTable({
   page,
   pageSize,
   canAssign,
-  stageLabel,
   onPageChange,
   onPageSizeChange,
   onAddExisting,
@@ -62,7 +61,6 @@ export function ProjectLotsTable({
   page: number;
   pageSize: number;
   canAssign: boolean;
-  stageLabel: (stage: string) => string;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
   /** Open the picker of existing lots. */
@@ -126,16 +124,6 @@ export function ProjectLotsTable({
       ),
     },
     { key: 'items', header: 'Items', className: 'tnum', render: (r) => (r.locked ? dash : num(r.quantity)) },
-    {
-      key: 'stage',
-      header: 'Stage',
-      render: (r) => (r.locked ? dash : <Badge severity={STAGE_SEVERITY[r.stage] ?? 'neutral'}>{stageLabel(r.stage)}</Badge>),
-    },
-    {
-      key: 'decision',
-      header: 'Decision',
-      render: (r) => (r.locked ? dash : <Badge severity={DECISION_SEVERITY[r.decision] ?? 'neutral'}>{DECISION_LABELS[r.decision as Decision] ?? prettify(r.decision)}</Badge>),
-    },
     {
       key: 'assignee',
       header: 'Assignee',

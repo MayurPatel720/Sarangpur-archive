@@ -308,9 +308,15 @@ export function MasterExcel() {
   // One format chosen (e.g. Prasadi): that format's full column set. "All formats": only the columns
   // every format has — a format's own columns need that format picked (and Export writes a sheet each).
   const viewCols = useMemo(() => (format ? forFormat(withLotCols, format) : withLotCols.filter((c) => isCommonColumn(c) || c.id.startsWith('lc_'))), [format, withLotCols]);
-  const shownDepts = view.depts ?? BANDS.map((b) => b.id);
-  // The custom band is always on (a column is hidden one by one from the Columns menu).
-  const baseColumns = useMemo(() => viewCols.filter((c) => c.dept === 'custom' || shownDepts.includes(c.dept)), [viewCols, shownDepts]);
+  // Whether a column shows is decided ONLY by `view.hidden` (a department tick box just hides / shows all its columns there).
+  // Older saved views switched whole departments off with `view.depts`; fold that into `hidden` once, then stop using it.
+  useEffect(() => {
+    if (!view.depts) return;
+    const off = BANDS.map((b) => b.id as string).filter((d) => d !== 'custom' && !view.depts!.includes(d));
+    const ids = viewCols.filter((c) => off.includes(c.dept)).map((c) => c.id);
+    setView((v) => ({ depts: null, hidden: [...new Set([...v.hidden, ...ids])] }));
+  }, [view.depts, viewCols, setView]);
+  const baseColumns = viewCols;
   const columns = useMemo(() => applyView(baseColumns, view), [baseColumns, view]);
   const visibleBands = useMemo(() => BANDS.filter((b) => b.id === 'lot' || viewCols.some((c) => c.dept === b.id)), [viewCols]);
 
@@ -409,7 +415,7 @@ export function MasterExcel() {
         download(new Blob([`﻿${[head, ...body].join('\r\n')}`], { type: 'text/csv;charset=utf-8' }), `${stem}.csv`);
       } else {
         // One format: one sheet, the columns as shown. All formats: one sheet per format, each with that format's own columns.
-        const shownCols = withLotCols.filter((c) => (c.dept === 'custom' || shownDepts.includes(c.dept)) && !view.hidden.includes(c.id));
+        const shownCols = withLotCols.filter((c) => !view.hidden.includes(c.id));
         const byFormat = new Map<string, MasterRow[]>();
         for (const r of picked) byFormat.set(r.format, [...(byFormat.get(r.format) ?? []), r]);
         const sheets = format
@@ -494,7 +500,7 @@ export function MasterExcel() {
         id: c.id,
         label: c.label,
         group: c.dept,
-        checked: !view.hidden.includes(c.id) && (c.dept === 'custom' || shownDepts.includes(c.dept as never)),
+        checked: !view.hidden.includes(c.id),
         tag: c.id.startsWith('lc_') ? 'lots' : undefined,
       })),
       // Columns lots added to their own Excel that are not on this sheet yet: ticking one adds it, under its department.
@@ -503,7 +509,6 @@ export function MasterExcel() {
         .map((d) => ({ id: `lcol:${d.label}`, label: d.label, group: d.dept as string, checked: false, tag: `${d.lots} ${d.lots === 1 ? 'lot' : 'lots'}` })),
     ];
     const groups = BANDS.filter((bd) => panelColumns.some((c) => c.group === bd.id)).map((bd) => ({ id: bd.id as string, label: bd.label }));
-    const showDept = (d: string) => (shownDepts.includes(d as never) || d === 'custom' ? {} : { depts: BANDS.map((x) => x.id).filter((x) => x === d || shownDepts.includes(x)) });
     return (
       <MasterColumnsPanel
         columns={panelColumns}
@@ -511,19 +516,35 @@ export function MasterExcel() {
         onToggle={(id, on) => {
           if (id.startsWith('lcol:')) {
             const label = id.slice(5);
-            const d = customDefs.data?.lotColumns.find((x) => x.label === label)?.dept ?? 'custom';
-            setView((v) => ({ lotCols: v.lotCols.some((x) => x.toLowerCase() === label.toLowerCase()) ? v.lotCols : [...v.lotCols, label], ...showDept(d) }));
+            setView((v) => ({ lotCols: v.lotCols.some((x) => x.toLowerCase() === label.toLowerCase()) ? v.lotCols : [...v.lotCols, label] }));
           } else if (id.startsWith('lc_')) {
             // A lot column that is on the sheet: unticking takes it off again (it is listed below, ready to add back).
             setView((v) => ({ lotCols: v.lotCols.filter((l) => `lc_${l.trim().toLowerCase()}` !== id) }));
           } else {
-            const d = viewCols.find((c) => c.id === id)?.dept ?? 'custom';
-            setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...v.hidden, id], ...(on ? showDept(d) : {}) }));
+            // Only this column changes; nothing else comes back with it.
+            setView((v) => ({ hidden: on ? v.hidden.filter((x) => x !== id) : [...new Set([...v.hidden, id])] }));
           }
         }}
         onToggleGroup={(g, on) => {
-          const ids = viewCols.filter((c) => c.dept === g && !c.id.startsWith('lc_') && c.id !== viewCols[0]?.id).map((c) => c.id);
-          setView((v) => ({ hidden: on ? v.hidden.filter((x) => !ids.includes(x)) : [...new Set([...v.hidden, ...ids])], ...(on ? showDept(g) : {}) }));
+          const inGroup = viewCols.filter((c) => c.dept === g);
+          const ids = inGroup.filter((c) => !c.id.startsWith('lc_')).map((c) => c.id);
+          const lcIds = inGroup.filter((c) => c.id.startsWith('lc_')).map((c) => c.id);
+          const groupLotLabels = (customDefs.data?.lotColumns ?? []).filter((d) => d.dept === g).map((d) => d.label);
+          if (on) {
+            // Show the whole department: its built-in columns, plus every column lots added to it.
+            setView((v) => ({
+              hidden: v.hidden.filter((x) => !ids.includes(x)),
+              lotCols: [...v.lotCols, ...groupLotLabels.filter((l) => !v.lotCols.some((x) => x.trim().toLowerCase() === l.trim().toLowerCase()))],
+            }));
+            return;
+          }
+          // Hide the whole department: every column in it goes into `hidden`, and its lot-added columns come off the sheet.
+          // If that would leave the sheet with nothing, the department's first column stays.
+          const otherLeft = viewCols.some((c) => c.dept !== g && !view.hidden.includes(c.id));
+          setView((v) => ({
+            hidden: [...new Set([...v.hidden, ...(otherLeft ? ids : ids.slice(1))])],
+            lotCols: v.lotCols.filter((l) => !lcIds.includes(`lc_${l.trim().toLowerCase()}`)),
+          }));
         }}
         onShowAll={() => setView({ hidden: [], depts: DEFAULT_VIEW.depts })}
         onHideAll={() => setView({ hidden: viewCols.slice(1).map((c) => c.id) })}

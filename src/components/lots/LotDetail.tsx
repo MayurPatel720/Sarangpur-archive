@@ -62,24 +62,6 @@ const TAB_LABELS: Record<TabId, string> = {
   activity: 'Activity',
 };
 
-const STAGE_SEVERITY: Record<string, Severity> = {
-  intake: 'info',
-  decision: 'warning',
-  metadata: 'info',
-  scanning: 'info',
-  mls_tag: 'info',
-  storage: 'good',
-  returned: 'neutral',
-  discarded: 'critical',
-};
-
-const DECISION_SEVERITY: Record<string, Severity> = {
-  pending: 'warning',
-  archive: 'good',
-  return: 'info',
-  discard: 'critical',
-};
-
 const SCAN_SEVERITY: Record<string, Severity> = {
   pending: 'neutral',
   in_progress: 'info',
@@ -249,7 +231,7 @@ function ConditionPhoto({ url }: { url: string }) {
 function ConditionSection({ lot }: { lot: LotDetail }) {
   return (
       <Panel>
-        <PanelHeader title="Condition" />
+        <PanelHeader title="Condition & notes" />
         <div className="px-4 md:px-5 py-4 grid grid-cols-1 md:grid-cols-5 gap-x-6 gap-y-4">
           <div className="md:col-span-3 flex flex-col gap-1">
             <span className="text-[12px] font-medium text-ink-3">Condition notes</span>
@@ -265,7 +247,7 @@ function ConditionSection({ lot }: { lot: LotDetail }) {
           </div>
           {lot.digitalFilePath ? (
             <div className="col-span-full flex flex-col gap-1">
-              <span className="text-[12px] font-medium text-ink-3">Digital file path</span>
+              <span className="text-[12px] font-medium text-ink-3">Initial DIgital file path</span>
               <span className="font-mono text-[12px] text-ink-2 break-all">{lot.digitalFilePath}</span>
             </div>
           ) : null}
@@ -278,6 +260,7 @@ function ConditionSection({ lot }: { lot: LotDetail }) {
             </Badge>
           </div>
         </div>
+        <LotPhotosCard lotId={lot.id} embedded />
       </Panel>
   );
 }
@@ -483,7 +466,7 @@ function PeopleSection({ lot }: { lot: LotDetail }) {
           <div className="px-4 md:px-5 pb-4">
             <div className="bg-surface-subtle border border-line-soft rounded-[6px] px-3.5 py-3 flex flex-col gap-1 min-w-0">
               <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-4">
-                People
+                People involved in this lot
               </span>
               {lot.referencePeople.map((p, i) => (
                 <span key={`${p.name}-${i}`} className="text-[13px] text-ink-2 break-words">
@@ -1121,14 +1104,9 @@ function LotDetailInner({ lotId }: { lotId: string }) {
             <p className="m-0 text-[12.5px] leading-relaxed text-ink-3">{origin}</p>
           </div>
           <div className="sm:ml-auto flex items-center gap-2 flex-shrink-0">
-            <Badge severity={STAGE_SEVERITY[lot.stage] ?? 'neutral'}>{stageLabel}</Badge>
             {lot.format === 'documents' ? (
               <Badge severity="info">{lot.guru ?? 'Mixed Gurus'}</Badge>
-            ) : (
-              <Badge severity={DECISION_SEVERITY[lot.decision] ?? 'neutral'}>
-                <span className="capitalize">{lot.decision}</span>
-              </Badge>
-            )}
+            ) : null}
             <LotAssigneeSelect lot={lot} />
             {canEdit ? <GhostButton onClick={startEdit}>Edit</GhostButton> : null}
           </div>
@@ -1147,7 +1125,6 @@ function LotDetailInner({ lotId }: { lotId: string }) {
         <MaterialSection lot={lot} />
         <MediaLinesPanel lot={lot} />
         <ConditionSection lot={lot} />
-        <LotPhotosCard lotId={lot.id} />
         <ProgressSection lot={lot} />
         <JourneyPanel lot={lot} stageLabel={stageLabel} />
         <PeopleSection lot={lot} />

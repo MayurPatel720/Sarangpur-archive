@@ -7,6 +7,12 @@ import { queryKeys } from '@/lib/query-keys';
 import { Dialog } from '@/components/ui/Dialog';
 import { Field, FormError, GhostButton, PrimaryButton, Textarea, TextInput } from '@/components/ui/Form';
 import { useToast } from '@/components/ui/Toast';
+import {
+  cleanReferencePeople,
+  validateReferencePeople,
+  type ReferencePersonRow,
+} from '@/components/lots/lot-form-fields';
+import { ProjectPeopleEditor } from './ProjectPeopleEditor';
 import type { ProjectDetailResponse, ProjectUpdateBody } from '@/types/project';
 
 type EditTarget = ProjectDetailResponse['project'];
@@ -22,6 +28,10 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
   const toast = useToast();
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? '');
+  const [people, setPeople] = useState<ReferencePersonRow[]>(() =>
+    project.referencePeople.map((p, i) => ({ ...p, id: `rp${i}` })),
+  );
+  const [peopleErrors, setPeopleErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
@@ -29,6 +39,7 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
       const body: ProjectUpdateBody = {
         name: name.trim(),
         description: description.trim() ? description.trim() : null,
+        referencePeople: cleanReferencePeople(people),
       };
       return projectsApi.update(project.id, body);
     },
@@ -56,6 +67,12 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
         className="flex flex-col gap-3.5"
         onSubmit={(e) => {
           e.preventDefault();
+          const errs = validateReferencePeople(people);
+          setPeopleErrors(errs);
+          if (Object.keys(errs).length > 0) {
+            setError('Fix the highlighted people rows.');
+            return;
+          }
           setError(null);
           save.mutate();
         }}
@@ -78,6 +95,18 @@ export function ProjectFormDialog({ project, onClose }: { project: EditTarget; o
             aria-label="Project description"
           />
         </Field>
+        <div className="rounded-[10px] border border-line-soft bg-surface-subtle p-3.5">
+          <ProjectPeopleEditor
+            rows={people}
+            onChange={setPeople}
+            errors={peopleErrors}
+            onEdit={(id) =>
+              setPeopleErrors((prev) =>
+                Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(`${id}.`))),
+              )
+            }
+          />
+        </div>
         <FormError message={error} />
         <div className="flex justify-end gap-2.5">
           <GhostButton type="button" onClick={onClose}>

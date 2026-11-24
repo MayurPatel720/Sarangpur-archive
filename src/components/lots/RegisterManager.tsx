@@ -22,25 +22,7 @@ import { EMPTY_FILTERS, RegisterFilters, type LotFilters } from './RegisterFilte
 
 type LotRow = LotListResponse['rows'][number];
 
-const STAGE_SEVERITY: Record<string, Severity> = {
-  intake: 'info',
-  decision: 'warning',
-  metadata: 'info',
-  scanning: 'info',
-  mls_tag: 'info',
-  storage: 'good',
-  returned: 'neutral',
-  discarded: 'critical',
-};
-
-const DECISION_SEVERITY: Record<string, Severity> = {
-  pending: 'warning',
-  archive: 'good',
-  return: 'info',
-  discard: 'critical',
-};
-
-function columnsFor(stageLabels: (stage: string) => string): Column<LotRow>[] {
+function columnsFor(): Column<LotRow>[] {
   return [
   {
     key: 'ref',
@@ -78,24 +60,6 @@ function columnsFor(stageLabels: (stage: string) => string): Column<LotRow>[] {
       <span className="whitespace-nowrap capitalize">
         {r.format} · {r.quantity}
       </span>
-    ),
-  },
-  {
-    key: 'stage',
-    header: 'Stage',
-    render: (r) => (
-      <Badge severity={STAGE_SEVERITY[r.stage] ?? 'neutral'}>
-        {stageLabels(r.stage)}
-      </Badge>
-    ),
-  },
-  {
-    key: 'decision',
-    header: 'Decision',
-    render: (r) => (
-      <Badge severity={DECISION_SEVERITY[r.decision] ?? 'neutral'}>
-        <span className="capitalize">{r.decision}</span>
-      </Badge>
     ),
   },
   {
@@ -164,12 +128,7 @@ export function RegisterManager({
     assignee: initialAssignee ?? '',
   });
   const me = useMe();
-  const stages = useReferenceList('stage');
-  const stageLabel = (stage: string) =>
-    stages.data?.items.find((i) => i.value === stage)?.label ??
-    STAGE_LABELS[stage as keyof typeof STAGE_LABELS] ??
-    stage;
-  const columns = columnsFor(stageLabel);
+  const columns = columnsFor();
   const can = me.data ? me.data.grants.includes('lot:view') : false;
 
   // Debounce free text so every keystroke doesn't fire a request; dropdowns

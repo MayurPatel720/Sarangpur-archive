@@ -102,7 +102,8 @@ export function ReferencePeopleSection({
   ];
   return (
     <FormSection
-      legend={`People ${rows.length > 0 ? `(${rows.length})` : ''}`}
+      legend={`People involved in this lot ${rows.length > 0 ? `(${rows.length})` : ''}`}
+      description="Anyone connected to this lot, such as the donor, a family member or someone who can identify the material. Add their name and phone number."
     >
       <EditableTable
         columns={columns}

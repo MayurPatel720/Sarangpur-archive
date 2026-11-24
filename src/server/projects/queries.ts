@@ -233,6 +233,10 @@ export async function getProjectDetail(
     project: {
       ...shapeProjectRow(project),
       createdByName,
+      referencePeople: (project.referencePeople ?? []).map((p) => ({
+        name: p.name ?? '',
+        phone: p.phone ?? '',
+      })),
       // Team is derived: whoever is assigned a lot in this project.
       team: [...teamCounts.entries()].map(([userId, t]) => ({
         userId,

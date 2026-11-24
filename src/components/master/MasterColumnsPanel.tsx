@@ -84,7 +84,8 @@ export function MasterColumnsPanel({
                   ref={(el) => {
                     if (el) el.indeterminate = on > 0 && on < all.length;
                   }}
-                  onChange={(e) => onToggleGroup(g.id, e.target.checked)}
+                  // Any ticked column (all or only some) -> clicking hides the whole department; none ticked -> shows it all.
+                  onChange={() => onToggleGroup(g.id, on === 0)}
                   aria-label={`Show every ${g.label} column`}
                 />
                 <button

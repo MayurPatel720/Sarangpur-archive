@@ -8,8 +8,6 @@ import { ApiRequestError, projectsApi } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
 import { useMe } from '@/hooks/useCan';
 import { useProjectTasks } from '@/hooks/useProjectTasks';
-import { STAGE_LABELS } from '@/lib/domain';
-import { useReferenceList } from '@/hooks/useReferenceList';
 import { useUrlPagination } from '@/lib/useUrlPagination';
 import { ErrorState, Panel, PanelHeader, Skeleton } from '@/components/ui/primitives';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -22,6 +20,7 @@ import { ProjectKpis } from './ProjectKpis';
 import { ProjectLotsTable } from './ProjectLotsTable';
 import { ProjectTasksCard } from './ProjectTasksCard';
 import { ProjectProgressCard } from './ProjectProgressCard';
+import { ProjectPeopleCard } from './ProjectPeopleCard';
 import { ProjectActivityCard } from './ProjectActivityCard';
 
 function SectionSkeleton({ title, height = 'h-24' }: { title: string; height?: string }) {
@@ -41,9 +40,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const me = useMe();
-  const stages = useReferenceList('stage');
-  const stageLabel = (s: string) =>
-    stages.data?.items.find((i) => i.value === s)?.label ?? STAGE_LABELS[s as keyof typeof STAGE_LABELS] ?? s;
   const { page, pageSize, setPage, setPageSize } = useUrlPagination(25, 'lots');
   const [showEdit, setShowEdit] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
@@ -93,7 +89,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
           ))}
         </div>
         <SectionSkeleton title="Lots" height="h-40" />
-        <SectionSkeleton title="Progress by stage" height="h-16" />
+        <SectionSkeleton title="Progress" height="h-16" />
       </div>
     );
   }
@@ -142,7 +138,6 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         page={page}
         pageSize={pageSize}
         canAssign={canAssign}
-        stageLabel={stageLabel}
         onPageChange={setPage}
         onPageSizeChange={setPageSize}
         onAddExisting={() => setShowAssign(true)}
@@ -154,7 +149,9 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         <ProjectTasksCard projectId={projectId} projectCode={project.code} canAssign={canAssignTasks} />
       ) : null}
 
-      <ProjectProgressCard progress={progress} stageLabel={stageLabel} />
+      <ProjectPeopleCard people={project.referencePeople} />
+
+      <ProjectProgressCard progress={progress} />
 
       <ProjectActivityCard activity={recentActivity} />
 

@@ -49,6 +49,7 @@ export async function createProject(
             code,
             name: body.name.trim(),
             description: body.description?.trim() || null,
+            referencePeople: (body.referencePeople ?? []).map((p) => ({ name: p.name, phone: p.phone })),
             createdBy: new Types.ObjectId(ctx.userId),
             lotCount: 0,
           },
@@ -112,6 +113,12 @@ export async function updateProject(
         const next = body.description?.trim() || null;
         track('description', project.description ?? null, next);
         project.description = next;
+      }
+      if (body.referencePeople !== undefined) {
+        const next = body.referencePeople.map((p) => ({ name: p.name, phone: p.phone }));
+        const prev = (project.referencePeople ?? []).map((p) => ({ name: p.name, phone: p.phone }));
+        track('people', prev, next);
+        project.set('referencePeople', next);
       }
 
       await project.save({ session });

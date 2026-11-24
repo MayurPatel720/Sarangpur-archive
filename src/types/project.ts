@@ -189,6 +189,7 @@ export type ProjectListResponse = z.infer<typeof projectListResponseSchema>;
 export const projectCreateBodySchema = z.object({
   name: z.string().trim().min(1, 'Give the project a name.').max(160),
   description: z.string().trim().max(2000).optional(),
+  referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE).optional(),
 });
 export type ProjectCreateBody = z.infer<typeof projectCreateBodySchema>;
 /** Route handlers receive the pre-default input; the server normalises it. */
@@ -205,6 +206,7 @@ export type ProjectCreateResponse = z.infer<typeof projectCreateResponseSchema>;
 export const projectUpdateBodySchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
+  referencePeople: z.array(referencePersonSchema).max(MAX_REFERENCE_PEOPLE).optional(),
 });
 export type ProjectUpdateBody = z.infer<typeof projectUpdateBodySchema>;
 
@@ -241,6 +243,8 @@ export const projectDetailResponseSchema = z.object({
   project: projectRowSchema.extend({
     /** Who created the project (looked up by id at read time; null if the user is gone). */
     createdByName: z.string().nullable(),
+    /** People involved in this project's lots: the shared list every synced lot mirrors. */
+    referencePeople: z.array(referencePersonSchema),
     /** Derived: distinct assignees of the project's lots. */
     team: z.array(z.object({ userId: z.string(), userName: z.string(), lotCount: z.number() })),
     /** The project's lots with their format and quantity (header totals, the lot picker). */

@@ -34,7 +34,11 @@ const projectSchema = new Schema(
      * for the key list and the mapping. Dates are ISO strings (wire shape).
      */
     shared: { type: Schema.Types.Mixed, default: () => ({}) },
-
+    /** People involved in this project (name + phone). Info only, up to MAX_REFERENCE_PEOPLE. */
+    referencePeople: {
+      type: [new Schema({ name: { type: String, trim: true }, phone: { type: String, trim: true } }, { _id: false })],
+      default: () => [],
+    },
 
     /** Counter cache: lots currently carrying this project's id. See note above. */
     lotCount: { type: Number, required: true, default: 0, min: 0 },

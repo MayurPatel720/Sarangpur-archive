@@ -20,7 +20,7 @@ const STATUS_LABEL = { queued: 'Waiting', uploading: 'Uploading…', done: 'Uplo
  * Photos of the lot's physical items as received. Everyone who can view the lot sees them; the
  * server decides `can.manage` (lot:edit + the assignee rule), which gates Add and Delete.
  */
-export function LotPhotosCard({ lotId }: { lotId: string }) {
+export function LotPhotosCard({ lotId, embedded = false }: { lotId: string; embedded?: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,9 +65,10 @@ export function LotPhotosCard({ lotId }: { lotId: string }) {
 
   const visibleUploads = uploads.entries.filter((e) => e.status !== 'done');
 
+  const Wrapper = embedded ? EmbeddedBlock : Panel;
   return (
-    <Panel className="overflow-hidden">
-      <PanelHeader title="Photos">
+    <Wrapper className="overflow-hidden">
+      <PanelHeader title="Photos of the physical items">
         {query.data ? <span className="text-[12px] text-ink-3">{num(images.length)}</span> : null}
         {canManage ? (
           <span className="ml-auto">
@@ -184,6 +185,11 @@ export function LotPhotosCard({ lotId }: { lotId: string }) {
           onClose={() => setRemoving(null)}
         />
       ) : null}
-    </Panel>
+    </Wrapper>
   );
+}
+
+/** Same slot as `Panel`, minus the card chrome, for sitting inside another card. */
+function EmbeddedBlock({ className, children }: { className?: string; children: React.ReactNode }) {
+  return <div className={`border-t border-line-soft ${className ?? ''}`}>{children}</div>;
 }

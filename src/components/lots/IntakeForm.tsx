@@ -308,7 +308,28 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
         <FormError message={formError} />
 
         {step === STEP_ORIGIN ? <OriginContactsStep ctx={ctx} /> : null}
-        {step === STEP_CONDITION ? <ConditionStep ctx={ctx} /> : null}
+        {step === STEP_CONDITION ? (
+          <ConditionStep
+            ctx={ctx}
+            photosSlot={
+              <div className="mt-4 flex flex-col gap-2 border-t border-line-soft pt-3">
+                <span className="text-[12.5px] font-semibold text-ink-2">Photos of the physical items (optional)</span>
+                <ProjectPhotoPicker
+                  photos={photos}
+                  onChange={setPhotos}
+                  disabled={busy}
+                  showFormat={false}
+                  waitingNote=""
+                />
+                {uploadingPhotos ? (
+                  <p role="status" className="m-0 text-[12.5px] font-medium text-ink-2">
+                    Uploading photos… {photoUploads.entries.filter((e) => e.status === 'done').length} of {photoUploads.entries.length} done
+                  </p>
+                ) : null}
+              </div>
+            }
+          />
+        ) : null}
         {step === STEP_MEDIA ? (
           <MediaStep
             ctx={ctx}
@@ -331,21 +352,6 @@ export function IntakeForm({ initialFormat, projectId }: { initialFormat?: strin
                     Registering creates {lineFormats.length} lots — one per format ({lineFormats.map((f) => FORMAT_LABELS[f as Format] ?? f).join(', ')}). They are linked to each other, and each can have its own owner. Photos you add go to the first lot.
                   </p>
                 ) : null}
-                <div className="mt-3 flex flex-col gap-2 border-t border-line-soft pt-3">
-                  <span className="text-[12.5px] font-semibold text-ink-2">Photos of the physical items (optional)</span>
-                  <ProjectPhotoPicker
-                    photos={photos}
-                    onChange={setPhotos}
-                    disabled={busy}
-                    showFormat={false}
-                    waitingNote=""
-                  />
-                  {uploadingPhotos ? (
-                    <p role="status" className="m-0 text-[12.5px] font-medium text-ink-2">
-                      Uploading photos… {photoUploads.entries.filter((e) => e.status === 'done').length} of {photoUploads.entries.length} done
-                    </p>
-                  ) : null}
-                </div>
               </>
             }
           />

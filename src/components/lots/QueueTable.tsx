@@ -20,13 +20,6 @@ import { LotRowActions } from './LotRowActions';
 
 type Row = LotListResponse['rows'][number];
 
-const DECISION_SEVERITY: Record<string, Severity> = {
-  pending: 'warning',
-  archive: 'good',
-  return: 'info',
-  discard: 'critical',
-};
-
 export function QueueTable({
   title,
   subtitle,
@@ -100,7 +93,6 @@ function QueueTableInner({
   const me = useMe();
   // Keep the open lot inside the format block the queue was opened from.
   const ctxFormat = useFormatContext();
-  const stages = useReferenceList('stage');
   const { page, pageSize, setPage, setPageSize } = useUrlPagination(defaultPageSize);
 
   const queue = useQuery({
@@ -189,19 +181,6 @@ function QueueTableInner({
                     </span>
                   ),
                 },
-                ...(showDecision
-                  ? [
-                      {
-                        key: 'decision',
-                        header: 'Decision',
-                        render: (r: Row) => (
-                          <Badge severity={DECISION_SEVERITY[r.decision] ?? 'neutral'}>
-                            <span className="capitalize">{r.decision}</span>
-                          </Badge>
-                        ),
-                      },
-                    ]
-                  : []),
                 ...(showReturn
                   ? [
                       {
@@ -215,17 +194,6 @@ function QueueTableInner({
                       },
                     ]
                   : []),
-                {
-                  key: 'stage',
-                  header: 'Stage',
-                  render: (r) => (
-                    <span className="text-ink-2">
-                      {stages.data?.items.find((i) => i.value === r.stage)?.label ??
-                        STAGE_LABELS[r.stage as keyof typeof STAGE_LABELS] ??
-                        r.stage}
-                    </span>
-                  ),
-                },
                 {
                   key: 'assignee',
                   header: 'Assignee',

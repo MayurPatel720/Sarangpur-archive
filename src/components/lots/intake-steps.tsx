@@ -478,11 +478,11 @@ export function OriginContactsStep({
   );
 }
 
-export function ConditionStep({ ctx }: { ctx: StepCtx }) {
+export function ConditionStep({ ctx, photosSlot }: { ctx: StepCtx; photosSlot?: React.ReactNode }) {
   const { mode, draft, patch, errors } = ctx;
   return (
     <StepBlocks>
-      <FormSection legend="Condition">
+      <FormSection legend="Condition & notes">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Condition notes">
             <Textarea
@@ -503,6 +503,7 @@ export function ConditionStep({ ctx }: { ctx: StepCtx }) {
             />
           </Field>
         </div>
+        {photosSlot}
       </FormSection>
 
       <FormSection legend="Reason &amp; remarks">
@@ -545,7 +546,7 @@ export function ConditionStep({ ctx }: { ctx: StepCtx }) {
 
       {mode === 'lot' ? (
         <FormSection legend="Naming &amp; storage (optional)">
-          <Field label="Digital file path">
+          <Field label="Initial DIgital file path">
             <TextInput
               value={draft.digitalFilePath}
               onChange={(e) => patch({ digitalFilePath: e.target.value })}
@@ -935,7 +936,7 @@ export function ReviewSummary({
           value={d.pocs.length ? d.pocs.map(contactLine).join(' | ') : 'None'}
         />
         <SummaryRow
-          label="People"
+          label="People involved in this lot"
           value={
             cleanReferencePeople(d.referencePeople).length
               ? cleanReferencePeople(d.referencePeople).map(referencePersonLine).join(' | ')
@@ -961,7 +962,7 @@ export function ReviewSummary({
         ) : null}
         {mode === 'lot' ? (
           <>
-            <SummaryRow label="Digital file path" value={d.digitalFilePath} />
+            <SummaryRow label="Initial DIgital file path" value={d.digitalFilePath} />
             <SummaryRow label="Physical label" value={d.physicalLabelApplied ? 'Applied' : 'Not applied'} />
             <SummaryRow label="Container label" value={d.containerLabelApplied ? 'Applied' : 'Not applied'} />
           </>
