@@ -21,7 +21,7 @@ on their lot, and it syncs back to the project and to every sibling lot.
 | 2 | Split rule: **one child lot per format**. E.g. 35mm 50 + prints 30 → one Photo lot (80); VHS 15 → Video lot; letters 40 → Documents lot. |
 | 3 | Mandatory for the admin: project details + media lines/quantities. Everything else is optional. |
 | 4 | Shared fields have **one value** across the project and all its child lots. An edit anywhere (project or any child) updates all of them. |
-| 5 | **Shared:** date received, origin source, owner, points of contact, facilitator, condition notes/photo, reason for sending, sender remarks, photo metadata, return request, rights. **Per lot:** media lines/quantities, digital file path, physical/container label flags. |
+| 5 | **Shared:** date received, origin source, owner, points of contact, facilitator, condition notes/photo, reason for sending, sender remarks, photo metadata, return request, rights. **Per lot:** media lines/quantities, Initial DIgital file path, physical/container label flags. |
 | 6 | Child lots start in the normal **Intake** stage, even with gaps. |
 | 7 | A lot **cannot leave Intake** until date received, origin and owner name are filled. |
 | 8 | Assignee owns the lot end to end. **Only the assignee and admins** can change it. Assignment only restricts; it never grants (role permissions still apply). |

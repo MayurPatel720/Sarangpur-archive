@@ -53,7 +53,7 @@ export function FilePathSection({ lot, onChanged }: { lot: DetailLot; onChanged:
       <div className="px-4 md:px-5 py-3.5 flex flex-col gap-3.5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-x-5 gap-y-3.5">
           <div className="md:col-span-2">
-            <Definition label="Digital file path">
+            <Definition label="Initial DIgital file path">
               {lot.digitalFilePath ? (
                 <span className="font-mono text-[12px] break-all">{lot.digitalFilePath}</span>
               ) : (
@@ -75,7 +75,7 @@ export function FilePathSection({ lot, onChanged }: { lot: DetailLot; onChanged:
 
         {canEdit ? (
           <div className="flex flex-col gap-3">
-            <Field label="Digital file path" hint="Where this lot lives on the file server.">
+            <Field label="Initial DIgital file path" hint="Where this lot lives on the file server.">
               <TextInput
                 value={filePath}
                 onChange={(e) => setFilePath(e.target.value)}
