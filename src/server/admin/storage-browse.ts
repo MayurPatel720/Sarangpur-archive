@@ -1,7 +1,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { HttpError } from '@/lib/api';
-import { getStorageConfig } from '@/server/storage-config';
+import { describeServer, getStorageConfig } from '@/server/storage-config';
 import type { FolderBrowseResponse } from '@/types/admin';
 
 /**
@@ -18,6 +18,7 @@ const BACKSLASH = String.fromCharCode(92);
 export async function browseFolders(path: string): Promise<FolderBrowseResponse> {
   const cfg = await getStorageConfig();
   const suggestions = [...new Set([cfg.root, ...cfg.legacyRoots, process.env.MEDIA_ROOT?.trim() ?? ''].filter(Boolean))];
+  const server = describeServer();
   const wanted = path.trim();
 
   // Top level.
@@ -33,7 +34,7 @@ export async function browseFolders(path: string): Promise<FolderBrowseResponse>
         }
       }),
     );
-    return { path: '', parent: null, folders: found.filter((f): f is { name: string; path: string } => f !== null), truncated: false, suggestions };
+    return { path: '', parent: null, folders: found.filter((f): f is { name: string; path: string } => f !== null), truncated: false, server, suggestions };
   }
 
   const here = wanted || '/';
@@ -63,6 +64,7 @@ export async function browseFolders(path: string): Promise<FolderBrowseResponse>
     parent: up !== here ? up : isWindows ? '' : null,
     folders: folders.slice(0, MAX_FOLDERS),
     truncated: folders.length > MAX_FOLDERS,
+    server,
     suggestions,
   };
 }

@@ -454,7 +454,7 @@ console.log('\n' + '─'.repeat(72));
 console.log('  DASHBOARD, rendered from the generated archive');
 console.log('─'.repeat(72));
 
-console.log(`\n  ${summary.activeLotCount} lots in the pipeline · ${summary.storage.usedTb} TB of ${summary.storage.capacityTb} TB used (${summary.storage.percent}%)\n`);
+console.log(`\n  ${summary.activeLotCount} lots in the pipeline · ${summary.storage.usedTb} TB of masters under management\n`);
 
 for (const k of summary.kpis) {
   console.log(`  ${k.label.padEnd(20)} ${String(k.value).padStart(6)}   ${k.note}`);

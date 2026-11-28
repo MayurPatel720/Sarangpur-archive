@@ -202,7 +202,7 @@ if (!summaryParsed.success) console.log(JSON.stringify(summaryParsed.error.flatt
 
 check('active (in-flight) lot count excludes storage', summary.activeLotCount, 8);
 check('total lot count', summary.totalLotCount, 12);
-check('storage meter', [summary.storage.usedTb, summary.storage.capacityTb], [5, 96]);
+check('storage used (TB)', summary.storage.usedTb, 5);
 const kpi = (k: string) => summary.kpis.find((x) => x.key === k);
 check('KPI received value/note', [kpi('received')?.value, kpi('received')?.note], [6, '+4 vs previous 30 days']);
 check('KPI awaiting decision', [kpi('awaiting_decision')?.value, kpi('awaiting_decision')?.note], [3, '2 past the 5-day threshold']);
@@ -320,7 +320,7 @@ check('video: storage bytes', facetVid.storage[0]?.bytes, 0);
 const summaryVid = shapeSummary(facetVid, w);
 check('video summary: matches Zod contract', summaryResponseSchema.safeParse(summaryVid).success, true);
 check('video summary: total / active', [summaryVid.totalLotCount, summaryVid.activeLotCount], [2, 2]);
-check('video summary: storage meter', [summaryVid.storage.usedTb, summaryVid.storage.percent], [0, 0]);
+check('video summary: storage used (TB)', summaryVid.storage.usedTb, 0);
 const kpiVid = (k: string) => summaryVid.kpis.find((x) => x.key === k);
 check('video KPI received', [kpiVid('received')?.value, kpiVid('received')?.note], [1, 'Unchanged vs previous 30 days']);
 check('video KPI awaiting decision', [kpiVid('awaiting_decision')?.value, kpiVid('awaiting_decision')?.note], [0, 'All within the review threshold']);

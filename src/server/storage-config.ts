@@ -1,3 +1,4 @@
+import { hostname } from 'node:os';
 import { connectToDatabase } from '@/lib/mongo';
 import { Setting } from '@/models/Setting';
 
@@ -59,4 +60,18 @@ export async function getStorageConfig(): Promise<StorageConfig> {
 /** Called after the settings are saved so the new choice applies at once on this server. */
 export function clearStorageConfigCache(): void {
   cached = null;
+}
+
+/** Which machine this app is running on, so the Settings screen can say what its folder list is showing. */
+export interface ServerInfo {
+  os: 'Windows' | 'Linux' | 'macOS' | 'Other';
+  name: string;
+  /** True on a cloud host (Vercel, AWS Lambda): there is no persistent folder there, and it cannot reach a PC or file share. */
+  hosted: boolean;
+}
+
+export function describeServer(): ServerInfo {
+  const os = process.platform === 'win32' ? 'Windows' : process.platform === 'linux' ? 'Linux' : process.platform === 'darwin' ? 'macOS' : 'Other';
+  const hosted = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY);
+  return { os, name: hosted ? 'cloud host' : hostname(), hosted };
 }

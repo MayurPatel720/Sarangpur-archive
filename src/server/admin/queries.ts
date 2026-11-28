@@ -3,7 +3,7 @@ import { ReferenceList } from '@/models/ReferenceList';
 import { Setting } from '@/models/Setting';
 import { User } from '@/models/User';
 import { connectToDatabase } from '@/lib/mongo';
-import { effectiveStorage } from '@/server/storage-config';
+import { effectiveStorage, describeServer } from '@/server/storage-config';
 import type {
   AdminReferenceList,
   AdminRole,
@@ -157,52 +157,21 @@ export async function getSettings(): Promise<AdminSettings> {
         key: 'global',
         decisionPendingDays: 5,
         scanStuckDays: 7,
-        returnGraceDays: 3,
-        storageCapacityTb: 96,
-        storageLabel: 'MLS reachable',
-        storageRoot: '192.168.0.84/MLS/dev/',
-        storageUsedTb: 0,
-        notifyEmailEnabled: false,
-        notifySmsEnabled: false,
         revision: 1,
       },
     },
     { upsert: true, new: true },
   ).lean();
   if (!doc) throw new Error('Settings document could not be created.');
-  // Self-heal: documents created before the storage fields existed get defaults
-  // (no revision bump — this is a schema migration, not an admin edit).
-  if (doc.storageLabel === undefined || doc.storageRoot === undefined || doc.storageUsedTb === undefined) {
-    await Setting.updateOne(
-      { key: 'global' },
-      {
-        $set: {
-          ...(doc.storageLabel === undefined ? { storageLabel: 'MLS reachable' } : {}),
-          ...(doc.storageRoot === undefined ? { storageRoot: '192.168.0.84/MLS/dev/' } : {}),
-          ...(doc.storageUsedTb === undefined ? { storageUsedTb: 0 } : {}),
-        },
-      },
-    );
-    const healed = await Setting.findOne({ key: 'global' }).lean();
-    if (!healed) throw new Error('Settings document could not be created.');
-    return serializeSettings(healed);
-  }
   return serializeSettings(doc);
 }
 
 export function serializeSettings(doc: {
   decisionPendingDays: number;
   scanStuckDays: number;
-  returnGraceDays: number;
-  storageCapacityTb: number;
-  storageLabel: string;
-  storageRoot: string;
-  storageUsedTb: number;
   photoStorageDriver?: string | null;
   photoStorageRoot?: string | null;
   photoStorageLegacyRoots?: string[] | null;
-  notifyEmailEnabled: boolean;
-  notifySmsEnabled: boolean;
   revision: number;
   updatedBy?: unknown;
   updatedAt?: unknown;
@@ -211,17 +180,11 @@ export function serializeSettings(doc: {
   return {
     decisionPendingDays: doc.decisionPendingDays,
     scanStuckDays: doc.scanStuckDays,
-    returnGraceDays: doc.returnGraceDays,
-    storageCapacityTb: doc.storageCapacityTb,
-    storageLabel: doc.storageLabel,
-    storageRoot: doc.storageRoot,
-    storageUsedTb: doc.storageUsedTb,
     photoStorageDriver: photo.driver,
     photoStorageRoot: photo.root,
     photoStorageSource: photo.source,
     photoStorageLegacyRoots: photo.legacyRoots,
-    notifyEmailEnabled: doc.notifyEmailEnabled,
-    notifySmsEnabled: doc.notifySmsEnabled,
+    server: describeServer(),
     revision: doc.revision,
     updatedBy: doc.updatedBy ? String(doc.updatedBy) : null,
     updatedAt: iso(doc.updatedAt),

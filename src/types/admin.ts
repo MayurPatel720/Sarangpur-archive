@@ -229,22 +229,24 @@ export type MeResponse = z.infer<typeof meResponseSchema>;
 
 /* ----------------------------------------------------------------- settings */
 
+/** The machine the app runs on (so the folder list can say what it is showing). */
+export const serverInfoSchema = z.object({
+  os: z.enum(['Windows', 'Linux', 'macOS', 'Other']),
+  name: z.string(),
+  hosted: z.boolean(),
+});
+export type ServerInfoView = z.infer<typeof serverInfoSchema>;
+
 export const settingsSchema = z.object({
   decisionPendingDays: z.number(),
   scanStuckDays: z.number(),
-  returnGraceDays: z.number(),
-  storageCapacityTb: z.number(),
-  storageLabel: z.string(),
-  storageRoot: z.string(),
-  storageUsedTb: z.number(),
   /** Where photos are saved right now (settings first, then the server environment). */
   photoStorageDriver: z.enum(['cloudinary', 'disk']),
   photoStorageRoot: z.string(),
   photoStorageSource: z.enum(['settings', 'environment']),
   /** Earlier photo folders, kept so photos saved there still show. */
   photoStorageLegacyRoots: z.array(z.string()),
-  notifyEmailEnabled: z.boolean(),
-  notifySmsEnabled: z.boolean(),
+  server: serverInfoSchema,
   revision: z.number(),
   updatedBy: z.string().nullable(),
   updatedAt: z.string(),
@@ -258,15 +260,8 @@ export const settingsPatchBodySchema = z
   .object({
     decisionPendingDays: z.number().int().min(1).optional(),
     scanStuckDays: z.number().int().min(1).optional(),
-    returnGraceDays: z.number().int().min(0).optional(),
-    storageCapacityTb: z.number().min(1).optional(),
-    storageLabel: z.string().min(1).max(60).optional(),
-    storageRoot: z.string().min(1).max(200).optional(),
-    storageUsedTb: z.number().min(0).optional(),
     photoStorageDriver: z.enum(['cloudinary', 'disk']).optional(),
     photoStorageRoot: z.string().max(500).optional(),
-    notifyEmailEnabled: z.boolean().optional(),
-    notifySmsEnabled: z.boolean().optional(),
     expectedRevision: z.number().int(),
   })
   .refine((b) => Object.keys(b).length > 1, 'Nothing to change.');
@@ -282,6 +277,7 @@ export const folderBrowseResponseSchema = z.object({
   folders: z.array(z.object({ name: z.string(), path: z.string() })),
   /** True when the list was cut short (very large folder). */
   truncated: z.boolean(),
+  server: serverInfoSchema,
   /** Quick picks: the current photo folder, earlier ones and the environment value. */
   suggestions: z.array(z.string()),
 });

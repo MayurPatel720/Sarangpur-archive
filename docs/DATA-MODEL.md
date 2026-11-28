@@ -351,8 +351,10 @@ Admin-manageable vocabularies (Tier-2). Seed inventory lives in
 ## `settings` — **TODO** (`src/models/Setting.ts`)
 
 Single document, `key: 'global'`. Moves the alert thresholds out of env vars so an Admin
-can change them in the UI: `decisionPendingDays`, `scanStuckDays`, `returnGraceDays`,
-`storageCapacityTb`, `notify{Email,Sms}Enabled`.
+can change them in the UI: `decisionPendingDays`, `scanStuckDays`, plus the
+photo storage choice (`photoStorageDriver`, `photoStorageRoot`, `photoStorageLegacyRoots`).
+Only settings the app really uses are kept here: a return grace period, notification switches, a storage
+label / path / used-space / capacity were removed because nothing needed them.
 
 Env vars stay as the fallback when the document is absent.
 

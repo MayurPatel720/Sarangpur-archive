@@ -29,8 +29,6 @@ export const summaryResponseSchema = z.object({
   kpis: z.array(kpiSchema),
   storage: z.object({
     usedTb: z.number(),
-    capacityTb: z.number(),
-    percent: z.number(),
   }),
   activeLotCount: z.number(),
   totalLotCount: z.number(),

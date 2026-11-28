@@ -11,7 +11,6 @@ import {
   type PipelineResponse,
   type SummaryResponse,
 } from '@/types/dashboard';
-import { serverHealthResponseSchema, type ServerHealthResponse } from '@/types/health';
 import {
   listDeleteResponseSchema,
   listResponseSchema,
@@ -317,10 +316,6 @@ export const dashboardApi = {
       `/api/dashboard/activity?limit=${limit}${format ? `&format=${encodeURIComponent(format)}` : ''}`,
       activityResponseSchema,
     ),
-};
-
-export const healthApi = {
-  status: () => getJson<ServerHealthResponse>('/api/health', serverHealthResponseSchema),
 };
 
 async function sendJson<T>(

@@ -15,10 +15,6 @@ export const queryKeys = {
     activity: (limit: number, format?: string) =>
       [...queryKeys.dashboard.all, 'activity', limit, format ?? 'all'] as const,
   },
-  health: {
-    all: ['health'] as const,
-    server: () => [...queryKeys.health.all, 'server'] as const,
-  },
   admin: {
     all: ['admin'] as const,
     roles: () => [...queryKeys.admin.all, 'roles'] as const,

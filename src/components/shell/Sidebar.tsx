@@ -8,15 +8,14 @@ import { useDrawer } from '@/components/shell/drawer-context';
 import { useMe } from '@/hooks/useCan';
 import { useFormatContext } from '@/hooks/useFormatParam';
 import { useAccessibleFormats, useLastFormat } from '@/hooks/useFormatChoice';
-import { dashboardApi, healthApi } from '@/lib/api-client';
+import { dashboardApi } from '@/lib/api-client';
 import { scopedHref } from '@/lib/dashboard-links';
-import { formatBytes, num } from '@/lib/format';
+import { num } from '@/lib/format';
 import { queryKeys } from '@/lib/query-keys';
 import { SIDEBAR_WIDTH_CLASS } from '@/lib/shell';
 import type { Permission } from '@/server/permissions';
 import {
   IconAlertTriangle,
-  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconCheckCircle,
@@ -93,7 +92,6 @@ export function Sidebar() {
   const { open, collapsed: collapsedPref, railReady: providerReady, toggleCollapse } = useDrawer();
   const [hoverExpand, setHoverExpand] = useState(false);
   const [focusExpand, setFocusExpand] = useState(false);
-  const [storageOpen, setStorageOpen] = useState(false);
   /**
    * Suspense (useSearchParams) can hydrate this subtree after DrawerProvider has
    * already restored the collapsed preference from localStorage. Server HTML is
@@ -157,13 +155,6 @@ export function Sidebar() {
   /** Where the Dashboard tile goes: the format in view, else the last one used, else the first the user may open. */
   const dashFormat = ctxFormat ?? (lastFormat && (accessible ?? []).includes(lastFormat) ? lastFormat : accessible?.[0]);
 
-  const health = useQuery({
-    queryKey: queryKeys.health.server(),
-    queryFn: healthApi.status,
-    refetchInterval: 30_000,
-    staleTime: 20_000,
-  });
-
   const alerts = useQuery({
     queryKey: queryKeys.dashboard.alerts(ctxFormat),
     queryFn: () => dashboardApi.alerts(ctxFormat),
@@ -171,42 +162,6 @@ export function Sidebar() {
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
-
-  /**
-   * First paint must be identical on server and client. React Query's fetchStatus
-   * differs across that boundary, so only trust data / an explicit fetching state
-   * once this tree has mounted.
-   */
-  const statusColor =
-    health.data?.status === 'healthy'
-      ? 'bg-good-mark'
-      : health.data?.status === 'degraded'
-        ? 'bg-warn-mark'
-        : railReady && health.isFetching
-          ? 'bg-ink-3'
-          : health.data
-            ? 'bg-danger-mark'
-            : 'bg-ink-3';
-
-  const statusLabel =
-    health.data?.status === 'healthy'
-      ? 'Connected'
-      : health.data?.status === 'degraded'
-        ? 'Slow'
-        : health.data
-          ? 'Disconnected'
-          : 'Checking…';
-
-  const statusText = `${statusLabel}${health.data ? ` · ${health.data.storage.label} ${health.data.storage.root} (${health.data.storage.usedTb}/${health.data.storage.capacityTb} TB)` : ''}`;
-
-  const checkedAt =
-    railReady && health.dataUpdatedAt
-      ? new Date(health.dataUpdatedAt).toLocaleTimeString('en-GB', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        })
-      : null;
 
   const alertBadge = alerts.data?.totalOpen ?? 0;
 
@@ -299,109 +254,18 @@ export function Sidebar() {
         !showFull && SIDEBAR_WIDTH_CLASS.collapsed,
       ].join(' ')}
     >
-      {/* Workspace / storage disclosure */}
-      <div
-        className={`flex flex-col border-b border-rail-line ${showFull ? 'px-4 py-4 gap-2' : 'items-center px-0 py-5 gap-2'}`}
-      >
-        <button
-          type="button"
-          onClick={() => setStorageOpen((v) => !v)}
-          aria-expanded={storageOpen}
-          title={storageOpen ? 'Hide storage details' : 'Show storage details'}
-          className={`flex items-center text-left rounded-md cursor-pointer ${showFull ? 'gap-2.5 w-full' : ''}`}
-        >
+      {/* Workspace */}
+      <div className={`flex flex-col border-b border-rail-line ${showFull ? 'px-4 py-4' : 'items-center px-0 py-5'}`}>
+        <div className={`flex items-center ${showFull ? 'gap-2.5 w-full' : ''}`}>
           <div className="w-9 h-9 rounded-md bg-accent flex items-center justify-center flex-shrink-0">
             <span className="text-[11.5px] font-semibold text-white tracking-[0.03em]">SA</span>
           </div>
           {showFull && (
-            <>
-              <span className="sidebar-label-in flex-1 text-[13px] font-semibold text-rail-text-strong leading-tight truncate">
-                Sarangpur Archive
-              </span>
-              <IconChevronDown
-                size={13}
-                className={`text-rail-muted transition-transform duration-200 ${storageOpen ? 'rotate-180' : ''}`}
-              />
-            </>
+            <span className="sidebar-label-in flex-1 text-[13px] font-semibold text-rail-text-strong leading-tight truncate">
+              Sarangpur Archive
+            </span>
           )}
-        </button>
-
-        {!showFull ? (
-          <span
-            role="status"
-            aria-label={statusText}
-            title={statusText}
-            className={`mt-2 w-[7px] h-[7px] rounded-full flex-shrink-0 ${statusColor}`}
-          />
-        ) : storageOpen ? (
-          <div className="sidebar-label-in flex flex-col gap-1 pl-[42px] pr-1">
-            <div className="flex items-center gap-2">
-              <span
-                role="status"
-                aria-label={statusLabel}
-                className={`w-[7px] h-[7px] rounded-full flex-shrink-0 ${statusColor}`}
-              />
-              <span className="text-[10.5px] text-rail-muted truncate">
-                {health.data ? health.data.storage.label : statusLabel}
-              </span>
-              {checkedAt && (
-                <span
-                  className="text-[9.5px] text-rail-muted/60 tabular-nums ml-auto"
-                  title={`Health checked at ${checkedAt}`}
-                >
-                  {checkedAt}
-                </span>
-              )}
-            </div>
-            {health.data && (
-              <>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[10.5px] font-medium text-rail-text-strong">Archive storage</span>
-                  <span className="text-[9.5px] text-rail-muted tabular-nums ml-auto">
-                    {health.data.storage.usedTb} / {health.data.storage.capacityTb} TB
-                  </span>
-                </div>
-                <div
-                  className="h-[4px] rounded-full bg-rail-line overflow-hidden"
-                  role="meter"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={
-                    health.data.storage.capacityTb > 0
-                      ? Math.min(
-                          100,
-                          Math.round(
-                            (health.data.storage.usedTb / health.data.storage.capacityTb) * 100,
-                          ),
-                        )
-                      : 0
-                  }
-                  aria-label="Archive storage used"
-                >
-                  <div
-                    className="h-full rounded-full bg-accent"
-                    style={{
-                      width: `${
-                        health.data.storage.capacityTb > 0
-                          ? Math.min(
-                              100,
-                              (health.data.storage.usedTb / health.data.storage.capacityTb) * 100,
-                            )
-                          : 0
-                      }%`,
-                    }}
-                  />
-                </div>
-                <div
-                  className="text-[9px] text-rail-muted/60 tabular-nums truncate"
-                  title={`${health.data.storage.root} · Indexed ${formatBytes(health.data.storage.indexedBytes)} · ${health.data.storage.indexedFiles} files`}
-                >
-                  {health.data.storage.root} · {health.data.storage.indexedFiles} files
-                </div>
-              </>
-            )}
-          </div>
-        ) : null}
+        </div>
       </div>
 
       {/* Primary nav */}

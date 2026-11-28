@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { connectToDatabase } from '@/lib/mongo';
-import { Setting } from '@/models/Setting';
 import { FileIndex } from '@/models/FileIndex';
 import { serverHealthResponseSchema } from '@/types/health';
 
@@ -22,9 +21,6 @@ function deriveServerLabel(uri: string): string {
 }
 
 async function readStorage() {
-  // No upsert here: health polls must never create documents. Missing settings
-  // degrade to seed-identical defaults; getSettings() self-heals on next admin read.
-  const doc = await Setting.findOne({ key: 'global' }).lean();
   // Single $group over FileIndex. Fine at current scale; move to a materialised
   // counter when FileIndex reaches millions of rows (20 clients poll every 30s).
   const agg = await FileIndex.aggregate<{ bytes: number; files: number }>([
@@ -32,10 +28,6 @@ async function readStorage() {
   ]);
   const indexed = agg[0];
   return {
-    label: doc?.storageLabel ?? 'MLS reachable',
-    root: doc?.storageRoot ?? '192.168.0.84/MLS/dev/',
-    usedTb: doc?.storageUsedTb ?? 0,
-    capacityTb: doc?.storageCapacityTb ?? 96,
     indexedBytes: indexed?.bytes ?? 0,
     indexedFiles: indexed?.files ?? 0,
   };
@@ -81,10 +73,6 @@ export async function GET() {
         latencyMs,
         dbName: 'unknown',
         storage: {
-          label: 'MLS reachable',
-          root: '192.168.0.84/MLS/dev/',
-          usedTb: 0,
-          capacityTb: 96,
           indexedBytes: 0,
           indexedFiles: 0,
         },

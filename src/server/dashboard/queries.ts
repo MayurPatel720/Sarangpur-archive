@@ -150,7 +150,6 @@ export function shapeSummary(
   const scanPercent = scanExpected > 0 ? Math.round((scanFound / scanExpected) * 100) : 0;
 
   const decisionSlaDays = window.decisionPendingDays;
-  const capacityTb = envInt('ARCHIVE_STORAGE_CAPACITY_TB', 96);
   const usedTb = round(storageBytes / TB, 1);
   const returnsOverdueN = returnsOverdue?.n ?? 0;
 
@@ -165,11 +164,8 @@ export function shapeSummary(
     generatedAt: window.now.toISOString(),
     activeLotCount,
     totalLotCount: count(facet.totalLots),
-    storage: {
-      usedTb,
-      capacityTb,
-      percent: capacityTb > 0 ? Math.round((usedTb / capacityTb) * 100) : 0,
-    },
+    // Measured from the file index; there is no configured capacity to compare it with.
+    storage: { usedTb },
     kpis: [
       {
         key: 'received',
