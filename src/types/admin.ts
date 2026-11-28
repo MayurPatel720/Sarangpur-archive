@@ -237,6 +237,12 @@ export const settingsSchema = z.object({
   storageLabel: z.string(),
   storageRoot: z.string(),
   storageUsedTb: z.number(),
+  /** Where photos are saved right now (settings first, then the server environment). */
+  photoStorageDriver: z.enum(['cloudinary', 'disk']),
+  photoStorageRoot: z.string(),
+  photoStorageSource: z.enum(['settings', 'environment']),
+  /** Earlier photo folders, kept so photos saved there still show. */
+  photoStorageLegacyRoots: z.array(z.string()),
   notifyEmailEnabled: z.boolean(),
   notifySmsEnabled: z.boolean(),
   revision: z.number(),
@@ -257,9 +263,31 @@ export const settingsPatchBodySchema = z
     storageLabel: z.string().min(1).max(60).optional(),
     storageRoot: z.string().min(1).max(200).optional(),
     storageUsedTb: z.number().min(0).optional(),
+    photoStorageDriver: z.enum(['cloudinary', 'disk']).optional(),
+    photoStorageRoot: z.string().max(500).optional(),
     notifyEmailEnabled: z.boolean().optional(),
     notifySmsEnabled: z.boolean().optional(),
     expectedRevision: z.number().int(),
   })
   .refine((b) => Object.keys(b).length > 1, 'Nothing to change.');
 export type SettingsPatchBody = z.infer<typeof settingsPatchBodySchema>;
+
+/* ------------------------------------------------------------ photo folder browser */
+
+export const folderBrowseResponseSchema = z.object({
+  /** The folder being listed (empty = the top level: drives on Windows). */
+  path: z.string(),
+  /** The folder above it, or null at the very top. Empty string = the top level. */
+  parent: z.string().nullable(),
+  folders: z.array(z.object({ name: z.string(), path: z.string() })),
+  /** True when the list was cut short (very large folder). */
+  truncated: z.boolean(),
+  /** Quick picks: the current photo folder, earlier ones and the environment value. */
+  suggestions: z.array(z.string()),
+});
+export type FolderBrowseResponse = z.infer<typeof folderBrowseResponseSchema>;
+
+export const folderTestBodySchema = z.object({ path: z.string().max(500) });
+export type FolderTestBody = z.infer<typeof folderTestBodySchema>;
+export const folderTestResponseSchema = z.object({ ok: z.boolean(), message: z.string(), freeGb: z.number().nullable() });
+export type FolderTestResponse = z.infer<typeof folderTestResponseSchema>;

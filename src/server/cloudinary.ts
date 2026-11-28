@@ -1,4 +1,5 @@
 import { HttpError } from '@/lib/api';
+import { diskDestroy, diskUpload, isDiskKey, storageDriver } from '@/server/media-disk';
 
 /**
  * Cloudinary access shared by project photos and task-comment images. Bytes live in
@@ -51,8 +52,10 @@ export async function uploadImage(
   height: number | null;
   bytes: number;
 }> {
-  const cloudinary = await cloudinaryClient();
   const fileName = safeFileName(file.name, file.type);
+  // STORAGE_DRIVER=disk: the photo goes to this server's photo folder instead of Cloudinary (see media-disk.ts).
+  if ((await storageDriver()) === 'disk') return diskUpload(folder, file, fileName);
+  const cloudinary = await cloudinaryClient();
   const buffer = Buffer.from(await file.arrayBuffer());
   try {
     const res = await new Promise<{
@@ -92,6 +95,8 @@ export async function uploadImage(
 
 /** Best-effort asset removal: logged, never thrown (the document state is already settled). */
 export async function destroyImage(publicId: string): Promise<void> {
+  // Removing follows where the photo actually is, not the current setting (the setting can change over time).
+  if (isDiskKey(publicId)) return diskDestroy(publicId);
   try {
     const cloudinary = await cloudinaryClient();
     await cloudinary.uploader.destroy(publicId, { invalidate: true, resource_type: 'image' });

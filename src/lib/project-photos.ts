@@ -132,7 +132,9 @@ export function buildPhotoForm(
 export function withTransform(url: string, transform: string): string {
   return url.includes('/upload/') ? url.replace('/upload/', `/upload/${transform}/`) : url;
 }
-export const photoThumbUrl = (url: string) => withTransform(url, 'c_fill,w_400,h_400,q_auto,f_auto');
+/** Photos kept on our own server are served by /api/media, which makes the resized copy from `?size=`. */
+const onOurServer = (url: string) => url.startsWith('/api/media/');
+export const photoThumbUrl = (url: string) => (onOurServer(url) ? `${url}?size=thumb` : withTransform(url, 'c_fill,w_400,h_400,q_auto,f_auto'));
 /** A row-sized picture (about 340 px square) for the lot Excel's tall photo rows. */
-export const photoMediumUrl = (url: string) => withTransform(url, 'c_fill,w_340,h_340,q_auto,f_auto');
-export const photoLargeUrl = (url: string) => withTransform(url, 'c_limit,w_1600,q_auto,f_auto');
+export const photoMediumUrl = (url: string) => (onOurServer(url) ? `${url}?size=medium` : withTransform(url, 'c_fill,w_340,h_340,q_auto,f_auto'));
+export const photoLargeUrl = (url: string) => (onOurServer(url) ? `${url}?size=large` : withTransform(url, 'c_limit,w_1600,q_auto,f_auto'));

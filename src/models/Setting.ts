@@ -19,6 +19,12 @@ const settingSchema = new Schema(
     storageLabel: { type: String, required: true, default: 'MLS reachable' },
     storageRoot: { type: String, required: true, default: '192.168.0.84/MLS/dev/' },
     storageUsedTb: { type: Number, required: true, default: 0, min: 0 },
+    // Where photos are saved (Admin → Settings → Photo storage). Left unset = use the server environment
+    // (STORAGE_DRIVER / MEDIA_ROOT), so older deployments keep working. `photoStorageLegacyRoots` are earlier folders:
+    // when the folder is changed the old one is kept here so photos saved there still show.
+    photoStorageDriver: { type: String, enum: ['cloudinary', 'disk'], default: undefined },
+    photoStorageRoot: { type: String, default: undefined },
+    photoStorageLegacyRoots: { type: [String], default: [] },
     notifyEmailEnabled: { type: Boolean, required: true, default: false },
     notifySmsEnabled: { type: Boolean, required: true, default: false },
     revision: { type: Number, required: true, default: 1 },

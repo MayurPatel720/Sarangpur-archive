@@ -21,6 +21,8 @@ import {
   roleResponseSchema,
   rolesListResponseSchema,
   settingsResponseSchema,
+  folderBrowseResponseSchema,
+  folderTestResponseSchema,
   userResponseSchema,
   usersResponseSchema,
   type ListCreateBody,
@@ -35,6 +37,8 @@ import {
   type RoleResponse,
   type RolesListResponse,
   type SettingsPatchBody,
+  type FolderBrowseResponse,
+  type FolderTestResponse,
   type SettingsResponse,
   type UserCreateBody,
   type UserPatchBody,
@@ -384,6 +388,10 @@ export const adminApi = {
   settings: () => getJson<SettingsResponse>('/api/admin/settings', settingsResponseSchema),
   patchSettings: (body: SettingsPatchBody) =>
     sendJson<SettingsResponse>('/api/admin/settings', 'PATCH', body, settingsResponseSchema),
+  browseFolder: (path: string) =>
+    getJson<FolderBrowseResponse>('/api/admin/storage/browse?path=' + encodeURIComponent(path), folderBrowseResponseSchema),
+  testPhotoFolder: (path: string) =>
+    sendJson<FolderTestResponse>('/api/admin/storage/test', 'POST', { path }, folderTestResponseSchema),
 };
 
 export const referenceApi = {

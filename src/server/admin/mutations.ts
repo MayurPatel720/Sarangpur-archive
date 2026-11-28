@@ -9,6 +9,9 @@ import { ALL_PERMISSIONS, checkSystemSafety, checkSelfEdit } from '@/server/perm
 import { hashPassword } from '@/server/auth-verify';
 import { PROTECTED_LIST_KEYS, catalogList } from '@/lib/vocab-catalog';
 import { invalidateReferenceCache } from '@/server/reference/runtime';
+import { resolve } from 'node:path';
+import { effectiveStorage, clearStorageConfigCache } from '@/server/storage-config';
+import { checkPhotoFolder } from '@/server/media-disk';
 import {
   serializeList,
   serializeRole,
@@ -571,14 +574,35 @@ export async function patchSettings(
   ctx: MutationContext,
 ): Promise<AdminSettings> {
   await connectToDatabase();
-  const { expectedRevision, ...fields } = body;
+  const { expectedRevision, photoStorageDriver, photoStorageRoot, ...fields } = body;
+  const set: Record<string, unknown> = { ...fields, updatedBy: actorId(ctx) };
+
+  if (photoStorageDriver !== undefined || photoStorageRoot !== undefined) {
+    const before = effectiveStorage(await Setting.findOne({ key: 'global' }).lean());
+    const nextDriver = photoStorageDriver ?? before.driver;
+    const nextRoot = (photoStorageRoot ?? before.root).trim();
+    // Never save a folder the app cannot write to: photos would start failing for everyone.
+    if (nextDriver === 'disk') {
+      const check = await checkPhotoFolder(nextRoot);
+      if (!check.ok) throw new HttpError(400, check.message);
+    }
+    set.photoStorageDriver = nextDriver;
+    set.photoStorageRoot = nextRoot;
+    // Photos saved in the old folder must keep showing: remember it as an earlier folder.
+    const same = (a: string, b: string) => resolve(a) === resolve(b);
+    const earlier = [...(before.root && before.driver === 'disk' && nextRoot && !same(before.root, nextRoot) ? [before.root] : []), ...before.legacyRoots];
+    set.photoStorageLegacyRoots = [...new Set(earlier)].filter((r) => !nextRoot || !same(r, nextRoot)).slice(0, 10);
+  }
 
   const updated = await Setting.findOneAndUpdate(
     { key: 'global', revision: expectedRevision },
-    { $set: { ...fields, updatedBy: actorId(ctx) }, $inc: { revision: 1 } },
+    { $set: set, $inc: { revision: 1 } },
     { new: true },
   ).lean();
-  if (updated) return serializeSettings(updated);
+  if (updated) {
+    clearStorageConfigCache(); // the new choice applies at once on this server (others pick it up within seconds)
+    return serializeSettings(updated);
+  }
 
   const current = await Setting.findOne({ key: 'global' }).lean();
   if (!current) throw new HttpError(404, 'Settings not found. Reload and try again.');

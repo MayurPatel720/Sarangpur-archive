@@ -144,7 +144,8 @@ export type TaskChecklistItem = z.infer<typeof taskChecklistItemSchema>;
 
 /** An image on a comment (stored in Cloudinary; the wire shape is the stored metadata). */
 export const taskAttachmentSchema = z.object({
-  url: z.string().url().max(600),
+  // A Cloudinary address, or /api/media/... when photos are kept on our own server.
+  url: z.string().max(600).refine((u) => /^https?:\/\//.test(u) || u.startsWith('/api/media/'), 'Not a photo address.'),
   publicId: z.string().min(1).max(300),
   fileName: z.string().min(1).max(160),
   contentType: z.string().min(1).max(60),

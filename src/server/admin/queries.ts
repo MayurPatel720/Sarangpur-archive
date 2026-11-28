@@ -3,6 +3,7 @@ import { ReferenceList } from '@/models/ReferenceList';
 import { Setting } from '@/models/Setting';
 import { User } from '@/models/User';
 import { connectToDatabase } from '@/lib/mongo';
+import { effectiveStorage } from '@/server/storage-config';
 import type {
   AdminReferenceList,
   AdminRole,
@@ -197,12 +198,16 @@ export function serializeSettings(doc: {
   storageLabel: string;
   storageRoot: string;
   storageUsedTb: number;
+  photoStorageDriver?: string | null;
+  photoStorageRoot?: string | null;
+  photoStorageLegacyRoots?: string[] | null;
   notifyEmailEnabled: boolean;
   notifySmsEnabled: boolean;
   revision: number;
   updatedBy?: unknown;
   updatedAt?: unknown;
 }): AdminSettings {
+  const photo = effectiveStorage(doc);
   return {
     decisionPendingDays: doc.decisionPendingDays,
     scanStuckDays: doc.scanStuckDays,
@@ -211,6 +216,10 @@ export function serializeSettings(doc: {
     storageLabel: doc.storageLabel,
     storageRoot: doc.storageRoot,
     storageUsedTb: doc.storageUsedTb,
+    photoStorageDriver: photo.driver,
+    photoStorageRoot: photo.root,
+    photoStorageSource: photo.source,
+    photoStorageLegacyRoots: photo.legacyRoots,
     notifyEmailEnabled: doc.notifyEmailEnabled,
     notifySmsEnabled: doc.notifySmsEnabled,
     revision: doc.revision,

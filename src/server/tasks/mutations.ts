@@ -378,7 +378,8 @@ export const taskImageFolder = (taskId: string) => `archive-tracker/tasks/${task
 function assertOwnAttachments(taskId: string, items: TaskAttachment[]): void {
   const prefix = `${taskImageFolder(taskId)}/`;
   for (const a of items) {
-    if (!a.publicId.startsWith(prefix) || !a.url.startsWith('https://res.cloudinary.com/') || !a.url.includes(a.publicId)) {
+    const ours = a.url.startsWith('https://res.cloudinary.com/') ? a.url.includes(a.publicId) : a.url === `/api/media/${a.publicId}`;
+    if (!a.publicId.startsWith(prefix) || !ours) {
       throw new HttpError(400, 'That image was not uploaded for this task.');
     }
   }

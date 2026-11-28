@@ -25,6 +25,7 @@ export const queryKeys = {
     lists: () => [...queryKeys.admin.all, 'lists'] as const,
     users: () => [...queryKeys.admin.all, 'users'] as const,
     settings: () => [...queryKeys.admin.all, 'settings'] as const,
+    browse: (path: string) => [...queryKeys.admin.all, 'browse', path] as const,
   },
   reference: {
     all: ['reference'] as const,

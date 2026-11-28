@@ -206,7 +206,8 @@ async function main() {
     process.exit(0);
   }
 
-  await alignClockWithInternet();
+  // Only Cloudinary signs uploads with the clock; the own-server (disk) option needs no internet.
+  if (process.env.STORAGE_DRIVER !== 'disk') await alignClockWithInternet();
   await connectToDatabase();
   const user =(await User.findOne({ username: 'admin' }).select('name').lean()) ?? (await User.findOne({}).select('name').lean());
   if (!user) throw new Error('No users found. Run `npm run seed` first.');
