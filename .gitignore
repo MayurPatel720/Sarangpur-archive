@@ -14,3 +14,6 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 npm-debug.log*
+
+# Client sample data for one-off imports (not part of the app)
+/import-data/

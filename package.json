@@ -20,6 +20,7 @@
     "db:backfill-prasadi-physical": "tsx scripts/backfill-prasadi-physical.ts",
     "db:backfill-item-photo-urls": "tsx scripts/backfill-item-photo-urls.ts",
     "db:seed-prasadi-lot": "tsx scripts/seed-prasadi-lot.ts",
+    "db:import-prasadi-sample": "tsx scripts/import-prasadi-sample.ts",
     "db:backfill-born-digital": "tsx scripts/backfill-born-digital.ts",
     "db:sync-prasadi-lists": "tsx scripts/sync-prasadi-lists.ts",
     "db:sync-stage-flow": "tsx scripts/sync-stage-flow.ts",
